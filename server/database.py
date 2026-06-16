@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from config import get_settings
-from models import Base, Usuario, GrupoEstacao
+from models import Base, Usuario, GrupoEstacao, ConfiguracaoSistema
 from auth import hash_senha
 
 settings = get_settings()
@@ -32,6 +32,17 @@ def _migrar_colunas_faltantes():
             conn.commit()
             print("✅ Migração: coluna 'caminho' adicionada em apps_permitidos")
 
+        cols_estacoes = conn.execute(text("PRAGMA table_info(estacoes)")).fetchall()
+        nomes_estacoes = [c[1] for c in cols_estacoes]
+        if cols_estacoes and "pos_x" not in nomes_estacoes:
+            conn.execute(text("ALTER TABLE estacoes ADD COLUMN pos_x INTEGER DEFAULT 0"))
+            conn.commit()
+            print("✅ Migração: coluna 'pos_x' adicionada em estacoes")
+        if cols_estacoes and "pos_y" not in nomes_estacoes:
+            conn.execute(text("ALTER TABLE estacoes ADD COLUMN pos_y INTEGER DEFAULT 0"))
+            conn.commit()
+            print("✅ Migração: coluna 'pos_y' adicionada em estacoes")
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrar_colunas_faltantes()
@@ -47,6 +58,14 @@ def init_db():
 
         if not db.query(GrupoEstacao).filter(GrupoEstacao.nome == "Padrão").first():
             db.add(GrupoEstacao(nome="Padrão", tempo_padrao_segundos=7200))
+
+        configs_padrao = {
+            "reiniciar_ao_encerrar": "false",
+            "tempo_padrao_segundos": "7200",
+        }
+        for chave, valor in configs_padrao.items():
+            if not db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == chave).first():
+                db.add(ConfiguracaoSistema(chave=chave, valor=valor))
 
         db.commit()
         print("✅ MatheCafé pronto. Admin: login=admin / senha=admin123")

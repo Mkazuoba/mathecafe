@@ -39,6 +39,8 @@ class Estacao(Base):
     ativa = Column(Boolean, default=True)
     ip = Column(String(50), nullable=True)
     ultimo_ping = Column(DateTime, nullable=True)
+    pos_x = Column(Integer, default=0)
+    pos_y = Column(Integer, default=0)
     grupo = relationship("GrupoEstacao", back_populates="estacoes")
     sessoes = relationship("Sessao", back_populates="estacao")
 
@@ -76,3 +78,9 @@ class AppPermitido(Base):
     caminho = Column(String(500), nullable=True)
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)
     ativo = Column(Boolean, default=True)
+
+
+class ConfiguracaoSistema(Base):
+    __tablename__ = "configuracoes"
+    chave = Column(String(100), primary_key=True)
+    valor = Column(String(500), nullable=False)

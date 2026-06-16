@@ -7,10 +7,10 @@ from datetime import datetime
 import asyncio, json, os
 
 from database import get_db, init_db
-from models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido
+from models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from auth import verificar_senha, requer_perfil
 from websocket_manager import manager
-from routes import auth, clientes, estacoes, sessoes, apps
+from routes import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
 
@@ -22,6 +22,9 @@ app.include_router(clientes.router, prefix="/api")
 app.include_router(estacoes.router, prefix="/api")
 app.include_router(sessoes.router, prefix="/api")
 app.include_router(apps.router, prefix="/api")
+app.include_router(operadores.router, prefix="/api")
+app.include_router(config.router, prefix="/api")
+app.include_router(relatorios.router, prefix="/api")
 
 # Caminhos possíveis para o frontend
 _BASE = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +79,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 await ws.send_text(json.dumps({"evento": "pong"}))
 
             elif evento == "login_cliente":
+                db.refresh(estacao)  # força releitura do banco, evitando cache stale
                 login = dados.get("login")
                 senha = dados.get("senha")
 
@@ -114,9 +118,14 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 if cliente.saldo_segundos > 0:
                     tempo = cliente.saldo_segundos
                 else:
-                    grupo = db.query(GrupoEstacao).filter(
-                        GrupoEstacao.id == estacao.grupo_id).first()
-                    tempo = grupo.tempo_padrao_segundos if grupo else 7200
+                    config_tempo = db.query(ConfiguracaoSistema).filter(
+                        ConfiguracaoSistema.chave == "tempo_padrao_segundos").first()
+                    if config_tempo:
+                        tempo = int(config_tempo.valor)
+                    else:
+                        grupo = db.query(GrupoEstacao).filter(
+                            GrupoEstacao.id == estacao.grupo_id).first()
+                        tempo = grupo.tempo_padrao_segundos if grupo else 7200
 
                 sessao = Sessao(
                     cliente_id=cliente.id,
@@ -139,6 +148,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     for a in apps_permitidos
                 ]
 
+                config_reiniciar = db.query(ConfiguracaoSistema).filter(
+                    ConfiguracaoSistema.chave == "reiniciar_ao_encerrar").first()
+                reiniciar = config_reiniciar.valor == "true" if config_reiniciar else False
+
                 await ws.send_text(json.dumps({
                     "evento": "login_resultado",
                     "dados": {
@@ -146,7 +159,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                         "sessao_id": sessao.id,
                         "cliente_nome": cliente.nome,
                         "tempo_segundos": tempo,
-                        "whitelist": whitelist
+                        "whitelist": whitelist,
+                        "reiniciar_ao_encerrar": reiniciar
                     }
                 }))
 

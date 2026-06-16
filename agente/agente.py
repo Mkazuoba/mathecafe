@@ -48,6 +48,14 @@ PROCESSOS_SEGUROS = {
     "python.exe", "pythonw.exe",
 }
 
+# Processos que devem ser sempre bloqueados durante a sessão, mesmo sem
+# whitelist ativa (terminais e interpretadores de script).
+PROCESSOS_SEMPRE_BLOQUEADOS = {
+    "cmd.exe", "powershell.exe", "powershell_ise.exe",
+    "wt.exe",  # Windows Terminal
+    "mshta.exe", "wscript.exe", "cscript.exe",
+}
+
 
 class AgenteApp:
     def __init__(self, root, servidor, estacao):
@@ -68,6 +76,7 @@ class AgenteApp:
         self.inicio_sessao = None
         self.whitelist_apps = []
         self.whitelist_procs = set()
+        self.reiniciar_ao_encerrar = False
 
         self.root.title(f"MatheCafé — {estacao}")
         self.root.geometry("420x480")
@@ -256,6 +265,7 @@ class AgenteApp:
                 saldo = dados.get("saldo_restante", 0)
                 self._log(f"⚠ Sessão encerrada pelo operador. Saldo: {self._fmt(saldo)}")
                 self._voltar_login()
+                self._reiniciar_se_necessario()
 
         else:
             self._log(f"← evento: {evento} | {dados}")
@@ -286,6 +296,7 @@ class AgenteApp:
 
         self.whitelist_apps = whitelist_apps
         self.whitelist_procs = {a["processo"].strip().lower() for a in whitelist_apps if a.get("processo")}
+        self.reiniciar_ao_encerrar = dados.get("reiniciar_ao_encerrar", False)
 
         self.lbl_cliente.config(text=f"Bem-vindo(a), {self.cliente_nome}!")
         self.entry_login.delete(0, "end")
@@ -382,6 +393,7 @@ class AgenteApp:
         restante = max(0, self.tempo_total - consumido)
         self._log(f"Sessão encerrada pelo cliente. Saldo: {self._fmt(restante)}")
         self._voltar_login()
+        self._reiniciar_se_necessario()
 
     def _encerrar_automatico(self):
         self._enviar({
@@ -390,8 +402,15 @@ class AgenteApp:
             "motivo": "tempo_esgotado",
             "tempo_consumido_segundos": self.tempo_total
         })
-        self._log("⏰ Tempo esgotado! (em produção, o PC reiniciaria agora)")
+        self._log("⏰ Tempo esgotado!")
         self._voltar_login()
+        self._reiniciar_se_necessario()
+
+    def _reiniciar_se_necessario(self):
+        if self.reiniciar_ao_encerrar:
+            self._log("🔄 Reiniciando o PC em 30 segundos...")
+            subprocess.run(["shutdown", "/r", "/f", "/t", "30"],
+                           shell=False, capture_output=True)
 
     def _voltar_login(self):
         self.sessao_ativa = False
@@ -413,7 +432,7 @@ class AgenteApp:
 
     # ── Whitelist de apps ─────────────────────────────────────────────────────
     def _verificar_processos(self):
-        if self.sessao_ativa and self.whitelist_procs:
+        if self.sessao_ativa:
             pid_atual = os.getpid()
             for proc in psutil.process_iter(["pid", "name"]):
                 try:
@@ -421,6 +440,14 @@ class AgenteApp:
                     pid = proc.info["pid"]
 
                     if pid == pid_atual or not nome:
+                        continue
+
+                    if nome in PROCESSOS_SEMPRE_BLOQUEADOS:
+                        proc.kill()
+                        self._log(f"🚫 Bloqueado (proibido): {nome}")
+                        continue
+
+                    if not self.whitelist_procs:
                         continue
                     if nome in PROCESSOS_SEGUROS:
                         continue

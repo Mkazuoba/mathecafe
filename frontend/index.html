@@ -10,14 +10,19 @@
   --bg:#0f1117;--bg2:#171b26;--bg3:#1e2333;--bg4:#252b3b;
   --border:#2a3045;--border2:#3a4560;
   --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
-  --green:#22c55e;--green-bg:#052e16;--green-border:#166534;
-  --orange:#f97316;--orange-bg:#2c1003;--orange-border:#7c2d12;
-  --gray:#64748b;--gray-bg:#1e2333;
+  --livre:#22c55e;--livre-bg:#052e16;--livre-border:#166534;
+  --ocupada:#f97316;--ocupada-bg:#2c1003;--ocupada-border:#7c2d12;
+  --desligada:#64748b;--desligada-bg:#1e2333;
   --blue:#3b82f6;--blue-bg:#172554;--blue-border:#1e40af;
   --red:#ef4444;--red-bg:#2c0a0a;
+  --green:#22c55e;--amber:#f59e0b;
   --accent:#6366f1;--accent2:#4f46e5;
 }
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden}
+button{font-family:inherit}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
 /* LOGIN */
 #login-screen{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
@@ -27,77 +32,93 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .login-logo p{color:var(--text2);font-size:0.85rem;margin-top:4px}
 .form-group{margin-bottom:1rem}
 .form-group label{display:block;font-size:0.8rem;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
-.form-group input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.95rem;outline:none;transition:border .2s}
-.form-group input:focus{border-color:var(--accent)}
-.form-group select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.95rem;outline:none;transition:border .2s}
-.form-group select:focus{border-color:var(--accent)}
+.form-group input, .form-group select, .form-group textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.95rem;outline:none;transition:border .2s;font-family:inherit}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus{border-color:var(--accent)}
+.form-row{display:flex;gap:10px}
+.form-row .form-group{flex:1}
 .btn{width:100%;background:var(--accent);border:none;border-radius:8px;padding:11px;color:#fff;font-size:0.95rem;font-weight:600;cursor:pointer;transition:background .2s;margin-top:0.5rem}
 .btn:hover{background:var(--accent2)}
 .login-error{color:var(--red);font-size:0.85rem;text-align:center;margin-top:0.75rem;min-height:20px}
 
-/* HEADER */
-#app{display:none;flex-direction:column;height:100vh}
+/* APP SHELL */
+#app{display:none;height:100vh}
+.app-shell{display:flex;height:100vh;width:100%}
+
+/* SIDEBAR */
+.sidebar{width:60px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .15s ease;overflow:hidden;z-index:50}
+.sidebar:hover{width:200px}
+.sidebar-logo{height:52px;display:flex;align-items:center;padding:0 18px;font-weight:700;color:var(--accent);letter-spacing:2px;white-space:nowrap;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-nav{flex:1;padding:8px 0}
+.sidebar-item{display:flex;align-items:center;gap:14px;padding:12px 18px;color:var(--text2);cursor:pointer;white-space:nowrap;font-size:0.88rem;position:relative;transition:background .15s,color .15s}
+.sidebar-item:hover{background:var(--bg3);color:var(--text)}
+.sidebar-item.active{background:var(--accent);color:#fff}
+.sidebar-icon{font-size:1.15rem;width:22px;text-align:center;flex-shrink:0}
+.sidebar-label{flex:1}
+.sidebar-badge{background:rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.68rem;font-weight:700}
+.sidebar-item:not(.active) .sidebar-badge{background:var(--accent);color:#fff}
+
+/* MAIN AREA */
+.main-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 .header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.25rem;display:flex;align-items:center;gap:1rem;height:52px;flex-shrink:0}
-.header-logo{font-size:1.1rem;font-weight:700;color:var(--accent);letter-spacing:2px;margin-right:0.5rem}
-.header-badge{background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:0.75rem;color:var(--text2)}
+.header-logo{font-size:1.05rem;font-weight:700;color:var(--accent);letter-spacing:1px}
+.header-badge{background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:0.75rem;color:var(--text2);text-transform:uppercase}
 .header-spacer{flex:1}
 .ws-indicator{display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text3)}
-.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--gray);transition:background .3s}
-.ws-dot.online{background:var(--green)}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--desligada);transition:background .3s}
+.ws-dot.online{background:var(--livre)}
 .header-user{font-size:0.85rem;color:var(--text2)}
 .btn-sm{background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--text2);font-size:0.8rem;cursor:pointer;transition:all .2s}
 .btn-sm:hover{border-color:var(--border2);color:var(--text)}
+.btn-sm.danger{color:var(--red)}
+.btn-sm.danger:hover{border-color:var(--red)}
 
-/* STATS BAR */
+/* VIEWS */
+.view{flex:1;overflow:hidden;display:none;flex-direction:column}
+.view.active{display:flex}
+
+/* ── TELA 1: PAINEL ── */
 .stats-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:6px 1.25rem;display:flex;gap:1.5rem;flex-shrink:0}
 .stat{display:flex;align-items:center;gap:6px;font-size:0.8rem}
 .stat-dot{width:8px;height:8px;border-radius:50%}
 .stat-val{font-weight:600}
-
-/* MAIN */
-.main{display:grid;grid-template-columns:1fr 1.2fr 0.8fr;gap:0;flex:1;overflow:hidden}
+.painel-grid{display:grid;grid-template-columns:1fr 1.2fr 0.8fr;gap:0;flex:1;overflow:hidden}
 .panel{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
 .panel:last-child{border-right:none}
 .panel-header{background:var(--bg3);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0}
 .panel-title{font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text2)}
 .panel-count{background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.72rem;font-weight:600}
 .panel-body{flex:1;overflow-y:auto;padding:8px}
-.panel-body::-webkit-scrollbar{width:4px}
-.panel-body::-webkit-scrollbar-track{background:transparent}
-.panel-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 
-/* SEARCH */
 .search-wrap{padding:8px;border-bottom:1px solid var(--border);flex-shrink:0}
 .search-wrap input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:0.85rem;outline:none}
 .search-wrap input:focus{border-color:var(--accent)}
-.search-wrap input::placeholder{color:var(--text3)}
 
-/* ESTAÇÃO CARD */
-.estacao-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:default;transition:border .2s}
-.estacao-card.ocupada{border-left:3px solid var(--orange)}
-.estacao-card.livre{border-left:3px solid var(--green)}
-.estacao-card.desligada{border-left:3px solid var(--gray);opacity:.6}
+.estacao-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;transition:border .15s,box-shadow .15s}
+.estacao-card.ocupada{border-left:3px solid var(--ocupada)}
+.estacao-card.livre{border-left:3px solid var(--livre)}
+.estacao-card.desligada{border-left:3px solid var(--desligada);opacity:.6}
+.estacao-card.drop-target{box-shadow:0 0 0 2px var(--accent)}
 .estacao-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .estacao-nome{font-weight:600;font-size:0.9rem}
 .status-badge{font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
-.status-badge.ocupada{background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-border)}
-.status-badge.livre{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
-.status-badge.desligada{background:var(--gray-bg);color:var(--gray)}
+.status-badge.ocupada{background:var(--ocupada-bg);color:var(--ocupada);border:1px solid var(--ocupada-border)}
+.status-badge.livre{background:var(--livre-bg);color:var(--livre);border:1px solid var(--livre-border)}
+.status-badge.desligada{background:var(--desligada-bg);color:var(--desligada)}
 .estacao-info{font-size:0.8rem;color:var(--text2)}
-.estacao-countdown{font-size:1.1rem;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums;letter-spacing:1px}
+.estacao-countdown{font-size:1.1rem;font-weight:700;color:var(--ocupada);font-variant-numeric:tabular-nums;letter-spacing:1px}
 .estacao-countdown.urgente{color:var(--red)}
 .estacao-actions{margin-top:8px;display:flex;gap:6px}
 .btn-action{border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:all .2s}
 .btn-encerrar{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d}
 .btn-encerrar:hover{background:#7f1d1d;color:#fff}
 
-/* CLIENTE ROW */
-.cliente-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px;transition:border .2s}
+.cliente-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px;transition:border .15s;cursor:grab}
 .cliente-row:hover{border-color:var(--border2)}
 .cliente-row.na-fila{border-color:var(--accent);background:var(--blue-bg)}
+.cliente-row.dragging{opacity:.4}
 .cliente-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;color:var(--accent);flex-shrink:0;text-transform:uppercase}
 .cliente-info{flex:1;min-width:0}
-.cliente-nome{font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cliente-nome{font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
 .cliente-login{font-size:0.75rem;color:var(--text3)}
 .cliente-saldo{font-size:0.78rem;font-weight:600;text-align:right;white-space:nowrap}
 .cliente-saldo.tem-saldo{color:var(--green)}
@@ -105,9 +126,8 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .btn-liberar{background:var(--accent);border:none;border-radius:5px;padding:4px 10px;color:#fff;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}
 .btn-liberar:hover{background:var(--accent2)}
 .btn-liberar:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
-.tag-fila{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:10px;padding:1px 7px;font-size:0.7rem;font-weight:600}
+.tag-fila{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:10px;padding:1px 7px;font-size:0.66rem;font-weight:600}
 
-/* FILA */
 .fila-card{background:var(--bg3);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:6px}
 .fila-pos{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:0.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .fila-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
@@ -117,46 +137,105 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .btn-remover{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d;border-radius:5px;padding:3px 8px;font-size:0.72rem;cursor:pointer;transition:all .2s}
 .btn-remover:hover{background:#7f1d1d;color:#fff}
 
-/* EMPTY */
 .empty{text-align:center;color:var(--text3);font-size:0.85rem;padding:2rem 1rem}
-.empty i{font-size:2rem;display:block;margin-bottom:8px;opacity:.4}
 
-/* TOAST */
-.toast-wrap{position:fixed;bottom:1.5rem;right:1.5rem;display:flex;flex-direction:column;gap:8px;z-index:999}
-.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:0.85rem;color:var(--text);animation:fadeIn .2s ease}
-.toast.ok{border-left:3px solid var(--green)}
-.toast.err{border-left:3px solid var(--red)}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-
-/* BOTÃO PEQUENO NO HEADER DO PAINEL */
 .btn-add{background:var(--accent);border:none;border-radius:5px;padding:3px 10px;color:#fff;font-size:0.72rem;font-weight:600;cursor:pointer;transition:background .2s;margin-left:auto}
 .btn-add:hover{background:var(--accent2)}
+
+/* ── TELA 2: CLIENTES (tabela) ── */
+.view-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 1.5rem;display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap}
+.view-title{font-size:1.1rem;font-weight:700}
+.view-header-spacer{flex:1}
+.input-sm{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:0.85rem;outline:none}
+.input-sm:focus{border-color:var(--accent)}
+.select-sm{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:0.85rem;outline:none}
+.view-body{flex:1;overflow:auto;padding:1.25rem 1.5rem}
+table.data-table{width:100%;border-collapse:collapse}
+table.data-table th{text-align:left;font-size:0.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:8px 10px;border-bottom:1px solid var(--border)}
+table.data-table td{padding:10px;border-bottom:1px solid var(--border);font-size:0.86rem}
+table.data-table tr:hover td{background:var(--bg3)}
+.badge{font-size:0.7rem;font-weight:600;padding:2px 9px;border-radius:10px;text-transform:uppercase}
+.badge.ativo{background:var(--livre-bg);color:var(--livre);border:1px solid var(--livre-border)}
+.badge.inativo{background:var(--desligada-bg);color:var(--desligada)}
+.table-actions{display:flex;gap:6px}
+.btn-table{background:var(--bg4);border:1px solid var(--border);border-radius:5px;padding:4px 10px;font-size:0.75rem;color:var(--text2);cursor:pointer}
+.btn-table:hover{border-color:var(--border2);color:var(--text)}
+.btn-table.danger{color:var(--red)}
+.btn-table.danger:hover{border-color:var(--red)}
+
+/* ── TELA 3: MAPA ── */
+.mapa-tabs{display:flex;gap:6px}
+.mapa-tab{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:0.8rem;color:var(--text2);cursor:pointer}
+.mapa-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.mapa-canvas-wrap{flex:1;overflow:auto;position:relative;background:
+  radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size:24px 24px;background-color:var(--bg)}
+.mapa-canvas{position:relative;width:100%;height:100%;min-width:1000px;min-height:700px}
+.estacao-pin{position:absolute;width:80px;height:80px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;user-select:none;border-bottom:3px solid var(--desligada);transition:box-shadow .15s}
+.estacao-pin:hover{box-shadow:0 0 0 2px var(--border2)}
+.estacao-pin.livre{border-bottom-color:var(--livre)}
+.estacao-pin.ocupada{border-bottom-color:var(--ocupada);background:var(--bg4)}
+.estacao-pin.desligada{border-bottom-color:var(--desligada);opacity:.6}
+.estacao-pin.config-mode{border-style:dashed;cursor:grab}
+.estacao-pin.config-mode:active{cursor:grabbing}
+.pin-nome{font-size:0.8rem;font-weight:700}
+.pin-cliente{font-size:0.62rem;color:var(--text2);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pin-countdown{font-size:0.62rem;color:var(--ocupada);font-weight:600}
+.pin-del{position:absolute;top:-8px;right:-8px;width:20px;height:20px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:0.7rem;cursor:pointer;display:none;align-items:center;justify-content:center}
+.estacao-pin.config-mode .pin-del{display:flex}
+
+/* Painel lateral de detalhes da estação */
+.detail-panel{position:fixed;top:52px;right:0;bottom:0;width:320px;background:var(--bg2);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .2s;z-index:80;padding:1.25rem;overflow-y:auto}
+.detail-panel.show{transform:translateX(0)}
+.detail-panel h3{margin-bottom:1rem}
+.detail-row{margin-bottom:10px;font-size:0.88rem}
+.detail-row .label{color:var(--text3);font-size:0.72rem;text-transform:uppercase;display:block;margin-bottom:2px}
+.detail-close{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer}
+
+/* ── TELA 4: CONFIGURAÇÕES ── */
+.config-layout{display:flex;flex:1;overflow:hidden}
+.config-menu{width:200px;border-right:1px solid var(--border);background:var(--bg2);flex-shrink:0;padding:10px 0}
+.config-menu-item{padding:11px 18px;color:var(--text2);cursor:pointer;font-size:0.86rem}
+.config-menu-item:hover{background:var(--bg3);color:var(--text)}
+.config-menu-item.active{background:var(--accent);color:#fff}
+.config-body{flex:1;overflow:auto;padding:1.5rem 2rem;max-width:640px}
+.config-section h2{font-size:1.05rem;margin-bottom:1.25rem}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:1rem}
+.toggle-row .toggle-text strong{display:block;font-size:0.9rem;margin-bottom:3px}
+.toggle-row .toggle-text span{font-size:0.78rem;color:var(--text2)}
+.switch{position:relative;width:44px;height:24px;flex-shrink:0;margin-left:1rem}
+.switch input{display:none}
+.switch .slider{position:absolute;inset:0;background:var(--bg4);border:1px solid var(--border);border-radius:24px;cursor:pointer;transition:background .2s}
+.switch .slider::before{content:'';position:absolute;width:18px;height:18px;left:2px;top:2px;background:var(--text2);border-radius:50%;transition:transform .2s,background .2s}
+.switch input:checked + .slider{background:var(--accent)}
+.switch input:checked + .slider::before{transform:translateX(20px);background:#fff}
+.apps-inline-form{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.apps-inline-form input{flex:1;min-width:120px}
+.app-row, .op-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.app-info, .op-info{flex:1;min-width:0}
+.app-nome, .op-nome{font-size:0.85rem;font-weight:500}
+.app-detalhe{font-size:0.72rem;color:var(--text3);font-family:Consolas,monospace}
+.app-grupo-tag{font-size:0.66rem;background:var(--bg4);color:var(--text2);border-radius:8px;padding:1px 7px}
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
-.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.75rem;width:340px}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.75rem;width:380px;max-height:85vh;overflow-y:auto}
 .modal-box h3{font-size:1.1rem;margin-bottom:1.25rem;color:var(--text)}
 .modal-actions{display:flex;gap:8px;margin-top:1.25rem}
 .modal-actions .btn{margin-top:0}
 .btn-secondary{background:var(--bg4);color:var(--text2)}
 .btn-secondary:hover{background:var(--border2);color:var(--text)}
 .modal-error{color:var(--red);font-size:0.85rem;margin-top:0.5rem;min-height:18px}
+.toggle-inline{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.toggle-inline label{font-size:0.85rem;color:var(--text2)}
 
-/* MODAL APPS (maior) */
-.modal-box.large{width:480px;max-height:80vh;display:flex;flex-direction:column}
-.apps-form{display:flex;gap:8px;margin-bottom:12px}
-.apps-form input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.85rem;outline:none}
-.apps-form input:focus{border-color:var(--accent)}
-.apps-form select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.85rem;outline:none}
-.apps-list{flex:1;overflow-y:auto;max-height:320px}
-.app-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px}
-.app-info{flex:1;min-width:0}
-.app-nome{font-size:0.85rem;font-weight:500}
-.app-detalhe{font-size:0.72rem;color:var(--text3);font-family:var(--font-mono,monospace)}
-.app-grupo-tag{font-size:0.68rem;background:var(--bg4);color:var(--text2);border-radius:8px;padding:1px 7px}
-.btn-del{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d;border-radius:5px;padding:4px 8px;font-size:0.72rem;cursor:pointer;transition:all .2s}
-.btn-del:hover{background:#7f1d1d;color:#fff}
+/* TOAST */
+.toast-wrap{position:fixed;bottom:1.5rem;right:1.5rem;display:flex;flex-direction:column;gap:8px;z-index:2000}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:0.85rem;color:var(--text);animation:fadeIn .2s ease}
+.toast.ok{border-left:3px solid var(--green)}
+.toast.err{border-left:3px solid var(--red)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
@@ -169,112 +248,267 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
       <p>Sistema de gerenciamento</p>
     </div>
     <div class="form-group">
-      <label>Login</label>
-      <input type="text" id="login-input" placeholder="admin" autocomplete="username">
+      <label for="login-input">Login</label>
+      <input type="text" id="login-input" placeholder="admin" autocomplete="username" aria-label="Login">
     </div>
     <div class="form-group">
-      <label>Senha</label>
-      <input type="password" id="senha-input" placeholder="••••••••" autocomplete="current-password">
+      <label for="senha-input">Senha</label>
+      <input type="password" id="senha-input" placeholder="••••••••" autocomplete="current-password" aria-label="Senha">
     </div>
-    <button class="btn" onclick="fazerLogin()">Entrar</button>
+    <button class="btn" onclick="fazerLogin()" aria-label="Entrar">Entrar</button>
     <div class="login-error" id="login-error"></div>
   </div>
 </div>
 
 <!-- APP -->
 <div id="app">
-  <div class="header">
-    <span class="header-logo">MatheCafé</span>
-    <span class="header-badge" id="perfil-badge">—</span>
-    <div class="stats-bar" style="border:none;padding:0;background:transparent;margin-left:8px">
-      <div class="stat"><div class="stat-dot" style="background:var(--green)"></div><span class="stat-val" id="stat-livre">0</span><span style="color:var(--text3);font-size:.78rem">livres</span></div>
-      <div class="stat"><div class="stat-dot" style="background:var(--orange)"></div><span class="stat-val" id="stat-ocupada">0</span><span style="color:var(--text3);font-size:.78rem">ocupadas</span></div>
-      <div class="stat"><div class="stat-dot" style="background:var(--gray)"></div><span class="stat-val" id="stat-desligada">0</span><span style="color:var(--text3);font-size:.78rem">desligadas</span></div>
-    </div>
-    <div class="header-spacer"></div>
-    <button class="btn-sm" onclick="abrirModalApps()">Apps permitidos</button>
-    <div class="ws-indicator"><div class="ws-dot" id="ws-dot"></div><span id="ws-label">desconectado</span></div>
-    <span class="header-user" id="header-user"></span>
-    <button class="btn-sm" onclick="sair()">Sair</button>
-  </div>
+<div class="app-shell">
 
-  <div class="main">
-    <!-- PAINEL: ESTAÇÕES -->
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Estações</span>
-        <span class="panel-count" id="count-estacoes">0</span>
-        <button class="btn-add" onclick="abrirModalEstacao()">+ Nova estação</button>
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">MatheCafé</div>
+    <div class="sidebar-nav">
+      <div class="sidebar-item active" data-view="painel" onclick="mudarView('painel')">
+        <span class="sidebar-icon">🏠</span><span class="sidebar-label">Painel</span>
       </div>
-      <div class="panel-body" id="lista-estacoes">
-        <div class="empty">Carregando estações...</div>
+      <div class="sidebar-item" data-view="clientes" onclick="mudarView('clientes')">
+        <span class="sidebar-icon">👤</span><span class="sidebar-label">Clientes</span>
       </div>
-    </div>
-
-    <!-- PAINEL: CLIENTES -->
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Clientes</span>
-        <span class="panel-count" id="count-clientes">0</span>
-        <button class="btn-add" onclick="abrirModalCliente()">+ Novo cliente</button>
+      <div class="sidebar-item" data-view="mapa" onclick="mudarView('mapa')">
+        <span class="sidebar-icon">🗺️</span><span class="sidebar-label">Mapa</span>
       </div>
-      <div class="search-wrap">
-        <input type="text" id="busca-cliente" placeholder="Buscar por nome ou login..." oninput="filtrarClientes()">
-      </div>
-      <div class="panel-body" id="lista-clientes">
-        <div class="empty">Carregando clientes...</div>
-      </div>
-    </div>
-
-    <!-- PAINEL: FILA -->
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">Fila de espera</span>
-        <span class="panel-count" id="count-fila">0</span>
-      </div>
-      <div class="panel-body" id="lista-fila">
-        <div class="empty">Nenhum cliente na fila</div>
+      <div class="sidebar-item" data-view="config" id="nav-config" onclick="mudarView('config')">
+        <span class="sidebar-icon">⚙️</span><span class="sidebar-label">Configurações</span>
       </div>
     </div>
   </div>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+    <div class="header">
+      <span class="header-logo">MatheCafé</span>
+      <span class="header-badge" id="perfil-badge">—</span>
+      <div class="header-spacer"></div>
+      <div class="ws-indicator"><div class="ws-dot" id="ws-dot"></div><span id="ws-label">desconectado</span></div>
+      <span class="header-user" id="header-user"></span>
+      <button class="btn-sm" onclick="sair()" aria-label="Sair">Sair</button>
+    </div>
+
+    <!-- ── VIEW 1: PAINEL ── -->
+    <div class="view active" id="view-painel">
+      <div class="stats-bar">
+        <div class="stat"><div class="stat-dot" style="background:var(--livre)"></div><span class="stat-val" id="stat-livre">0</span><span style="color:var(--text3);font-size:.78rem">livres</span></div>
+        <div class="stat"><div class="stat-dot" style="background:var(--ocupada)"></div><span class="stat-val" id="stat-ocupada">0</span><span style="color:var(--text3);font-size:.78rem">ocupadas</span></div>
+        <div class="stat"><div class="stat-dot" style="background:var(--desligada)"></div><span class="stat-val" id="stat-desligada">0</span><span style="color:var(--text3);font-size:.78rem">desligadas</span></div>
+      </div>
+      <div class="painel-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Estações</span>
+            <span class="panel-count" id="count-estacoes">0</span>
+          </div>
+          <div class="panel-body" id="lista-estacoes">
+            <div class="empty">Carregando estações...</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Clientes</span>
+            <span class="panel-count" id="count-clientes">0</span>
+          </div>
+          <div class="search-wrap">
+            <input type="text" id="busca-cliente" placeholder="Buscar por nome ou login..." oninput="filtrarClientes()" aria-label="Buscar cliente">
+          </div>
+          <div class="panel-body" id="lista-clientes">
+            <div class="empty">Carregando clientes...</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Fila de espera</span>
+            <span class="panel-count" id="count-fila">0</span>
+          </div>
+          <div class="panel-body" id="lista-fila" ondragover="event.preventDefault()" ondrop="onDropFila(event)">
+            <div class="empty">Nenhum cliente na fila</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── VIEW 2: CLIENTES ── -->
+    <div class="view" id="view-clientes">
+      <div class="view-header">
+        <span class="view-title">Clientes</span>
+        <input type="text" class="input-sm" id="busca-cliente-tabela" placeholder="Buscar por nome ou login..." oninput="renderTabelaClientes()" aria-label="Buscar cliente">
+        <select class="select-sm" id="filtro-status-cliente" onchange="renderTabelaClientes()" aria-label="Filtrar status">
+          <option value="todos">Todos</option>
+          <option value="ativos">Ativos</option>
+          <option value="inativos">Inativos</option>
+        </select>
+        <div class="view-header-spacer"></div>
+        <button class="btn-sm" id="btn-export-csv" onclick="abrirModalRelatorio()">Exportar CSV</button>
+        <button class="btn-sm" onclick="abrirModalCliente()">+ Novo cliente</button>
+      </div>
+      <div class="view-body">
+        <table class="data-table">
+          <thead>
+            <tr><th>Login</th><th>Nome</th><th>Saldo de tempo</th><th>Status</th><th>Criado em</th><th>Ações</th></tr>
+          </thead>
+          <tbody id="tabela-clientes-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── VIEW 3: MAPA ── -->
+    <div class="view" id="view-mapa">
+      <div class="view-header">
+        <span class="view-title">Mapa</span>
+        <div class="mapa-tabs" id="mapa-tabs"></div>
+        <div class="view-header-spacer"></div>
+        <span style="font-size:0.82rem;color:var(--text2)" id="mapa-contador">0/0 ocupadas</span>
+        <button class="btn-sm" id="btn-modo-config" onclick="toggleModoConfigMapa()">Modo configuração</button>
+      </div>
+      <div class="mapa-canvas-wrap">
+        <div class="mapa-canvas" id="mapa-canvas"></div>
+      </div>
+    </div>
+
+    <!-- ── VIEW 4: CONFIGURAÇÕES ── -->
+    <div class="view" id="view-config">
+      <div class="config-layout">
+        <div class="config-menu">
+          <div class="config-menu-item active" data-sec="operadores" onclick="mudarConfigSecao('operadores')">Operadores</div>
+          <div class="config-menu-item" data-sec="comportamento" onclick="mudarConfigSecao('comportamento')">Comportamento</div>
+          <div class="config-menu-item" data-sec="apps" onclick="mudarConfigSecao('apps')">Apps permitidos</div>
+          <div class="config-menu-item" data-sec="relatorios" onclick="mudarConfigSecao('relatorios')">Relatórios</div>
+        </div>
+        <div class="config-body">
+          <!-- Operadores -->
+          <div class="config-section" id="config-operadores">
+            <h2>Operadores</h2>
+            <button class="btn-sm" style="margin-bottom:12px" onclick="abrirModalOperador()">+ Novo operador</button>
+            <div id="lista-operadores"><div class="empty">Carregando...</div></div>
+          </div>
+
+          <!-- Comportamento -->
+          <div class="config-section" id="config-comportamento" style="display:none">
+            <h2>Comportamento do sistema</h2>
+            <div class="toggle-row">
+              <div class="toggle-text">
+                <strong>Reiniciar PC ao encerrar sessão</strong>
+                <span>Ao encerrar (por tempo, operador ou cliente), o agente Windows executará shutdown /r</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="cfg-reiniciar" aria-label="Reiniciar PC ao encerrar sessão">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label for="cfg-tempo-padrao">Tempo padrão de sessão (HH:MM)</label>
+              <input type="text" id="cfg-tempo-padrao" placeholder="02:00">
+            </div>
+            <button class="btn" style="width:auto;padding:9px 18px" onclick="salvarConfigComportamento()">Salvar configurações</button>
+          </div>
+
+          <!-- Apps -->
+          <div class="config-section" id="config-apps" style="display:none">
+            <h2>Apps permitidos (whitelist)</h2>
+            <div class="apps-inline-form">
+              <input type="text" class="input-sm" id="novo-app-nome" placeholder="Nome (ex: Google Chrome)">
+              <input type="text" class="input-sm" id="novo-app-processo" placeholder="processo.exe">
+              <select class="select-sm" id="novo-app-grupo"></select>
+              <button class="btn-sm" onclick="criarApp()">+ Adicionar</button>
+            </div>
+            <div class="apps-inline-form">
+              <input type="text" class="input-sm" id="novo-app-caminho" placeholder="Caminho completo do .exe" style="flex:1">
+            </div>
+            <div class="modal-error" id="config-apps-error"></div>
+            <div id="lista-apps"><div class="empty">Carregando...</div></div>
+          </div>
+
+          <!-- Relatórios -->
+          <div class="config-section" id="config-relatorios" style="display:none">
+            <h2>Relatórios</h2>
+            <div class="form-row">
+              <div class="form-group"><label for="rel-inicio">Data início</label><input type="date" id="rel-inicio"></div>
+              <div class="form-group"><label for="rel-fim">Data fim</label><input type="date" id="rel-fim"></div>
+            </div>
+            <div class="form-group">
+              <label for="rel-cliente">Cliente</label>
+              <select id="rel-cliente"><option value="">Todos</option></select>
+            </div>
+            <div class="form-group">
+              <label for="rel-estacao">Estação</label>
+              <select id="rel-estacao"><option value="">Todas</option></select>
+            </div>
+            <button class="btn" style="width:auto;padding:9px 18px" onclick="exportarRelatorioCsv()">Exportar CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PAINEL LATERAL DE DETALHES DA ESTAÇÃO (mapa) -->
+<div class="detail-panel" id="detail-panel">
+  <button class="detail-close" onclick="fecharDetailPanel()" aria-label="Fechar">✕</button>
+  <div id="detail-panel-content"></div>
+</div>
+
 </div>
 
 <div class="toast-wrap" id="toasts"></div>
 
-<!-- MODAL: NOVO CLIENTE -->
+<!-- MODAL: CLIENTE (criar/editar) -->
 <div class="modal-overlay" id="modal-cliente">
   <div class="modal-box">
-    <h3>Novo cliente</h3>
+    <h3 id="modal-cliente-titulo">Novo cliente</h3>
+    <input type="hidden" id="cliente-edit-id">
     <div class="form-group">
-      <label>Login</label>
-      <input type="text" id="novo-cliente-login" placeholder="ex: joao123" autocomplete="off">
+      <label for="campo-cliente-login">Login</label>
+      <input type="text" id="campo-cliente-login" placeholder="ex: joao123" autocomplete="off">
     </div>
     <div class="form-group">
-      <label>Nome</label>
-      <input type="text" id="novo-cliente-nome" placeholder="Nome completo" autocomplete="off">
+      <label for="campo-cliente-nome">Nome</label>
+      <input type="text" id="campo-cliente-nome" placeholder="Nome completo" autocomplete="off">
     </div>
     <div class="form-group">
-      <label>Senha</label>
-      <input type="password" id="novo-cliente-senha" placeholder="••••••••" autocomplete="new-password">
+      <label for="campo-cliente-senha">Senha</label>
+      <input type="password" id="campo-cliente-senha" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label for="campo-cliente-saldo">Saldo de tempo (HH:MM)</label>
+      <input type="text" id="campo-cliente-saldo" placeholder="00:00">
+    </div>
+    <div class="form-group">
+      <label for="campo-cliente-obs">Observações</label>
+      <textarea id="campo-cliente-obs" rows="2"></textarea>
+    </div>
+    <div class="toggle-inline" id="campo-cliente-ativo-wrap" style="display:none">
+      <label for="campo-cliente-ativo">Ativo</label>
+      <label class="switch"><input type="checkbox" id="campo-cliente-ativo" checked><span class="slider"></span></label>
     </div>
     <div class="modal-error" id="modal-cliente-error"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="fecharModal('modal-cliente')">Cancelar</button>
-      <button class="btn" onclick="criarCliente()">Criar</button>
+      <button class="btn" onclick="salvarCliente()">Salvar</button>
     </div>
   </div>
 </div>
 
-<!-- MODAL: NOVA ESTAÇÃO -->
+<!-- MODAL: NOVA ESTAÇÃO (mapa) -->
 <div class="modal-overlay" id="modal-estacao">
   <div class="modal-box">
     <h3>Nova estação</h3>
     <div class="form-group">
-      <label>Nome da estação</label>
+      <label for="nova-estacao-nome">Nome da estação</label>
       <input type="text" id="nova-estacao-nome" placeholder="ex: PC-01" autocomplete="off">
     </div>
     <div class="form-group">
-      <label>Grupo</label>
+      <label for="nova-estacao-grupo">Grupo</label>
       <select id="nova-estacao-grupo"></select>
     </div>
     <div class="modal-error" id="modal-estacao-error"></div>
@@ -285,25 +519,31 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   </div>
 </div>
 
-<!-- MODAL: APPS PERMITIDOS -->
-<div class="modal-overlay" id="modal-apps">
-  <div class="modal-box large">
-    <h3>Apps permitidos (whitelist)</h3>
-    <div class="apps-form">
-      <input type="text" id="novo-app-nome" placeholder="Nome (ex: Google Chrome)">
-      <input type="text" id="novo-app-processo" placeholder="processo.exe">
-      <select id="novo-app-grupo"></select>
-      <button class="btn" style="width:auto;margin-top:0;padding:8px 14px" onclick="criarApp()">+</button>
+<!-- MODAL: OPERADOR (criar/editar) -->
+<div class="modal-overlay" id="modal-operador">
+  <div class="modal-box">
+    <h3 id="modal-operador-titulo">Novo operador</h3>
+    <input type="hidden" id="operador-edit-id">
+    <div class="form-group">
+      <label for="campo-op-login">Login</label>
+      <input type="text" id="campo-op-login" autocomplete="off">
     </div>
-    <div class="apps-form">
-      <input type="text" id="novo-app-caminho" placeholder="Caminho completo do .exe (ex: C:\Program Files\Google\Chrome\chrome.exe)" style="flex:1">
+    <div class="form-group">
+      <label for="campo-op-nome">Nome</label>
+      <input type="text" id="campo-op-nome" autocomplete="off">
     </div>
-    <div class="modal-error" id="modal-apps-error"></div>
-    <div class="apps-list" id="lista-apps">
-      <div class="empty">Carregando...</div>
+    <div class="form-group">
+      <label for="campo-op-senha">Senha</label>
+      <input type="password" id="campo-op-senha" placeholder="••••••••" autocomplete="new-password">
     </div>
+    <div class="toggle-inline" id="campo-op-ativo-wrap" style="display:none">
+      <label for="campo-op-ativo">Ativo</label>
+      <label class="switch"><input type="checkbox" id="campo-op-ativo" checked><span class="slider"></span></label>
+    </div>
+    <div class="modal-error" id="modal-operador-error"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="fecharModal('modal-apps')">Fechar</button>
+      <button class="btn btn-secondary" onclick="fecharModal('modal-operador')">Cancelar</button>
+      <button class="btn" onclick="salvarOperador()">Salvar</button>
     </div>
   </div>
 </div>
@@ -321,8 +561,17 @@ let estacoes = [];
 let clientes = [];
 let fila = [];
 let sessoesAtivas = [];
-let countdowns = {}; // sessao_id -> {inicio, total}
+let grupos = [];
+let operadores = [];
+let appsCache = [];
+let configSistema = {reiniciar_ao_encerrar: false, tempo_padrao_segundos: 7200};
+let countdowns = {}; // sessao_id -> {inicio, total, estacao, sessaoId}
 let countdownTimer = null;
+
+let currentView = 'painel';
+let mapaGrupoAtivo = null;
+let mapaModoConfig = false;
+let draggedClienteId = null;
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
 document.getElementById('senha-input').addEventListener('keydown', e => {
@@ -349,9 +598,13 @@ async function fazerLogin() {
     perfil = data.perfil;
     nomeUsuario = data.nome;
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
+    document.getElementById('app').style.display = 'block';
     document.getElementById('perfil-badge').textContent = perfil;
     document.getElementById('header-user').textContent = nomeUsuario;
+    if (perfil !== 'admin') {
+      document.getElementById('nav-config').style.display = 'none';
+      document.getElementById('btn-export-csv').style.display = 'none';
+    }
     iniciar();
   } catch(e) {
     errEl.textContent = 'Servidor indisponível';
@@ -367,22 +620,46 @@ function sair() {
   document.getElementById('login-error').textContent = '';
 }
 
+// ── NAVEGAÇÃO ──────────────────────────────────────────────────────────────
+function mudarView(view) {
+  if (view === 'config' && perfil !== 'admin') return;
+  currentView = view;
+  document.querySelectorAll('.sidebar-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === view);
+  });
+  document.querySelectorAll('.view').forEach(el => {
+    el.classList.toggle('active', el.id === 'view-' + view);
+  });
+  if (view === 'clientes') renderTabelaClientes();
+  if (view === 'mapa') renderMapa();
+  if (view === 'config') carregarConfigData();
+}
+
+function mudarConfigSecao(sec) {
+  document.querySelectorAll('.config-menu-item').forEach(el => el.classList.toggle('active', el.dataset.sec === sec));
+  document.querySelectorAll('.config-section').forEach(el => {
+    el.style.display = el.id === 'config-' + sec ? 'block' : 'none';
+  });
+}
+
 // ── INIT ───────────────────────────────────────────────────────────────────
 function iniciar() {
   carregarTudo();
   conectarWS();
   countdownTimer = setInterval(atualizarCountdowns, 1000);
-  setInterval(carregarTudo, 30000); // refresh a cada 30s
+  setInterval(carregarTudo, 30000);
 }
 
 async function carregarTudo() {
-  await Promise.all([carregarEstacoes(), carregarClientes(), carregarFila(), carregarSessoes()]);
+  await Promise.all([carregarEstacoes(), carregarClientes(), carregarFila(), carregarSessoes(), carregarGrupos()]);
+  if (currentView === 'clientes') renderTabelaClientes();
+  if (currentView === 'mapa') renderMapa();
 }
 
 // ── API ────────────────────────────────────────────────────────────────────
 async function get(path) {
   const res = await fetch(API + path, {headers: {'Authorization': 'Bearer ' + token}});
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || 'Erro');
   return res.json();
 }
 
@@ -392,18 +669,28 @@ async function post(path, body) {
     headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
     body: body ? JSON.stringify(body) : undefined
   });
-  if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+  if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || 'Erro'); }
+  return res.json();
+}
+
+async function put(path, body) {
+  const res = await fetch(API + path, {
+    method: 'PUT',
+    headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || 'Erro'); }
   return res.json();
 }
 
 async function del(path) {
   const res = await fetch(API + path, {method: 'DELETE', headers: {'Authorization': 'Bearer ' + token}});
-  if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+  if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.detail || 'Erro'); }
   return res.json();
 }
 
 async function carregarEstacoes() {
-  try { estacoes = await get('/api/estacoes/'); renderEstacoes(); } catch(e) {}
+  try { estacoes = await get('/api/estacoes/'); renderEstacoes(); if (currentView === 'mapa') renderMapa(); } catch(e) {}
 }
 
 async function carregarClientes() {
@@ -411,13 +698,16 @@ async function carregarClientes() {
 }
 
 async function carregarFila() {
-  try { fila = await get('/api/estacoes/fila'); renderFila(); } catch(e) {}
+  try { fila = await get('/api/estacoes/fila'); renderFila(); renderClientes(); } catch(e) {}
+}
+
+async function carregarGrupos() {
+  try { grupos = await get('/api/estacoes/grupos'); } catch(e) {}
 }
 
 async function carregarSessoes() {
   try {
     sessoesAtivas = await get('/api/sessoes/ativas');
-    // rebuild countdowns
     countdowns = {};
     sessoesAtivas.forEach(s => {
       const inicio = new Date(s.iniciada_em + 'Z');
@@ -427,7 +717,7 @@ async function carregarSessoes() {
   } catch(e) {}
 }
 
-// ── RENDER ESTAÇÕES ────────────────────────────────────────────────────────
+// ── RENDER ESTAÇÕES (painel) ──────────────────────────────────────────────
 function renderEstacoes() {
   const el = document.getElementById('lista-estacoes');
   const livre = estacoes.filter(e => e.status === 'livre').length;
@@ -448,7 +738,8 @@ function renderEstacoes() {
     const tempoStr = cd ? formatarTempo(restante) : '—';
     const urgente = restante > 0 && restante < 300;
 
-    return `<div class="estacao-card ${e.status}">
+    return `<div class="estacao-card ${e.status}" data-estacao-id="${e.id}" data-estacao-nome="${e.nome}"
+        ondragover="onDragOverEstacao(event, this)" ondragleave="this.classList.remove('drop-target')" ondrop="onDropEstacao(event, ${e.id}, '${e.nome}')">
       <div class="estacao-header">
         <span class="estacao-nome">${e.nome}</span>
         <span class="status-badge ${e.status}">${e.status}</span>
@@ -462,6 +753,27 @@ function renderEstacoes() {
       ` : `<div class="estacao-info">${e.status === 'livre' ? 'Disponível' : 'Offline'}</div>`}
     </div>`;
   }).join('');
+}
+
+function onDragOverEstacao(ev, card) {
+  if (card.classList.contains('livre')) {
+    ev.preventDefault();
+    card.classList.add('drop-target');
+  }
+}
+
+async function onDropEstacao(ev, estacaoId, estacaoNome) {
+  ev.preventDefault();
+  document.querySelectorAll('.estacao-card').forEach(c => c.classList.remove('drop-target'));
+  const estacao = estacoes.find(e => e.id === estacaoId);
+  if (!estacao || estacao.status !== 'livre' || !draggedClienteId) return;
+  await liberarClienteId(draggedClienteId);
+}
+
+async function onDropFila(ev) {
+  ev.preventDefault();
+  if (!draggedClienteId) return;
+  await liberarClienteId(draggedClienteId);
 }
 
 function calcRestante(cd) {
@@ -480,18 +792,35 @@ function formatarTempo(s) {
     : `${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
 }
 
+function hhmmParaSegundos(str) {
+  const partes = str.split(':').map(p => parseInt(p, 10) || 0);
+  if (partes.length === 2) return partes[0] * 3600 + partes[1] * 60;
+  if (partes.length === 3) return partes[0] * 3600 + partes[1] * 60 + partes[2];
+  return 0;
+}
+
+function segundosParaHHMM(s) {
+  s = Math.floor(s || 0);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
 function atualizarCountdowns() {
   Object.values(countdowns).forEach(cd => {
-    const el = document.getElementById('cd-' + cd.sessaoId);
-    if (!el) return;
     const restante = calcRestante(cd);
-    el.textContent = formatarTempo(restante);
-    el.className = 'estacao-countdown' + (restante < 300 ? ' urgente' : '');
+    const elPainel = document.getElementById('cd-' + cd.sessaoId);
+    if (elPainel) {
+      elPainel.textContent = formatarTempo(restante);
+      elPainel.className = 'estacao-countdown' + (restante < 300 ? ' urgente' : '');
+    }
+    const elMapa = document.getElementById('pin-cd-' + cd.sessaoId);
+    if (elMapa) elMapa.textContent = formatarTempo(restante);
     if (restante <= 0) carregarTudo();
   });
 }
 
-// ── RENDER CLIENTES ────────────────────────────────────────────────────────
+// ── RENDER CLIENTES (painel coluna 2) ─────────────────────────────────────
 function renderClientes(lista) {
   const el = document.getElementById('lista-clientes');
   const items = lista || clientes;
@@ -505,7 +834,8 @@ function renderClientes(lista) {
     const naFila = idsNaFila.has(c.id) || c.na_fila;
     const saldoStr = c.saldo_segundos > 0 ? formatarTempo(c.saldo_segundos) : 'Sem saldo';
     const temSaldo = c.saldo_segundos > 0;
-    return `<div class="cliente-row ${naFila ? 'na-fila' : ''}">
+    return `<div class="cliente-row ${naFila ? 'na-fila' : ''}" draggable="true"
+        ondragstart="onDragStartCliente(event, ${c.id})" ondragend="onDragEndCliente(event)">
       <div class="cliente-avatar">${c.nome.substring(0,2)}</div>
       <div class="cliente-info">
         <div class="cliente-nome">${c.nome} ${naFila ? '<span class="tag-fila">Na fila</span>' : ''}</div>
@@ -525,6 +855,16 @@ function filtrarClientes() {
   renderClientes(clientes.filter(c =>
     c.nome.toLowerCase().includes(q) || c.login.toLowerCase().includes(q)
   ));
+}
+
+function onDragStartCliente(ev, clienteId) {
+  draggedClienteId = clienteId;
+  ev.target.classList.add('dragging');
+}
+function onDragEndCliente(ev) {
+  ev.target.classList.remove('dragging');
+  document.querySelectorAll('.estacao-card').forEach(c => c.classList.remove('drop-target'));
+  draggedClienteId = null;
 }
 
 // ── RENDER FILA ────────────────────────────────────────────────────────────
@@ -557,47 +897,248 @@ function tempoDecorrido(isoStr) {
   return `${Math.floor(diff/3600)}h`;
 }
 
-// ── MODAIS ─────────────────────────────────────────────────────────────────
-let grupos = [];
+// ── TELA 2: TABELA DE CLIENTES ────────────────────────────────────────────
+function renderTabelaClientes() {
+  const body = document.getElementById('tabela-clientes-body');
+  const q = document.getElementById('busca-cliente-tabela').value.toLowerCase();
+  const filtro = document.getElementById('filtro-status-cliente').value;
 
-function abrirModalCliente() {
-  document.getElementById('novo-cliente-login').value = '';
-  document.getElementById('novo-cliente-nome').value = '';
-  document.getElementById('novo-cliente-senha').value = '';
-  document.getElementById('modal-cliente-error').textContent = '';
+  let items = clientes.filter(c =>
+    (!q || c.nome.toLowerCase().includes(q) || c.login.toLowerCase().includes(q)) &&
+    (filtro === 'todos' || (filtro === 'ativos' && c.ativo) || (filtro === 'inativos' && !c.ativo))
+  );
+
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="6"><div class="empty">Nenhum cliente encontrado</div></td></tr>`;
+    return;
+  }
+
+  body.innerHTML = items.map(c => {
+    const saldoStr = c.saldo_segundos > 0
+      ? `<span style="color:var(--green);font-weight:600">${formatarSaldoCompleto(c.saldo_segundos)}</span>`
+      : `<span style="color:var(--text3)">00:00:00</span>`;
+    const criado = c.criado_em ? new Date(c.criado_em + 'Z').toLocaleDateString('pt-BR') : '—';
+    return `<tr>
+      <td>${c.login}</td>
+      <td>${c.nome}</td>
+      <td>${saldoStr}</td>
+      <td><span class="badge ${c.ativo ? 'ativo' : 'inativo'}">${c.ativo ? 'Ativo' : 'Inativo'}</span></td>
+      <td>${criado}</td>
+      <td class="table-actions">
+        <button class="btn-table" onclick="abrirModalCliente(${c.id})">Editar</button>
+        ${perfil === 'admin' ? `<button class="btn-table danger" onclick="excluirCliente(${c.id})">Excluir</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function formatarSaldoCompleto(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const seg = s % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
+}
+
+// ── MODAL CLIENTE (criar/editar) ──────────────────────────────────────────
+function abrirModalCliente(id) {
+  const errEl = document.getElementById('modal-cliente-error');
+  errEl.textContent = '';
+  document.getElementById('cliente-edit-id').value = id || '';
+  const ativoWrap = document.getElementById('campo-cliente-ativo-wrap');
+
+  if (id) {
+    const c = clientes.find(x => x.id === id);
+    document.getElementById('modal-cliente-titulo').textContent = 'Editar cliente';
+    document.getElementById('campo-cliente-login').value = c.login;
+    document.getElementById('campo-cliente-login').disabled = true;
+    document.getElementById('campo-cliente-nome').value = c.nome;
+    document.getElementById('campo-cliente-senha').value = '';
+    document.getElementById('campo-cliente-senha').placeholder = 'Deixe em branco para não alterar';
+    document.getElementById('campo-cliente-saldo').value = segundosParaHHMM(c.saldo_segundos);
+    document.getElementById('campo-cliente-obs').value = c.observacao || '';
+    document.getElementById('campo-cliente-ativo').checked = c.ativo;
+    ativoWrap.style.display = 'flex';
+  } else {
+    document.getElementById('modal-cliente-titulo').textContent = 'Novo cliente';
+    document.getElementById('campo-cliente-login').value = '';
+    document.getElementById('campo-cliente-login').disabled = false;
+    document.getElementById('campo-cliente-nome').value = '';
+    document.getElementById('campo-cliente-senha').value = '';
+    document.getElementById('campo-cliente-senha').placeholder = '••••••••';
+    document.getElementById('campo-cliente-saldo').value = '00:00';
+    document.getElementById('campo-cliente-obs').value = '';
+    ativoWrap.style.display = 'none';
+  }
   document.getElementById('modal-cliente').classList.add('show');
+}
+
+async function salvarCliente() {
+  const id = document.getElementById('cliente-edit-id').value;
+  const login = document.getElementById('campo-cliente-login').value.trim();
+  const nome = document.getElementById('campo-cliente-nome').value.trim();
+  const senha = document.getElementById('campo-cliente-senha').value;
+  const saldoStr = document.getElementById('campo-cliente-saldo').value.trim();
+  const obs = document.getElementById('campo-cliente-obs').value.trim();
+  const errEl = document.getElementById('modal-cliente-error');
+  errEl.textContent = '';
+
+  if (!login || !nome) { errEl.textContent = 'Preencha login e nome'; return; }
+  if (!id && !senha) { errEl.textContent = 'Senha obrigatória para novo cliente'; return; }
+
+  try {
+    if (id) {
+      const ativo = document.getElementById('campo-cliente-ativo').checked;
+      const body = {nome, ativo, observacao: obs || null, saldo_segundos: hhmmParaSegundos(saldoStr)};
+      if (senha) body.senha = senha;
+      await put(`/api/clientes/${id}`, body);
+      toast('Cliente atualizado!', 'ok');
+    } else {
+      await post('/api/clientes/', {login, nome, senha, observacao: obs || null});
+      toast('Cliente criado com sucesso!', 'ok');
+    }
+    fecharModal('modal-cliente');
+    await carregarClientes();
+    if (currentView === 'clientes') renderTabelaClientes();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+async function excluirCliente(id) {
+  if (!confirm('Excluir este cliente? Esta ação não pode ser desfeita.')) return;
+  try {
+    await del(`/api/clientes/${id}`);
+    toast('Cliente excluído', 'ok');
+    await carregarClientes();
+    renderTabelaClientes();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── TELA 3: MAPA ───────────────────────────────────────────────────────────
+function renderMapa() {
+  if (!mapaGrupoAtivo && grupos.length) mapaGrupoAtivo = grupos[0].id;
+
+  const tabsEl = document.getElementById('mapa-tabs');
+  tabsEl.innerHTML = grupos.map(g =>
+    `<div class="mapa-tab ${g.id === mapaGrupoAtivo ? 'active' : ''}" onclick="selecionarGrupoMapa(${g.id})">${g.nome}</div>`
+  ).join('');
+
+  const estacoesDoGrupo = estacoes.filter(e => e.grupo_id === mapaGrupoAtivo);
+  const ocupadas = estacoesDoGrupo.filter(e => e.status === 'ocupada').length;
+  document.getElementById('mapa-contador').textContent = `${ocupadas}/${estacoesDoGrupo.length} ocupadas`;
+
+  const canvas = document.getElementById('mapa-canvas');
+  if (!estacoesDoGrupo.length) {
+    canvas.innerHTML = '<div class="empty" style="padding:3rem">Nenhuma estação neste grupo</div>';
+    return;
+  }
+
+  canvas.innerHTML = estacoesDoGrupo.map(e => {
+    const sessao = sessoesAtivas.find(s => s.estacao_nome === e.nome);
+    const cd = sessao ? countdowns[sessao.id] : null;
+    const restante = cd ? calcRestante(cd) : 0;
+    return `<div class="estacao-pin ${e.status} ${mapaModoConfig ? 'config-mode' : ''}"
+        style="left:${e.pos_x || 0}px;top:${e.pos_y || 0}px"
+        data-id="${e.id}"
+        draggable="${mapaModoConfig}"
+        ondragstart="onPinDragStart(event, ${e.id})"
+        onclick="onPinClick(${e.id})">
+      <div class="pin-nome">${e.nome}</div>
+      ${sessao ? `<div class="pin-cliente">${sessao.cliente_nome}</div><div class="pin-countdown" id="pin-cd-${sessao.id}">${formatarTempo(restante)}</div>` : ''}
+      ${mapaModoConfig ? `<button class="pin-del" onclick="excluirEstacaoMapa(event, ${e.id})" aria-label="Excluir estação">✕</button>` : ''}
+    </div>`;
+  }).join('') + (mapaModoConfig ? `<button class="btn-sm" style="position:absolute;left:12px;top:12px" onclick="abrirModalEstacao()">+ Adicionar estação</button>` : '');
+
+  if (mapaModoConfig) {
+    canvas.ondragover = (ev) => ev.preventDefault();
+    canvas.ondrop = onPinDrop;
+  } else {
+    canvas.ondragover = null;
+    canvas.ondrop = null;
+  }
+}
+
+function selecionarGrupoMapa(id) {
+  mapaGrupoAtivo = id;
+  renderMapa();
+}
+
+function toggleModoConfigMapa() {
+  if (perfil !== 'admin') return;
+  mapaModoConfig = !mapaModoConfig;
+  document.getElementById('btn-modo-config').classList.toggle('active', mapaModoConfig);
+  fecharDetailPanel();
+  renderMapa();
+}
+
+let pinDragId = null, pinDragOffsetX = 0, pinDragOffsetY = 0;
+function onPinDragStart(ev, id) {
+  pinDragId = id;
+  const rect = ev.target.getBoundingClientRect();
+  pinDragOffsetX = ev.clientX - rect.left;
+  pinDragOffsetY = ev.clientY - rect.top;
+}
+
+async function onPinDrop(ev) {
+  ev.preventDefault();
+  if (!pinDragId) return;
+  const canvasRect = document.getElementById('mapa-canvas').getBoundingClientRect();
+  const x = Math.max(0, Math.round(ev.clientX - canvasRect.left - pinDragOffsetX));
+  const y = Math.max(0, Math.round(ev.clientY - canvasRect.top - pinDragOffsetY));
+  try {
+    await put(`/api/estacoes/${pinDragId}/posicao`, {pos_x: x, pos_y: y});
+    const e = estacoes.find(es => es.id === pinDragId);
+    if (e) { e.pos_x = x; e.pos_y = y; }
+    renderMapa();
+  } catch(e) { toast(e.message, 'err'); }
+  pinDragId = null;
+}
+
+function onPinClick(id) {
+  if (mapaModoConfig) return;
+  const e = estacoes.find(es => es.id === id);
+  if (!e) return;
+  const sessao = sessoesAtivas.find(s => s.estacao_nome === e.nome);
+  const cd = sessao ? countdowns[sessao.id] : null;
+  const restante = cd ? calcRestante(cd) : 0;
+
+  let html = `<h3>${e.nome}</h3>
+    <div class="detail-row"><span class="label">Status</span><span class="status-badge ${e.status}">${e.status}</span></div>
+    <div class="detail-row"><span class="label">Grupo</span>${e.grupo_nome || '—'}</div>`;
+
+  if (sessao) {
+    html += `
+      <div class="detail-row"><span class="label">Cliente</span>${sessao.cliente_nome} (${sessao.cliente_login})</div>
+      <div class="detail-row"><span class="label">Tempo total</span>${formatarTempo(sessao.tempo_total_segundos)}</div>
+      <div class="detail-row"><span class="label">Tempo restante</span>${formatarTempo(restante)}</div>
+      <button class="btn" style="margin-top:1rem" onclick="encerrarSessao(${sessao.id}, '${e.nome}')">Encerrar sessão</button>`;
+  }
+
+  document.getElementById('detail-panel-content').innerHTML = html;
+  document.getElementById('detail-panel').classList.add('show');
+}
+
+function fecharDetailPanel() {
+  document.getElementById('detail-panel').classList.remove('show');
+}
+
+async function excluirEstacaoMapa(ev, id) {
+  ev.stopPropagation();
+  if (!confirm('Excluir esta estação?')) return;
+  try {
+    await del(`/api/estacoes/${id}`);
+    toast('Estação excluída', 'ok');
+    await carregarEstacoes();
+    renderMapa();
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 async function abrirModalEstacao() {
   document.getElementById('nova-estacao-nome').value = '';
   document.getElementById('modal-estacao-error').textContent = '';
-  if (!grupos.length) {
-    try { grupos = await get('/api/estacoes/grupos'); } catch(e) { grupos = []; }
-  }
+  if (!grupos.length) await carregarGrupos();
   const sel = document.getElementById('nova-estacao-grupo');
-  sel.innerHTML = grupos.map(g => `<option value="${g.id}">${g.nome} (${formatarTempo(g.tempo_padrao_segundos)})</option>`).join('');
+  sel.innerHTML = grupos.map(g => `<option value="${g.id}" ${g.id === mapaGrupoAtivo ? 'selected' : ''}>${g.nome}</option>`).join('');
   document.getElementById('modal-estacao').classList.add('show');
-}
-
-function fecharModal(id) {
-  document.getElementById(id).classList.remove('show');
-}
-
-async function criarCliente() {
-  const login = document.getElementById('novo-cliente-login').value.trim();
-  const nome = document.getElementById('novo-cliente-nome').value.trim();
-  const senha = document.getElementById('novo-cliente-senha').value;
-  const errEl = document.getElementById('modal-cliente-error');
-  errEl.textContent = '';
-
-  if (!login || !nome || !senha) { errEl.textContent = 'Preencha todos os campos'; return; }
-
-  try {
-    await post('/api/clientes/', {login, nome, senha});
-    toast('Cliente criado com sucesso!', 'ok');
-    fecharModal('modal-cliente');
-    await carregarClientes();
-  } catch(e) { errEl.textContent = e.message; }
 }
 
 async function criarEstacao() {
@@ -615,30 +1156,130 @@ async function criarEstacao() {
     toast('Estação criada com sucesso!', 'ok');
     fecharModal('modal-estacao');
     await carregarEstacoes();
+    renderMapa();
   } catch(e) { errEl.textContent = e.message; }
 }
 
-// ── APPS PERMITIDOS ────────────────────────────────────────────────────────
-let appsCache = [];
+function fecharModal(id) {
+  document.getElementById(id).classList.remove('show');
+}
 
-async function abrirModalApps() {
-  document.getElementById('novo-app-nome').value = '';
-  document.getElementById('novo-app-processo').value = '';
-  document.getElementById('modal-apps-error').textContent = '';
+// ── TELA 4: CONFIGURAÇÕES ─────────────────────────────────────────────────
+async function carregarConfigData() {
+  await Promise.all([carregarOperadores(), carregarApps(), carregarConfigSistema(), carregarGrupos()]);
+  preencherSelectsRelatorio();
+}
 
-  if (!grupos.length) {
-    try { grupos = await get('/api/estacoes/grupos'); } catch(e) { grupos = []; }
+async function carregarOperadores() {
+  try { operadores = await get('/api/operadores/'); renderOperadores(); } catch(e) {}
+}
+
+function renderOperadores() {
+  const el = document.getElementById('lista-operadores');
+  if (!operadores.length) { el.innerHTML = '<div class="empty">Nenhum operador cadastrado</div>'; return; }
+  el.innerHTML = operadores.map(o => `
+    <div class="op-row">
+      <div class="op-info">
+        <div class="op-nome">${o.nome} <span class="badge ${o.ativo ? 'ativo' : 'inativo'}">${o.ativo ? 'Ativo' : 'Inativo'}</span></div>
+        <div class="app-detalhe">${o.login}</div>
+      </div>
+      <button class="btn-table" onclick="abrirModalOperador(${o.id})">Editar</button>
+      <button class="btn-table danger" onclick="excluirOperador(${o.id})">Excluir</button>
+    </div>
+  `).join('');
+}
+
+function abrirModalOperador(id) {
+  const errEl = document.getElementById('modal-operador-error');
+  errEl.textContent = '';
+  document.getElementById('operador-edit-id').value = id || '';
+  const ativoWrap = document.getElementById('campo-op-ativo-wrap');
+
+  if (id) {
+    const o = operadores.find(x => x.id === id);
+    document.getElementById('modal-operador-titulo').textContent = 'Editar operador';
+    document.getElementById('campo-op-login').value = o.login;
+    document.getElementById('campo-op-login').disabled = true;
+    document.getElementById('campo-op-nome').value = o.nome;
+    document.getElementById('campo-op-senha').value = '';
+    document.getElementById('campo-op-senha').placeholder = 'Deixe em branco para não alterar';
+    document.getElementById('campo-op-ativo').checked = o.ativo;
+    ativoWrap.style.display = 'flex';
+  } else {
+    document.getElementById('modal-operador-titulo').textContent = 'Novo operador';
+    document.getElementById('campo-op-login').value = '';
+    document.getElementById('campo-op-login').disabled = false;
+    document.getElementById('campo-op-nome').value = '';
+    document.getElementById('campo-op-senha').value = '';
+    document.getElementById('campo-op-senha').placeholder = '••••••••';
+    ativoWrap.style.display = 'none';
   }
-  const sel = document.getElementById('novo-app-grupo');
-  sel.innerHTML = '<option value="">Todos os grupos</option>' +
-    grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('');
+  document.getElementById('modal-operador').classList.add('show');
+}
 
-  document.getElementById('modal-apps').classList.add('show');
-  await carregarApps();
+async function salvarOperador() {
+  const id = document.getElementById('operador-edit-id').value;
+  const login = document.getElementById('campo-op-login').value.trim();
+  const nome = document.getElementById('campo-op-nome').value.trim();
+  const senha = document.getElementById('campo-op-senha').value;
+  const errEl = document.getElementById('modal-operador-error');
+  errEl.textContent = '';
+
+  if (!login || !nome) { errEl.textContent = 'Preencha login e nome'; return; }
+  if (!id && !senha) { errEl.textContent = 'Senha obrigatória para novo operador'; return; }
+
+  try {
+    if (id) {
+      const ativo = document.getElementById('campo-op-ativo').checked;
+      const body = {nome, ativo};
+      if (senha) body.senha = senha;
+      await put(`/api/operadores/${id}`, body);
+      toast('Operador atualizado!', 'ok');
+    } else {
+      await post('/api/operadores/', {login, nome, senha});
+      toast('Operador criado!', 'ok');
+    }
+    fecharModal('modal-operador');
+    await carregarOperadores();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+async function excluirOperador(id) {
+  if (!confirm('Excluir este operador?')) return;
+  try {
+    await del(`/api/operadores/${id}`);
+    toast('Operador excluído', 'ok');
+    await carregarOperadores();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function carregarConfigSistema() {
+  try {
+    configSistema = await get('/api/config/');
+    document.getElementById('cfg-reiniciar').checked = configSistema.reiniciar_ao_encerrar;
+    document.getElementById('cfg-tempo-padrao').value = segundosParaHHMM(configSistema.tempo_padrao_segundos);
+  } catch(e) {}
+}
+
+async function salvarConfigComportamento() {
+  const reiniciar = document.getElementById('cfg-reiniciar').checked;
+  const tempoStr = document.getElementById('cfg-tempo-padrao').value.trim();
+  try {
+    configSistema = await put('/api/config/', {
+      reiniciar_ao_encerrar: reiniciar,
+      tempo_padrao_segundos: hhmmParaSegundos(tempoStr || '02:00')
+    });
+    toast('Configurações salvas!', 'ok');
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 async function carregarApps() {
   const el = document.getElementById('lista-apps');
+  if (!grupos.length) await carregarGrupos();
+  const sel = document.getElementById('novo-app-grupo');
+  sel.innerHTML = '<option value="">Todos os grupos</option>' +
+    grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('');
+
   try {
     appsCache = await get('/api/apps/');
   } catch(e) {
@@ -655,9 +1296,9 @@ async function carregarApps() {
     <div class="app-row">
       <div class="app-info">
         <div class="app-nome">${a.nome} <span class="app-grupo-tag">${a.grupo_nome}</span></div>
-        <div class="app-detalhe">${a.processo}${a.caminho ? ' · ' + a.caminho : ' · (sem caminho — não abrirá pelo launcher)'}</div>
+        <div class="app-detalhe">${a.processo}${a.caminho ? ' · ' + a.caminho : ' · (sem caminho)'}</div>
       </div>
-      <button class="btn-del" onclick="removerApp(${a.id})">Remover</button>
+      <button class="btn-table danger" onclick="removerApp(${a.id})">Remover</button>
     </div>
   `).join('');
 }
@@ -667,43 +1308,87 @@ async function criarApp() {
   const processo = document.getElementById('novo-app-processo').value.trim();
   const caminho = document.getElementById('novo-app-caminho').value.trim();
   const grupoVal = document.getElementById('novo-app-grupo').value;
-  const errEl = document.getElementById('modal-apps-error');
+  const errEl = document.getElementById('config-apps-error');
   errEl.textContent = '';
 
   if (!nome || !processo) { errEl.textContent = 'Preencha nome e processo (.exe)'; return; }
 
   try {
     await post('/api/apps/', {
-      nome,
-      processo,
+      nome, processo,
       caminho: caminho || null,
       grupo_id: grupoVal ? parseInt(grupoVal) : null
     });
     document.getElementById('novo-app-nome').value = '';
     document.getElementById('novo-app-processo').value = '';
     document.getElementById('novo-app-caminho').value = '';
+    toast('App adicionado!', 'ok');
     await carregarApps();
   } catch(e) { errEl.textContent = e.message; }
 }
 
 async function removerApp(id) {
+  if (!confirm('Remover este app da whitelist?')) return;
   try {
     await del(`/api/apps/${id}`);
+    toast('App removido', 'ok');
     await carregarApps();
   } catch(e) { toast(e.message, 'err'); }
+}
+
+function preencherSelectsRelatorio() {
+  document.getElementById('rel-cliente').innerHTML = '<option value="">Todos</option>' +
+    clientes.map(c => `<option value="${c.id}">${c.nome} (${c.login})</option>`).join('');
+  document.getElementById('rel-estacao').innerHTML = '<option value="">Todas</option>' +
+    estacoes.map(e => `<option value="${e.nome}">${e.nome}</option>`).join('');
+}
+
+function exportarRelatorioCsv() {
+  const params = new URLSearchParams();
+  const inicio = document.getElementById('rel-inicio').value;
+  const fim = document.getElementById('rel-fim').value;
+  const clienteId = document.getElementById('rel-cliente').value;
+  const estacaoNome = document.getElementById('rel-estacao').value;
+  if (inicio) params.append('data_inicio', inicio);
+  if (fim) params.append('data_fim', fim);
+  if (clienteId) params.append('cliente_id', clienteId);
+  if (estacaoNome) params.append('estacao_nome', estacaoNome);
+
+  fetch(API + '/api/relatorios/csv?' + params.toString(), {
+    headers: {'Authorization': 'Bearer ' + token}
+  }).then(async res => {
+    if (!res.ok) { toast('Erro ao gerar relatório', 'err'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'relatorio_sessoes.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }).catch(() => toast('Erro ao gerar relatório', 'err'));
+}
+
+function abrirModalRelatorio() {
+  mudarView('config');
+  mudarConfigSecao('relatorios');
 }
 
 // ── AÇÕES ──────────────────────────────────────────────────────────────────
 async function liberarCliente(id, btn) {
   try {
     btn.disabled = true; btn.textContent = '...';
-    await post(`/api/estacoes/fila/${id}`);
-    toast('Cliente adicionado à fila!', 'ok');
-    await Promise.all([carregarFila(), carregarClientes()]);
+    await liberarClienteId(id);
   } catch(e) {
     toast(e.message, 'err');
     btn.disabled = false; btn.textContent = 'Liberar';
   }
+}
+
+async function liberarClienteId(id) {
+  try {
+    await post(`/api/estacoes/fila/${id}`);
+    toast('Cliente adicionado à fila!', 'ok');
+    await Promise.all([carregarFila(), carregarClientes()]);
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 async function removerFila(clienteId) {
@@ -720,6 +1405,7 @@ async function encerrarSessao(sessaoId, estacao) {
     const r = await post(`/api/sessoes/encerrar/${sessaoId}`);
     const saldo = r.saldo_restante > 0 ? ` Saldo restante: ${formatarTempo(r.saldo_restante)}` : '';
     toast(`Sessão encerrada.${saldo}`, 'ok');
+    fecharDetailPanel();
     await carregarTudo();
   } catch(e) { toast(e.message, 'err'); }
 }
@@ -747,8 +1433,7 @@ function conectarWS() {
 function handleEvento(evento, dados) {
   switch(evento) {
     case 'sessao_iniciada':
-      const inicio = new Date();
-      countdowns[dados.sessao_id] = { inicio, total: dados.tempo_segundos, estacao: dados.estacao, sessaoId: dados.sessao_id };
+      countdowns[dados.sessao_id] = { inicio: new Date(), total: dados.tempo_segundos, estacao: dados.estacao, sessaoId: dados.sessao_id };
       carregarTudo(); break;
     case 'sessao_encerrada':
       const cd = Object.values(countdowns).find(c => c.estacao === dados.estacao);

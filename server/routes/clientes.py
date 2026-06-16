@@ -19,6 +19,7 @@ class ClienteUpdate(BaseModel):
     senha: Optional[str] = None
     ativo: Optional[bool] = None
     observacao: Optional[str] = None
+    saldo_segundos: Optional[int] = None
 
 def serializar(u: Usuario):
     return {
@@ -38,7 +39,7 @@ def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "oper
     return [serializar(c) for c in clientes]
 
 @router.post("/")
-def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
     if db.query(Usuario).filter(Usuario.login == data.login).first():
         raise HTTPException(status_code=400, detail="Login já existe")
     cliente = Usuario(
@@ -52,7 +53,7 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
     return serializar(cliente)
 
 @router.put("/{id}")
-def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
@@ -60,8 +61,18 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Dep
     if data.senha: cliente.senha_hash = hash_senha(data.senha)
     if data.ativo is not None: cliente.ativo = data.ativo
     if data.observacao is not None: cliente.observacao = data.observacao
+    if data.saldo_segundos is not None: cliente.saldo_segundos = data.saldo_segundos
     db.commit()
     return serializar(cliente)
+
+@router.delete("/{id}")
+def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    db.delete(cliente)
+    db.commit()
+    return {"ok": True}
 
 @router.get("/{id}")
 def obter(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):

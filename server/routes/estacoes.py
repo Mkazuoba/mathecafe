@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from database import get_db
@@ -8,6 +9,17 @@ from auth import requer_perfil
 from websocket_manager import manager
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
+
+class EstacaoUpdate(BaseModel):
+    nome: Optional[str] = None
+    grupo_id: Optional[int] = None
+    ativa: Optional[bool] = None
+    pos_x: Optional[int] = None
+    pos_y: Optional[int] = None
+
+class PosicaoUpdate(BaseModel):
+    pos_x: int
+    pos_y: int
 
 def serial_estacao(e: Estacao):
     online = e.nome in manager.estacoes_online()
@@ -20,6 +32,8 @@ def serial_estacao(e: Estacao):
         "online": online,
         "ip": e.ip,
         "ultimo_ping": e.ultimo_ping.isoformat() if e.ultimo_ping else None,
+        "pos_x": e.pos_x,
+        "pos_y": e.pos_y,
     }
 
 def serial_autorizacao(a: Autorizacao):
@@ -63,6 +77,39 @@ def criar(nome: str, grupo_id: Optional[int] = None,
     e = Estacao(nome=nome, grupo_id=grupo_id)
     db.add(e); db.commit(); db.refresh(e)
     return serial_estacao(e)
+
+@router.put("/{id}")
+def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
+              _=Depends(requer_perfil("admin"))):
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if data.nome: e.nome = data.nome
+    if data.grupo_id is not None: e.grupo_id = data.grupo_id
+    if data.ativa is not None: e.ativa = data.ativa
+    if data.pos_x is not None: e.pos_x = data.pos_x
+    if data.pos_y is not None: e.pos_y = data.pos_y
+    db.commit()
+    return serial_estacao(e)
+
+@router.put("/{id}/posicao")
+def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db),
+                       _=Depends(requer_perfil("admin"))):
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    e.pos_x = data.pos_x
+    e.pos_y = data.pos_y
+    db.commit()
+    return serial_estacao(e)
+
+@router.delete("/{id}")
+def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    db.delete(e); db.commit()
+    return {"ok": True}
 
 # ── Fila de espera ────────────────────────────────────────────────────────────
 @router.get("/fila")
