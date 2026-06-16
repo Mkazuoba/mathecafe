@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MatheCafé</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1117;--bg2:#171b26;--bg3:#1e2333;--bg4:#252b3b;
+  --border:#2a3045;--border2:#3a4560;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+  --green:#22c55e;--green-bg:#052e16;--green-border:#166534;
+  --orange:#f97316;--orange-bg:#2c1003;--orange-border:#7c2d12;
+  --gray:#64748b;--gray-bg:#1e2333;
+  --blue:#3b82f6;--blue-bg:#172554;--blue-border:#1e40af;
+  --red:#ef4444;--red-bg:#2c0a0a;
+  --accent:#6366f1;--accent2:#4f46e5;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* LOGIN */
+#login-screen{display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
+.login-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2.5rem;width:340px}
+.login-logo{text-align:center;margin-bottom:2rem}
+.login-logo h1{font-size:1.8rem;font-weight:700;color:var(--accent);letter-spacing:2px}
+.login-logo p{color:var(--text2);font-size:0.85rem;margin-top:4px}
+.form-group{margin-bottom:1rem}
+.form-group label{display:block;font-size:0.8rem;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+.form-group input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.95rem;outline:none;transition:border .2s}
+.form-group input:focus{border-color:var(--accent)}
+.form-group select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:0.95rem;outline:none;transition:border .2s}
+.form-group select:focus{border-color:var(--accent)}
+.btn{width:100%;background:var(--accent);border:none;border-radius:8px;padding:11px;color:#fff;font-size:0.95rem;font-weight:600;cursor:pointer;transition:background .2s;margin-top:0.5rem}
+.btn:hover{background:var(--accent2)}
+.login-error{color:var(--red);font-size:0.85rem;text-align:center;margin-top:0.75rem;min-height:20px}
+
+/* HEADER */
+#app{display:none;flex-direction:column;height:100vh}
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 1.25rem;display:flex;align-items:center;gap:1rem;height:52px;flex-shrink:0}
+.header-logo{font-size:1.1rem;font-weight:700;color:var(--accent);letter-spacing:2px;margin-right:0.5rem}
+.header-badge{background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:0.75rem;color:var(--text2)}
+.header-spacer{flex:1}
+.ws-indicator{display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text3)}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--gray);transition:background .3s}
+.ws-dot.online{background:var(--green)}
+.header-user{font-size:0.85rem;color:var(--text2)}
+.btn-sm{background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:5px 12px;color:var(--text2);font-size:0.8rem;cursor:pointer;transition:all .2s}
+.btn-sm:hover{border-color:var(--border2);color:var(--text)}
+
+/* STATS BAR */
+.stats-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:6px 1.25rem;display:flex;gap:1.5rem;flex-shrink:0}
+.stat{display:flex;align-items:center;gap:6px;font-size:0.8rem}
+.stat-dot{width:8px;height:8px;border-radius:50%}
+.stat-val{font-weight:600}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:1fr 1.2fr 0.8fr;gap:0;flex:1;overflow:hidden}
+.panel{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
+.panel:last-child{border-right:none}
+.panel-header{background:var(--bg3);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.panel-title{font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text2)}
+.panel-count{background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.72rem;font-weight:600}
+.panel-body{flex:1;overflow-y:auto;padding:8px}
+.panel-body::-webkit-scrollbar{width:4px}
+.panel-body::-webkit-scrollbar-track{background:transparent}
+.panel-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* SEARCH */
+.search-wrap{padding:8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.search-wrap input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:0.85rem;outline:none}
+.search-wrap input:focus{border-color:var(--accent)}
+.search-wrap input::placeholder{color:var(--text3)}
+
+/* ESTAÇÃO CARD */
+.estacao-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:default;transition:border .2s}
+.estacao-card.ocupada{border-left:3px solid var(--orange)}
+.estacao-card.livre{border-left:3px solid var(--green)}
+.estacao-card.desligada{border-left:3px solid var(--gray);opacity:.6}
+.estacao-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.estacao-nome{font-weight:600;font-size:0.9rem}
+.status-badge{font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px}
+.status-badge.ocupada{background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-border)}
+.status-badge.livre{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.status-badge.desligada{background:var(--gray-bg);color:var(--gray)}
+.estacao-info{font-size:0.8rem;color:var(--text2)}
+.estacao-countdown{font-size:1.1rem;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums;letter-spacing:1px}
+.estacao-countdown.urgente{color:var(--red)}
+.estacao-actions{margin-top:8px;display:flex;gap:6px}
+.btn-action{border:none;border-radius:5px;padding:4px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-encerrar{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d}
+.btn-encerrar:hover{background:#7f1d1d;color:#fff}
+
+/* CLIENTE ROW */
+.cliente-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px;transition:border .2s}
+.cliente-row:hover{border-color:var(--border2)}
+.cliente-row.na-fila{border-color:var(--accent);background:var(--blue-bg)}
+.cliente-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;color:var(--accent);flex-shrink:0;text-transform:uppercase}
+.cliente-info{flex:1;min-width:0}
+.cliente-nome{font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cliente-login{font-size:0.75rem;color:var(--text3)}
+.cliente-saldo{font-size:0.78rem;font-weight:600;text-align:right;white-space:nowrap}
+.cliente-saldo.tem-saldo{color:var(--green)}
+.cliente-saldo.sem-saldo{color:var(--text3)}
+.btn-liberar{background:var(--accent);border:none;border-radius:5px;padding:4px 10px;color:#fff;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}
+.btn-liberar:hover{background:var(--accent2)}
+.btn-liberar:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
+.tag-fila{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);border-radius:10px;padding:1px 7px;font-size:0.7rem;font-weight:600}
+
+/* FILA */
+.fila-card{background:var(--bg3);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.fila-pos{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:0.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.fila-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.fila-nome{font-weight:600;font-size:0.88rem;flex:1}
+.fila-info{font-size:0.78rem;color:var(--text2);margin-left:32px}
+.fila-saldo{color:var(--green);font-weight:600}
+.btn-remover{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d;border-radius:5px;padding:3px 8px;font-size:0.72rem;cursor:pointer;transition:all .2s}
+.btn-remover:hover{background:#7f1d1d;color:#fff}
+
+/* EMPTY */
+.empty{text-align:center;color:var(--text3);font-size:0.85rem;padding:2rem 1rem}
+.empty i{font-size:2rem;display:block;margin-bottom:8px;opacity:.4}
+
+/* TOAST */
+.toast-wrap{position:fixed;bottom:1.5rem;right:1.5rem;display:flex;flex-direction:column;gap:8px;z-index:999}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:0.85rem;color:var(--text);animation:fadeIn .2s ease}
+.toast.ok{border-left:3px solid var(--green)}
+.toast.err{border-left:3px solid var(--red)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* BOTÃO PEQUENO NO HEADER DO PAINEL */
+.btn-add{background:var(--accent);border:none;border-radius:5px;padding:3px 10px;color:#fff;font-size:0.72rem;font-weight:600;cursor:pointer;transition:background .2s;margin-left:auto}
+.btn-add:hover{background:var(--accent2)}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.75rem;width:340px}
+.modal-box h3{font-size:1.1rem;margin-bottom:1.25rem;color:var(--text)}
+.modal-actions{display:flex;gap:8px;margin-top:1.25rem}
+.modal-actions .btn{margin-top:0}
+.btn-secondary{background:var(--bg4);color:var(--text2)}
+.btn-secondary:hover{background:var(--border2);color:var(--text)}
+.modal-error{color:var(--red);font-size:0.85rem;margin-top:0.5rem;min-height:18px}
+
+/* MODAL APPS (maior) */
+.modal-box.large{width:480px;max-height:80vh;display:flex;flex-direction:column}
+.apps-form{display:flex;gap:8px;margin-bottom:12px}
+.apps-form input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.85rem;outline:none}
+.apps-form input:focus{border-color:var(--accent)}
+.apps-form select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:0.85rem;outline:none}
+.apps-list{flex:1;overflow-y:auto;max-height:320px}
+.app-row{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;margin-bottom:5px;display:flex;align-items:center;gap:10px}
+.app-info{flex:1;min-width:0}
+.app-nome{font-size:0.85rem;font-weight:500}
+.app-detalhe{font-size:0.72rem;color:var(--text3);font-family:var(--font-mono,monospace)}
+.app-grupo-tag{font-size:0.68rem;background:var(--bg4);color:var(--text2);border-radius:8px;padding:1px 7px}
+.btn-del{background:var(--red-bg);color:var(--red);border:1px solid #7f1d1d;border-radius:5px;padding:4px 8px;font-size:0.72rem;cursor:pointer;transition:all .2s}
+.btn-del:hover{background:#7f1d1d;color:#fff}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>MatheCafé</h1>
+      <p>Sistema de gerenciamento</p>
+    </div>
+    <div class="form-group">
+      <label>Login</label>
+      <input type="text" id="login-input" placeholder="admin" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" id="senha-input" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn" onclick="fazerLogin()">Entrar</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="header">
+    <span class="header-logo">MatheCafé</span>
+    <span class="header-badge" id="perfil-badge">—</span>
+    <div class="stats-bar" style="border:none;padding:0;background:transparent;margin-left:8px">
+      <div class="stat"><div class="stat-dot" style="background:var(--green)"></div><span class="stat-val" id="stat-livre">0</span><span style="color:var(--text3);font-size:.78rem">livres</span></div>
+      <div class="stat"><div class="stat-dot" style="background:var(--orange)"></div><span class="stat-val" id="stat-ocupada">0</span><span style="color:var(--text3);font-size:.78rem">ocupadas</span></div>
+      <div class="stat"><div class="stat-dot" style="background:var(--gray)"></div><span class="stat-val" id="stat-desligada">0</span><span style="color:var(--text3);font-size:.78rem">desligadas</span></div>
+    </div>
+    <div class="header-spacer"></div>
+    <button class="btn-sm" onclick="abrirModalApps()">Apps permitidos</button>
+    <div class="ws-indicator"><div class="ws-dot" id="ws-dot"></div><span id="ws-label">desconectado</span></div>
+    <span class="header-user" id="header-user"></span>
+    <button class="btn-sm" onclick="sair()">Sair</button>
+  </div>
+
+  <div class="main">
+    <!-- PAINEL: ESTAÇÕES -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Estações</span>
+        <span class="panel-count" id="count-estacoes">0</span>
+        <button class="btn-add" onclick="abrirModalEstacao()">+ Nova estação</button>
+      </div>
+      <div class="panel-body" id="lista-estacoes">
+        <div class="empty">Carregando estações...</div>
+      </div>
+    </div>
+
+    <!-- PAINEL: CLIENTES -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Clientes</span>
+        <span class="panel-count" id="count-clientes">0</span>
+        <button class="btn-add" onclick="abrirModalCliente()">+ Novo cliente</button>
+      </div>
+      <div class="search-wrap">
+        <input type="text" id="busca-cliente" placeholder="Buscar por nome ou login..." oninput="filtrarClientes()">
+      </div>
+      <div class="panel-body" id="lista-clientes">
+        <div class="empty">Carregando clientes...</div>
+      </div>
+    </div>
+
+    <!-- PAINEL: FILA -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Fila de espera</span>
+        <span class="panel-count" id="count-fila">0</span>
+      </div>
+      <div class="panel-body" id="lista-fila">
+        <div class="empty">Nenhum cliente na fila</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<!-- MODAL: NOVO CLIENTE -->
+<div class="modal-overlay" id="modal-cliente">
+  <div class="modal-box">
+    <h3>Novo cliente</h3>
+    <div class="form-group">
+      <label>Login</label>
+      <input type="text" id="novo-cliente-login" placeholder="ex: joao123" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Nome</label>
+      <input type="text" id="novo-cliente-nome" placeholder="Nome completo" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" id="novo-cliente-senha" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="modal-error" id="modal-cliente-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-cliente')">Cancelar</button>
+      <button class="btn" onclick="criarCliente()">Criar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOVA ESTAÇÃO -->
+<div class="modal-overlay" id="modal-estacao">
+  <div class="modal-box">
+    <h3>Nova estação</h3>
+    <div class="form-group">
+      <label>Nome da estação</label>
+      <input type="text" id="nova-estacao-nome" placeholder="ex: PC-01" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>Grupo</label>
+      <select id="nova-estacao-grupo"></select>
+    </div>
+    <div class="modal-error" id="modal-estacao-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-estacao')">Cancelar</button>
+      <button class="btn" onclick="criarEstacao()">Criar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: APPS PERMITIDOS -->
+<div class="modal-overlay" id="modal-apps">
+  <div class="modal-box large">
+    <h3>Apps permitidos (whitelist)</h3>
+    <div class="apps-form">
+      <input type="text" id="novo-app-nome" placeholder="Nome (ex: Google Chrome)">
+      <input type="text" id="novo-app-processo" placeholder="processo.exe">
+      <select id="novo-app-grupo"></select>
+      <button class="btn" style="width:auto;margin-top:0;padding:8px 14px" onclick="criarApp()">+</button>
+    </div>
+    <div class="apps-form">
+      <input type="text" id="novo-app-caminho" placeholder="Caminho completo do .exe (ex: C:\Program Files\Google\Chrome\chrome.exe)" style="flex:1">
+    </div>
+    <div class="modal-error" id="modal-apps-error"></div>
+    <div class="apps-list" id="lista-apps">
+      <div class="empty">Carregando...</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-apps')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+const WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/painel';
+
+let token = null;
+let perfil = null;
+let nomeUsuario = '';
+let ws = null;
+
+let estacoes = [];
+let clientes = [];
+let fila = [];
+let sessoesAtivas = [];
+let countdowns = {}; // sessao_id -> {inicio, total}
+let countdownTimer = null;
+
+// ── LOGIN ──────────────────────────────────────────────────────────────────
+document.getElementById('senha-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') fazerLogin();
+});
+
+async function fazerLogin() {
+  const login = document.getElementById('login-input').value.trim();
+  const senha = document.getElementById('senha-input').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!login || !senha) { errEl.textContent = 'Preencha login e senha'; return; }
+
+  try {
+    const res = await fetch(API + '/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({login, senha})
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.detail || 'Erro ao fazer login'; return; }
+
+    token = data.access_token;
+    perfil = data.perfil;
+    nomeUsuario = data.nome;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('perfil-badge').textContent = perfil;
+    document.getElementById('header-user').textContent = nomeUsuario;
+    iniciar();
+  } catch(e) {
+    errEl.textContent = 'Servidor indisponível';
+  }
+}
+
+function sair() {
+  token = null; perfil = null;
+  if (ws) ws.close();
+  if (countdownTimer) clearInterval(countdownTimer);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-error').textContent = '';
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+function iniciar() {
+  carregarTudo();
+  conectarWS();
+  countdownTimer = setInterval(atualizarCountdowns, 1000);
+  setInterval(carregarTudo, 30000); // refresh a cada 30s
+}
+
+async function carregarTudo() {
+  await Promise.all([carregarEstacoes(), carregarClientes(), carregarFila(), carregarSessoes()]);
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function get(path) {
+  const res = await fetch(API + path, {headers: {'Authorization': 'Bearer ' + token}});
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function post(path, body) {
+  const res = await fetch(API + path, {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+  return res.json();
+}
+
+async function del(path) {
+  const res = await fetch(API + path, {method: 'DELETE', headers: {'Authorization': 'Bearer ' + token}});
+  if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Erro'); }
+  return res.json();
+}
+
+async function carregarEstacoes() {
+  try { estacoes = await get('/api/estacoes/'); renderEstacoes(); } catch(e) {}
+}
+
+async function carregarClientes() {
+  try { clientes = await get('/api/clientes/'); renderClientes(); } catch(e) {}
+}
+
+async function carregarFila() {
+  try { fila = await get('/api/estacoes/fila'); renderFila(); } catch(e) {}
+}
+
+async function carregarSessoes() {
+  try {
+    sessoesAtivas = await get('/api/sessoes/ativas');
+    // rebuild countdowns
+    countdowns = {};
+    sessoesAtivas.forEach(s => {
+      const inicio = new Date(s.iniciada_em + 'Z');
+      countdowns[s.id] = { inicio, total: s.tempo_total_segundos, estacao: s.estacao_nome, sessaoId: s.id };
+    });
+    renderEstacoes();
+  } catch(e) {}
+}
+
+// ── RENDER ESTAÇÕES ────────────────────────────────────────────────────────
+function renderEstacoes() {
+  const el = document.getElementById('lista-estacoes');
+  const livre = estacoes.filter(e => e.status === 'livre').length;
+  const ocupada = estacoes.filter(e => e.status === 'ocupada').length;
+  const desligada = estacoes.filter(e => e.status === 'desligada').length;
+
+  document.getElementById('stat-livre').textContent = livre;
+  document.getElementById('stat-ocupada').textContent = ocupada;
+  document.getElementById('stat-desligada').textContent = desligada;
+  document.getElementById('count-estacoes').textContent = estacoes.length;
+
+  if (!estacoes.length) { el.innerHTML = '<div class="empty">Nenhuma estação cadastrada</div>'; return; }
+
+  el.innerHTML = estacoes.map(e => {
+    const sessao = sessoesAtivas.find(s => s.estacao_nome === e.nome);
+    const cd = sessao ? countdowns[sessao.id] : null;
+    const restante = cd ? calcRestante(cd) : 0;
+    const tempoStr = cd ? formatarTempo(restante) : '—';
+    const urgente = restante > 0 && restante < 300;
+
+    return `<div class="estacao-card ${e.status}">
+      <div class="estacao-header">
+        <span class="estacao-nome">${e.nome}</span>
+        <span class="status-badge ${e.status}">${e.status}</span>
+      </div>
+      ${sessao ? `
+        <div class="estacao-info" style="margin-bottom:4px">${sessao.cliente_nome} <span style="color:var(--text3)">(${sessao.cliente_login})</span></div>
+        <div class="estacao-countdown ${urgente ? 'urgente' : ''}" id="cd-${sessao.id}">${tempoStr}</div>
+        <div class="estacao-actions">
+          <button class="btn-action btn-encerrar" onclick="encerrarSessao(${sessao.id}, '${e.nome}')">Encerrar sessão</button>
+        </div>
+      ` : `<div class="estacao-info">${e.status === 'livre' ? 'Disponível' : 'Offline'}</div>`}
+    </div>`;
+  }).join('');
+}
+
+function calcRestante(cd) {
+  const agora = Date.now();
+  const decorrido = (agora - cd.inicio.getTime()) / 1000;
+  return Math.max(0, cd.total - decorrido);
+}
+
+function formatarTempo(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const seg = s % 60;
+  return h > 0
+    ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`
+    : `${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
+}
+
+function atualizarCountdowns() {
+  Object.values(countdowns).forEach(cd => {
+    const el = document.getElementById('cd-' + cd.sessaoId);
+    if (!el) return;
+    const restante = calcRestante(cd);
+    el.textContent = formatarTempo(restante);
+    el.className = 'estacao-countdown' + (restante < 300 ? ' urgente' : '');
+    if (restante <= 0) carregarTudo();
+  });
+}
+
+// ── RENDER CLIENTES ────────────────────────────────────────────────────────
+function renderClientes(lista) {
+  const el = document.getElementById('lista-clientes');
+  const items = lista || clientes;
+  document.getElementById('count-clientes').textContent = clientes.length;
+
+  if (!items.length) { el.innerHTML = '<div class="empty">Nenhum cliente encontrado</div>'; return; }
+
+  const idsNaFila = new Set(fila.map(f => f.cliente_id));
+
+  el.innerHTML = items.map(c => {
+    const naFila = idsNaFila.has(c.id) || c.na_fila;
+    const saldoStr = c.saldo_segundos > 0 ? formatarTempo(c.saldo_segundos) : 'Sem saldo';
+    const temSaldo = c.saldo_segundos > 0;
+    return `<div class="cliente-row ${naFila ? 'na-fila' : ''}">
+      <div class="cliente-avatar">${c.nome.substring(0,2)}</div>
+      <div class="cliente-info">
+        <div class="cliente-nome">${c.nome} ${naFila ? '<span class="tag-fila">Na fila</span>' : ''}</div>
+        <div class="cliente-login">${c.login}</div>
+      </div>
+      <div class="cliente-saldo ${temSaldo ? 'tem-saldo' : 'sem-saldo'}">${saldoStr}</div>
+      <button class="btn-liberar" onclick="liberarCliente(${c.id}, this)" ${naFila ? 'disabled' : ''}>
+        ${naFila ? 'Na fila' : 'Liberar'}
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function filtrarClientes() {
+  const q = document.getElementById('busca-cliente').value.toLowerCase();
+  if (!q) { renderClientes(); return; }
+  renderClientes(clientes.filter(c =>
+    c.nome.toLowerCase().includes(q) || c.login.toLowerCase().includes(q)
+  ));
+}
+
+// ── RENDER FILA ────────────────────────────────────────────────────────────
+function renderFila() {
+  const el = document.getElementById('lista-fila');
+  document.getElementById('count-fila').textContent = fila.length;
+
+  if (!fila.length) { el.innerHTML = '<div class="empty">Nenhum cliente na fila</div>'; return; }
+
+  el.innerHTML = fila.map((f, i) => {
+    const saldo = f.saldo_segundos > 0 ? formatarTempo(f.saldo_segundos) : 'Sessão nova';
+    const ha = tempoDecorrido(f.autorizado_em);
+    return `<div class="fila-card">
+      <div class="fila-header">
+        <div class="fila-pos">${i+1}</div>
+        <span class="fila-nome">${f.cliente_nome}</span>
+        <button class="btn-remover" onclick="removerFila(${f.cliente_id})">Remover</button>
+      </div>
+      <div class="fila-info">
+        ${f.cliente_login} · Saldo: <span class="fila-saldo">${saldo}</span> · Aguardando há ${ha}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function tempoDecorrido(isoStr) {
+  const diff = (Date.now() - new Date(isoStr + (isoStr.endsWith('Z') ? '' : 'Z')).getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s`;
+  if (diff < 3600) return `${Math.floor(diff/60)}min`;
+  return `${Math.floor(diff/3600)}h`;
+}
+
+// ── MODAIS ─────────────────────────────────────────────────────────────────
+let grupos = [];
+
+function abrirModalCliente() {
+  document.getElementById('novo-cliente-login').value = '';
+  document.getElementById('novo-cliente-nome').value = '';
+  document.getElementById('novo-cliente-senha').value = '';
+  document.getElementById('modal-cliente-error').textContent = '';
+  document.getElementById('modal-cliente').classList.add('show');
+}
+
+async function abrirModalEstacao() {
+  document.getElementById('nova-estacao-nome').value = '';
+  document.getElementById('modal-estacao-error').textContent = '';
+  if (!grupos.length) {
+    try { grupos = await get('/api/estacoes/grupos'); } catch(e) { grupos = []; }
+  }
+  const sel = document.getElementById('nova-estacao-grupo');
+  sel.innerHTML = grupos.map(g => `<option value="${g.id}">${g.nome} (${formatarTempo(g.tempo_padrao_segundos)})</option>`).join('');
+  document.getElementById('modal-estacao').classList.add('show');
+}
+
+function fecharModal(id) {
+  document.getElementById(id).classList.remove('show');
+}
+
+async function criarCliente() {
+  const login = document.getElementById('novo-cliente-login').value.trim();
+  const nome = document.getElementById('novo-cliente-nome').value.trim();
+  const senha = document.getElementById('novo-cliente-senha').value;
+  const errEl = document.getElementById('modal-cliente-error');
+  errEl.textContent = '';
+
+  if (!login || !nome || !senha) { errEl.textContent = 'Preencha todos os campos'; return; }
+
+  try {
+    await post('/api/clientes/', {login, nome, senha});
+    toast('Cliente criado com sucesso!', 'ok');
+    fecharModal('modal-cliente');
+    await carregarClientes();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+async function criarEstacao() {
+  const nome = document.getElementById('nova-estacao-nome').value.trim();
+  const grupoId = document.getElementById('nova-estacao-grupo').value;
+  const errEl = document.getElementById('modal-estacao-error');
+  errEl.textContent = '';
+
+  if (!nome) { errEl.textContent = 'Informe o nome da estação'; return; }
+
+  try {
+    const params = new URLSearchParams({nome});
+    if (grupoId) params.append('grupo_id', grupoId);
+    await post('/api/estacoes/?' + params.toString());
+    toast('Estação criada com sucesso!', 'ok');
+    fecharModal('modal-estacao');
+    await carregarEstacoes();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+// ── APPS PERMITIDOS ────────────────────────────────────────────────────────
+let appsCache = [];
+
+async function abrirModalApps() {
+  document.getElementById('novo-app-nome').value = '';
+  document.getElementById('novo-app-processo').value = '';
+  document.getElementById('modal-apps-error').textContent = '';
+
+  if (!grupos.length) {
+    try { grupos = await get('/api/estacoes/grupos'); } catch(e) { grupos = []; }
+  }
+  const sel = document.getElementById('novo-app-grupo');
+  sel.innerHTML = '<option value="">Todos os grupos</option>' +
+    grupos.map(g => `<option value="${g.id}">${g.nome}</option>`).join('');
+
+  document.getElementById('modal-apps').classList.add('show');
+  await carregarApps();
+}
+
+async function carregarApps() {
+  const el = document.getElementById('lista-apps');
+  try {
+    appsCache = await get('/api/apps/');
+  } catch(e) {
+    el.innerHTML = '<div class="empty">Erro ao carregar</div>';
+    return;
+  }
+
+  if (!appsCache.length) {
+    el.innerHTML = '<div class="empty">Nenhum app na whitelist ainda.<br>Sem restrições, todos os apps ficam liberados.</div>';
+    return;
+  }
+
+  el.innerHTML = appsCache.map(a => `
+    <div class="app-row">
+      <div class="app-info">
+        <div class="app-nome">${a.nome} <span class="app-grupo-tag">${a.grupo_nome}</span></div>
+        <div class="app-detalhe">${a.processo}${a.caminho ? ' · ' + a.caminho : ' · (sem caminho — não abrirá pelo launcher)'}</div>
+      </div>
+      <button class="btn-del" onclick="removerApp(${a.id})">Remover</button>
+    </div>
+  `).join('');
+}
+
+async function criarApp() {
+  const nome = document.getElementById('novo-app-nome').value.trim();
+  const processo = document.getElementById('novo-app-processo').value.trim();
+  const caminho = document.getElementById('novo-app-caminho').value.trim();
+  const grupoVal = document.getElementById('novo-app-grupo').value;
+  const errEl = document.getElementById('modal-apps-error');
+  errEl.textContent = '';
+
+  if (!nome || !processo) { errEl.textContent = 'Preencha nome e processo (.exe)'; return; }
+
+  try {
+    await post('/api/apps/', {
+      nome,
+      processo,
+      caminho: caminho || null,
+      grupo_id: grupoVal ? parseInt(grupoVal) : null
+    });
+    document.getElementById('novo-app-nome').value = '';
+    document.getElementById('novo-app-processo').value = '';
+    document.getElementById('novo-app-caminho').value = '';
+    await carregarApps();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+async function removerApp(id) {
+  try {
+    await del(`/api/apps/${id}`);
+    await carregarApps();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── AÇÕES ──────────────────────────────────────────────────────────────────
+async function liberarCliente(id, btn) {
+  try {
+    btn.disabled = true; btn.textContent = '...';
+    await post(`/api/estacoes/fila/${id}`);
+    toast('Cliente adicionado à fila!', 'ok');
+    await Promise.all([carregarFila(), carregarClientes()]);
+  } catch(e) {
+    toast(e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Liberar';
+  }
+}
+
+async function removerFila(clienteId) {
+  try {
+    await del(`/api/estacoes/fila/${clienteId}`);
+    toast('Removido da fila', 'ok');
+    await Promise.all([carregarFila(), carregarClientes()]);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function encerrarSessao(sessaoId, estacao) {
+  if (!confirm(`Encerrar sessão da estação ${estacao}?`)) return;
+  try {
+    const r = await post(`/api/sessoes/encerrar/${sessaoId}`);
+    const saldo = r.saldo_restante > 0 ? ` Saldo restante: ${formatarTempo(r.saldo_restante)}` : '';
+    toast(`Sessão encerrada.${saldo}`, 'ok');
+    await carregarTudo();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── WEBSOCKET ──────────────────────────────────────────────────────────────
+function conectarWS() {
+  try {
+    ws = new WebSocket(WS_URL + '?token=' + token);
+    ws.onopen = () => {
+      document.getElementById('ws-dot').className = 'ws-dot online';
+      document.getElementById('ws-label').textContent = 'tempo real';
+    };
+    ws.onclose = () => {
+      document.getElementById('ws-dot').className = 'ws-dot';
+      document.getElementById('ws-label').textContent = 'reconectando...';
+      setTimeout(conectarWS, 3000);
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handleEvento(msg.evento, msg.dados);
+    };
+  } catch(e) {}
+}
+
+function handleEvento(evento, dados) {
+  switch(evento) {
+    case 'sessao_iniciada':
+      const inicio = new Date();
+      countdowns[dados.sessao_id] = { inicio, total: dados.tempo_segundos, estacao: dados.estacao, sessaoId: dados.sessao_id };
+      carregarTudo(); break;
+    case 'sessao_encerrada':
+      const cd = Object.values(countdowns).find(c => c.estacao === dados.estacao);
+      if (cd) delete countdowns[cd.sessaoId];
+      carregarTudo(); break;
+    case 'fila_atualizada':
+      carregarFila(); carregarClientes(); break;
+    case 'estacao_online': case 'estacao_offline':
+      carregarEstacoes(); break;
+  }
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+function toast(msg, tipo = 'ok') {
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast ' + tipo;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+</script>
+</body>
+</html>
