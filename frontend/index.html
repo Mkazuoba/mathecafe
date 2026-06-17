@@ -126,9 +126,12 @@ button{font-family:inherit}
 .cliente-info{flex:1;min-width:0}
 .cliente-nome{font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
 .cliente-login{font-size:0.75rem;color:var(--text3)}
-.cliente-saldo{font-size:0.78rem;font-weight:600;text-align:right;white-space:nowrap}
+.cliente-saldo{font-size:0.75rem;font-weight:600}
 .cliente-saldo.tem-saldo{color:var(--green)}
 .cliente-saldo.sem-saldo{color:var(--text3)}
+.cliente-saldo.sem-saldo-aviso{color:var(--amber);font-weight:500}
+.btn-edit-saldo{background:none;border:none;color:var(--text3);cursor:pointer;font-size:0.78rem;padding:2px 5px;border-radius:4px;line-height:1;opacity:0;transition:opacity .15s;flex-shrink:0}
+.cliente-row:hover .btn-edit-saldo{opacity:1}
 .btn-liberar{background:var(--accent);border:none;border-radius:5px;padding:4px 10px;color:#fff;font-size:0.75rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .2s;flex-shrink:0}
 .btn-liberar:hover{background:var(--accent2)}
 .btn-liberar:disabled{background:var(--bg4);color:var(--text3);cursor:not-allowed}
@@ -558,6 +561,23 @@ table.data-table tr:hover td{background:var(--bg3)}
   </div>
 </div>
 
+<!-- MODAL: EDIÇÃO RÁPIDA DE SALDO -->
+<div class="modal-overlay" id="modal-saldo">
+  <div class="modal-box" style="width:280px">
+    <h3>Editar saldo de tempo</h3>
+    <input type="hidden" id="saldo-edit-id">
+    <div class="form-group">
+      <label for="campo-saldo-valor">Saldo (HH:MM:SS)</label>
+      <input type="text" id="campo-saldo-valor" placeholder="00:00:00" autocomplete="off">
+    </div>
+    <div class="modal-error" id="modal-saldo-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-saldo')">Cancelar</button>
+      <button class="btn" onclick="salvarSaldoRapido()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = window.location.origin;
 const WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/painel';
@@ -818,9 +838,9 @@ function formatarTempo(s) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const seg = s % 60;
-  return h > 0
-    ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`
-    : `${String(m).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
+  return String(h).padStart(2,'0') + ':' +
+         String(m).padStart(2,'0') + ':' +
+         String(seg).padStart(2,'0');
 }
 
 function hhmmParaSegundos(str) {
@@ -863,16 +883,22 @@ function renderClientes(lista) {
 
   el.innerHTML = items.map(c => {
     const naFila = idsNaFila.has(c.id) || c.na_fila;
-    const saldoStr = c.saldo_segundos > 0 ? formatarTempo(c.saldo_segundos) : 'Sem saldo';
     const temSaldo = c.saldo_segundos > 0;
+    const saldoTxt = temSaldo
+      ? `▶ ${formatarTempo(c.saldo_segundos)} disponível`
+      : '⚠ Sem saldo — receberá tempo padrão';
+    const saldoClass = temSaldo ? 'tem-saldo' : 'sem-saldo-aviso';
     return `<div class="cliente-row ${naFila ? 'na-fila' : ''}" draggable="true"
         ondragstart="onDragStartCliente(event, ${c.id})" ondragend="onDragEndCliente(event)">
       <div class="cliente-avatar">${c.nome.substring(0,2)}</div>
       <div class="cliente-info">
         <div class="cliente-nome">${c.nome} ${naFila ? '<span class="tag-fila">Na fila</span>' : ''}</div>
         <div class="cliente-login">${c.login}</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:3px">
+          <span class="cliente-saldo ${saldoClass}">${saldoTxt}</span>
+          <button class="btn-edit-saldo" onclick="editarSaldo(${c.id}, event)" title="Editar saldo">✏</button>
+        </div>
       </div>
-      <div class="cliente-saldo ${temSaldo ? 'tem-saldo' : 'sem-saldo'}">${saldoStr}</div>
       <button class="btn-liberar" onclick="liberarCliente(${c.id}, this)" ${naFila ? 'disabled' : ''}>
         ${naFila ? 'Na fila' : 'Liberar'}
       </button>
@@ -1042,6 +1068,29 @@ async function excluirCliente(id) {
     await carregarClientes();
     renderTabelaClientes();
   } catch(e) { toast(e.message, 'err'); }
+}
+
+function editarSaldo(clienteId, ev) {
+  ev.stopPropagation();
+  const c = clientes.find(x => x.id === clienteId);
+  if (!c) return;
+  document.getElementById('saldo-edit-id').value = clienteId;
+  document.getElementById('campo-saldo-valor').value = formatarTempo(c.saldo_segundos);
+  document.getElementById('modal-saldo-error').textContent = '';
+  document.getElementById('modal-saldo').classList.add('show');
+}
+
+async function salvarSaldoRapido() {
+  const id = document.getElementById('saldo-edit-id').value;
+  const val = document.getElementById('campo-saldo-valor').value.trim();
+  const errEl = document.getElementById('modal-saldo-error');
+  errEl.textContent = '';
+  try {
+    await put(`/api/clientes/${id}`, {saldo_segundos: hhmmParaSegundos(val)});
+    toast('Saldo atualizado!', 'ok');
+    fecharModal('modal-saldo');
+    await carregarClientes();
+  } catch(e) { errEl.textContent = e.message; }
 }
 
 // ── TELA 3: MAPA ───────────────────────────────────────────────────────────

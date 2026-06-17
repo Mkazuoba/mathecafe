@@ -25,6 +25,7 @@ import argparse
 import time
 import os
 import subprocess
+import ctypes
 from datetime import datetime
 from io import BytesIO
 import urllib.request
@@ -117,6 +118,7 @@ class AgenteApp:
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
 
         self.root.after(100, self._processar_fila)
+        self.root.after(500, self._verificar_privilegios)
         self.root.after(1000, self._atualizar_countdown)
         self.root.after(3000, self._verificar_processos)
 
@@ -482,7 +484,11 @@ class AgenteApp:
             "tempo_consumido_segundos": self.tempo_total
         })
         self._log("⏰ Tempo esgotado!")
+        vai_reiniciar = self.reiniciar_ao_encerrar
         self._voltar_login()
+        if vai_reiniciar:
+            self.lbl_login_erro.config(
+                text="⏰ Sessão encerrada. PC reiniciando em 30s...", fg="#f59e0b")
         self._reiniciar_se_necessario()
 
     def _reiniciar_se_necessario(self):
@@ -509,6 +515,14 @@ class AgenteApp:
         self.frame_log.pack(fill="both", expand=False)
 
     # ── Manutenção admin ─────────────────────────────────────────────────────
+    def _verificar_privilegios(self):
+        try:
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                self._log("⚠ AVISO: rodando sem privilégios de admin.")
+                self._log("  Bloqueio de processos pode não funcionar.")
+        except Exception:
+            pass
+
     def _abrir_prompt_admin(self, event=None):
         from tkinter import messagebox
 
