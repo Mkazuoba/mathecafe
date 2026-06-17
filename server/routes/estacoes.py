@@ -23,12 +23,14 @@ class PosicaoUpdate(BaseModel):
 
 def serial_estacao(e: Estacao):
     online = e.nome in manager.estacoes_online()
+    # "manutencao" persiste mesmo com WebSocket desconectado (reconexão rápida)
+    status = e.status if (online or e.status == "manutencao") else "desligada"
     return {
         "id": e.id,
         "nome": e.nome,
         "grupo_id": e.grupo_id,
         "grupo_nome": e.grupo.nome if e.grupo else None,
-        "status": e.status if online else "desligada",
+        "status": status,
         "online": online,
         "ip": e.ip,
         "ultimo_ping": e.ultimo_ping.isoformat() if e.ultimo_ping else None,

@@ -141,7 +141,7 @@ class AgenteApp:
         self.f_icon = tkfont.Font(family="Segoe UI", size=22, weight="bold")
 
         # ── Cabeçalho ──
-        header = tk.Frame(self.root, bg=bg2)
+        self.header_frame = header = tk.Frame(self.root, bg=bg2)
         header.pack(fill="x")
         tk.Label(header, text="MatheCafé", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=14, pady=10)
         self.lbl_estacao = tk.Label(header, text=self.estacao, font=normal_font, fg=text2, bg=bg2)
@@ -206,6 +206,14 @@ class AgenteApp:
         self.log.pack(fill="both", padx=10, pady=(2, 10), expand=False)
         self.log.configure(state="disabled")
         self.frame_log.pack(fill="both", expand=False)
+
+        # ── Barra de manutenção (oculta inicialmente — exibida via pack before=header) ──
+        self.frame_manutencao = tk.Frame(self.root, bg="#f59e0b")
+        tk.Label(self.frame_manutencao, text="🔧 Modo Manutenção ativo",
+                 bg="#f59e0b", fg="black", font=normal_font).pack(side="left", padx=14, pady=8)
+        tk.Button(self.frame_manutencao, text="Encerrar manutenção",
+                  bg="#92400e", fg="white", relief="flat", font=small_font,
+                  command=self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
 
     def _log(self, msg):
         self.log.configure(state="normal")
@@ -339,7 +347,10 @@ class AgenteApp:
         self.frame_sessao.pack(fill="both", expand=True)
 
         # Modo tela cheia durante a sessão
+        self.root.attributes("-topmost", True)
         self.root.attributes("-fullscreen", True)
+        self.root.lift()
+        self.root.focus_force()
 
         if self.whitelist_procs:
             self._log(f"Sessão iniciada — {self._fmt(self.tempo_total)} disponíveis | "
@@ -510,6 +521,7 @@ class AgenteApp:
             pass
 
         self.root.attributes("-fullscreen", False)
+        self.root.attributes("-topmost", False)
         self.frame_sessao.pack_forget()
         self.frame_login.pack(fill="both", expand=True)
         self.frame_log.pack(fill="both", expand=False)
@@ -524,6 +536,10 @@ class AgenteApp:
             pass
 
     def _abrir_prompt_admin(self, event=None):
+        if self.modo_manutencao_ativo:
+            self._sair_modo_manutencao()
+            return
+
         from tkinter import messagebox
 
         prompt = tk.Toplevel(self.root)
@@ -568,11 +584,28 @@ class AgenteApp:
                 "motivo": "manutencao",
                 "tempo_consumido_segundos": consumido
             })
-            self._voltar_login()
+            self._voltar_login()  # já desativa fullscreen e topmost
         else:
             self.root.attributes("-fullscreen", False)
-        self.root.attributes("-fullscreen", False)
+            self.root.attributes("-topmost", False)
+
+        self.modo_manutencao_ativo = True
+        self._enviar({"evento": "status_estacao", "status": "manutencao"})
+        self.frame_manutencao.pack(fill="x", before=self.header_frame)
         self._log("🔧 Modo manutenção ativado pelo admin")
+
+    def _sair_modo_manutencao(self):
+        self.modo_manutencao_ativo = False
+        self.frame_manutencao.pack_forget()
+        self._enviar({"evento": "status_estacao", "status": "livre"})
+        self.frame_sessao.pack_forget()
+        self.frame_login.pack(fill="both", expand=True)
+        self.frame_log.pack(fill="both", expand=False)
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-fullscreen", True)
+        self.root.lift()
+        self.root.focus_force()
+        self._log("🔧 Modo manutenção encerrado — retornando ao login")
 
     @staticmethod
     def _fmt(segundos):
