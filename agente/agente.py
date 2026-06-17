@@ -100,6 +100,7 @@ class AgenteApp:
         self.whitelist_procs = set()
         self.reiniciar_ao_encerrar = False
         self._img_refs = []
+        self.modo_manutencao_ativo = False
 
         self.root.title(f"MatheCafé — {estacao}")
         self.root.geometry("420x480")

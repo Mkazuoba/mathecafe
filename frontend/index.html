@@ -17,6 +17,7 @@
   --blue:#3b82f6;--blue-bg:#172554;--blue-border:#1e40af;
   --red:#ef4444;--red-bg:#2c0a0a;
   --green:#22c55e;--amber:#f59e0b;
+  --manutencao:#f59e0b;--manutencao-bg:#2c1a00;--manutencao-border:#78350f;
   --accent:#6366f1;--accent2:#4f46e5;
 }
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden}
@@ -100,6 +101,7 @@ button{font-family:inherit}
 .estacao-card.ocupada{border-left:3px solid var(--ocupada)}
 .estacao-card.livre{border-left:3px solid var(--livre)}
 .estacao-card.desligada{border-left:3px solid var(--desligada);opacity:.6}
+.estacao-card.manutencao{border-left:3px solid var(--manutencao);opacity:.85}
 .estacao-card.drop-target{box-shadow:0 0 0 2px var(--accent)}
 .estacao-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .estacao-nome{font-weight:600;font-size:0.9rem}
@@ -107,6 +109,7 @@ button{font-family:inherit}
 .status-badge.ocupada{background:var(--ocupada-bg);color:var(--ocupada);border:1px solid var(--ocupada-border)}
 .status-badge.livre{background:var(--livre-bg);color:var(--livre);border:1px solid var(--livre-border)}
 .status-badge.desligada{background:var(--desligada-bg);color:var(--desligada)}
+.status-badge.manutencao{background:var(--manutencao-bg);color:var(--manutencao);border:1px solid var(--manutencao-border)}
 .estacao-info{font-size:0.8rem;color:var(--text2)}
 .estacao-countdown{font-size:1.1rem;font-weight:700;color:var(--ocupada);font-variant-numeric:tabular-nums;letter-spacing:1px}
 .estacao-countdown.urgente{color:var(--red)}
@@ -179,6 +182,7 @@ table.data-table tr:hover td{background:var(--bg3)}
 .estacao-pin.livre{border-bottom-color:var(--livre)}
 .estacao-pin.ocupada{border-bottom-color:var(--ocupada);background:var(--bg4)}
 .estacao-pin.desligada{border-bottom-color:var(--desligada);opacity:.6}
+.estacao-pin.manutencao{border-bottom-color:var(--manutencao);opacity:.85}
 .estacao-pin.config-mode{border-style:dashed;cursor:grab}
 .estacao-pin.config-mode:active{cursor:grabbing}
 .pin-nome{font-size:0.8rem;font-weight:700}
@@ -755,26 +759,29 @@ function renderEstacoes() {
 
   if (!estacoes.length) { el.innerHTML = '<div class="empty">Nenhuma estação cadastrada</div>'; return; }
 
+  const STATUS_LABEL = {livre:'livre', ocupada:'ocupada', desligada:'desligada', manutencao:'manutenção'};
+
   el.innerHTML = estacoes.map(e => {
     const sessao = sessoesAtivas.find(s => s.estacao_nome === e.nome);
     const cd = sessao ? countdowns[sessao.id] : null;
     const restante = cd ? calcRestante(cd) : 0;
     const tempoStr = cd ? formatarTempo(restante) : '—';
     const urgente = restante > 0 && restante < 300;
+    const label = STATUS_LABEL[e.status] || e.status;
 
     return `<div class="estacao-card ${e.status}" data-estacao-id="${e.id}" data-estacao-nome="${e.nome}"
         ondragover="onDragOverEstacao(event, this)" ondragleave="this.classList.remove('drop-target')" ondrop="onDropEstacao(event, ${e.id}, '${e.nome}')">
       <div class="estacao-header">
         <span class="estacao-nome">${e.nome}</span>
-        <span class="status-badge ${e.status}">${e.status}</span>
+        <span class="status-badge ${e.status}">${label}</span>
       </div>
-      ${sessao ? `
+      ${sessao && e.status !== 'manutencao' ? `
         <div class="estacao-info" style="margin-bottom:4px">${sessao.cliente_nome} <span style="color:var(--text3)">(${sessao.cliente_login})</span></div>
         <div class="estacao-countdown ${urgente ? 'urgente' : ''}" id="cd-${sessao.id}">${tempoStr}</div>
         <div class="estacao-actions">
           <button class="btn-action btn-encerrar" onclick="encerrarSessao(${sessao.id}, '${e.nome}')">Encerrar sessão</button>
         </div>
-      ` : `<div class="estacao-info">${e.status === 'livre' ? 'Disponível' : 'Offline'}</div>`}
+      ` : `<div class="estacao-info">${e.status === 'livre' ? 'Disponível' : e.status === 'manutencao' ? 'Em manutenção' : 'Offline'}</div>`}
     </div>`;
   }).join('');
 }

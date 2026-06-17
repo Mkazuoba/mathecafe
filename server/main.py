@@ -195,6 +195,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     sessao.tempo_consumido_segundos = consumido
                     sessao.motivo_encerramento = motivo
                     sessao.cliente.saldo_segundos = restante if motivo == "cliente" else 0
+                    # Manutenção: status será atualizado pelo evento status_estacao na sequência
                     sessao.estacao.status = "livre"
                     db.commit()
 
@@ -204,8 +205,14 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                         "motivo": motivo,
                         "saldo_restante": restante if motivo == "cliente" else 0
                     })
-                    # Garante que o painel veja a estação como livre (não offline)
                     await manager.broadcast_paineis("estacao_online", {"nome": nome})
+
+            elif evento == "status_estacao":
+                novo_status = dados.get("status", "livre")
+                db.refresh(estacao)
+                estacao.status = novo_status
+                db.commit()
+                await manager.broadcast_paineis("estacao_online", {"nome": nome})
 
     except WebSocketDisconnect:
         manager.desconectar_estacao(nome)
