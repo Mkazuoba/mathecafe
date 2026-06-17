@@ -111,6 +111,9 @@ class AgenteApp:
 
         # Atalho de emergência/debug: ESC sai da tela cheia (não encerra a sessão)
         self.root.bind("<Escape>", lambda e: self.root.attributes("-fullscreen", False))
+        # Atalho oculto de manutenção (ambas as formas para compatibilidade)
+        self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
+        self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
 
         self.root.after(100, self._processar_fila)
         self.root.after(1000, self._atualizar_countdown)
@@ -503,6 +506,58 @@ class AgenteApp:
         self.frame_sessao.pack_forget()
         self.frame_login.pack(fill="both", expand=True)
         self.frame_log.pack(fill="both", expand=False)
+
+    # ── Manutenção admin ─────────────────────────────────────────────────────
+    def _abrir_prompt_admin(self, event=None):
+        from tkinter import messagebox
+
+        prompt = tk.Toplevel(self.root)
+        prompt.title("Acesso Administrativo")
+        prompt.geometry("300x150")
+        prompt.configure(bg="#1A1B26")
+        prompt.attributes("-topmost", True)
+        prompt.grab_set()
+
+        pos_x = int(self.root.winfo_screenwidth() / 2 - 150)
+        pos_y = int(self.root.winfo_screenheight() / 2 - 75)
+        prompt.geometry(f"+{pos_x}+{pos_y}")
+
+        tk.Label(prompt, text="Senha de Manutenção:", bg="#1A1B26", fg="white",
+                 font=("Arial", 10)).pack(pady=10)
+
+        senha_entry = tk.Entry(prompt, show="*", font=("Arial", 12),
+                               bg="#2A2B3D", fg="white", insertbackground="white")
+        senha_entry.pack(pady=5)
+        senha_entry.focus()
+
+        def validar(event=None):
+            if senha_entry.get() == "admin123":
+                prompt.destroy()
+                self._modo_manutencao()
+            else:
+                messagebox.showerror("Acesso Negado", "Senha incorreta.", parent=prompt)
+                senha_entry.delete(0, tk.END)
+
+        tk.Button(prompt, text="Entrar", command=validar,
+                  bg="#4CAF50", fg="white", relief="flat").pack(pady=10)
+
+        prompt.bind("<Return>", validar)
+        prompt.bind("<Escape>", lambda e: prompt.destroy())
+
+    def _modo_manutencao(self):
+        if self.sessao_ativa:
+            consumido = int(time.time() - self.inicio_sessao)
+            self._enviar({
+                "evento": "sessao_encerrada",
+                "sessao_id": self.sessao_id,
+                "motivo": "manutencao",
+                "tempo_consumido_segundos": consumido
+            })
+            self._voltar_login()
+        else:
+            self.root.attributes("-fullscreen", False)
+        self.root.attributes("-fullscreen", False)
+        self._log("🔧 Modo manutenção ativado pelo admin")
 
     @staticmethod
     def _fmt(segundos):
