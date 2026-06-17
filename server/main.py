@@ -144,7 +144,12 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     (AppPermitido.grupo_id == estacao.grupo_id) | (AppPermitido.grupo_id == None)
                 ).all()
                 whitelist = [
-                    {"nome": a.nome, "processo": a.processo, "caminho": a.caminho}
+                    {
+                        "nome": a.nome,
+                        "processo": a.processo,
+                        "caminho": a.caminho,
+                        "imagem_url": a.imagem_url
+                    }
                     for a in apps_permitidos
                 ]
 

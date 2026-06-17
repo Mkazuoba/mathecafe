@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <title>MatheCafé</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -45,15 +46,17 @@ button{font-family:inherit}
 .app-shell{display:flex;height:100vh;width:100%}
 
 /* SIDEBAR */
-.sidebar{width:60px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .15s ease;overflow:hidden;z-index:50}
-.sidebar:hover{width:200px}
-.sidebar-logo{height:52px;display:flex;align-items:center;padding:0 18px;font-weight:700;color:var(--accent);letter-spacing:2px;white-space:nowrap;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar{width:52px;background:#0f1117;border-right:1px solid #2a3045;display:flex;flex-direction:column;flex-shrink:0;transition:width .2s ease;overflow:hidden;z-index:50}
+.sidebar.expanded{width:200px}
+.sidebar-toggle{height:52px;display:flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;border-bottom:1px solid var(--border);flex-shrink:0;font-size:16px;transition:color .15s;user-select:none}
+.sidebar-toggle:hover{color:var(--text)}
 .sidebar-nav{flex:1;padding:8px 0}
-.sidebar-item{display:flex;align-items:center;gap:14px;padding:12px 18px;color:var(--text2);cursor:pointer;white-space:nowrap;font-size:0.88rem;position:relative;transition:background .15s,color .15s}
-.sidebar-item:hover{background:var(--bg3);color:var(--text)}
-.sidebar-item.active{background:var(--accent);color:#fff}
-.sidebar-icon{font-size:1.15rem;width:22px;text-align:center;flex-shrink:0}
-.sidebar-label{flex:1}
+.sidebar-item{display:flex;align-items:center;gap:14px;padding:12px 16px;color:#94a3b8;cursor:pointer;white-space:nowrap;font-size:13px;font-weight:500;position:relative;transition:background .15s,color .15s;border-left:3px solid transparent}
+.sidebar-item:hover{background:rgba(255,255,255,.05);color:#e2e8f0}
+.sidebar-item.active{background:rgba(99,102,241,.15);color:#e2e8f0;border-left-color:#6366f1}
+.sidebar-icon{font-size:20px;width:20px;text-align:center;flex-shrink:0;line-height:1;color:#94a3b8}
+.sidebar-item.active .sidebar-icon,.sidebar-item:hover .sidebar-icon{color:#e2e8f0}
+.sidebar-label{flex:1;font-size:13px;font-weight:500;color:#e2e8f0}
 .sidebar-badge{background:rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.68rem;font-weight:700}
 .sidebar-item:not(.active) .sidebar-badge{background:var(--accent);color:#fff}
 
@@ -265,20 +268,22 @@ table.data-table tr:hover td{background:var(--bg3)}
 <div class="app-shell">
 
   <!-- SIDEBAR -->
-  <div class="sidebar">
-    <div class="sidebar-logo">MatheCafé</div>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Expandir/recolher menu">
+      <i class="ti ti-chevrons-right" id="sidebar-toggle-icon"></i>
+    </div>
     <div class="sidebar-nav">
       <div class="sidebar-item active" data-view="painel" onclick="mudarView('painel')">
-        <span class="sidebar-icon">🏠</span><span class="sidebar-label">Painel</span>
+        <i class="ti ti-layout-dashboard sidebar-icon"></i><span class="sidebar-label">Painel</span>
       </div>
       <div class="sidebar-item" data-view="clientes" onclick="mudarView('clientes')">
-        <span class="sidebar-icon">👤</span><span class="sidebar-label">Clientes</span>
+        <i class="ti ti-users sidebar-icon"></i><span class="sidebar-label">Clientes</span>
       </div>
       <div class="sidebar-item" data-view="mapa" onclick="mudarView('mapa')">
-        <span class="sidebar-icon">🗺️</span><span class="sidebar-label">Mapa</span>
+        <i class="ti ti-map sidebar-icon"></i><span class="sidebar-label">Mapa</span>
       </div>
       <div class="sidebar-item" data-view="config" id="nav-config" onclick="mudarView('config')">
-        <span class="sidebar-icon">⚙️</span><span class="sidebar-label">Configurações</span>
+        <i class="ti ti-settings sidebar-icon"></i><span class="sidebar-label">Configurações</span>
       </div>
     </div>
   </div>
@@ -422,7 +427,8 @@ table.data-table tr:hover td{background:var(--bg3)}
               <button class="btn-sm" onclick="criarApp()">+ Adicionar</button>
             </div>
             <div class="apps-inline-form">
-              <input type="text" class="input-sm" id="novo-app-caminho" placeholder="Caminho completo do .exe" style="flex:1">
+              <input type="text" class="input-sm" id="novo-app-caminho" placeholder="Caminho completo do .exe" style="flex:2">
+              <input type="text" class="input-sm" id="novo-app-imagem-url" placeholder="URL da imagem (capa)" style="flex:1">
             </div>
             <div class="modal-error" id="config-apps-error"></div>
             <div id="lista-apps"><div class="empty">Carregando...</div></div>
@@ -604,6 +610,7 @@ async function fazerLogin() {
     if (perfil !== 'admin') {
       document.getElementById('nav-config').style.display = 'none';
       document.getElementById('btn-export-csv').style.display = 'none';
+      document.getElementById('btn-modo-config').style.display = 'none';
     }
     iniciar();
   } catch(e) {
@@ -642,8 +649,25 @@ function mudarConfigSecao(sec) {
   });
 }
 
+// ── SIDEBAR TOGGLE ─────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const icon = document.getElementById('sidebar-toggle-icon');
+  const expandido = sidebar.classList.toggle('expanded');
+  icon.className = expandido ? 'ti ti-chevrons-left' : 'ti ti-chevrons-right';
+  localStorage.setItem('sidebarExpanded', expandido ? '1' : '0');
+}
+
+function iniciarSidebar() {
+  if (localStorage.getItem('sidebarExpanded') === '1') {
+    document.getElementById('sidebar').classList.add('expanded');
+    document.getElementById('sidebar-toggle-icon').className = 'ti ti-chevrons-left';
+  }
+}
+
 // ── INIT ───────────────────────────────────────────────────────────────────
 function iniciar() {
+  iniciarSidebar();
   carregarTudo();
   conectarWS();
   countdownTimer = setInterval(atualizarCountdowns, 1000);
@@ -1294,6 +1318,7 @@ async function carregarApps() {
 
   el.innerHTML = appsCache.map(a => `
     <div class="app-row">
+      ${a.imagem_url ? `<img src="${a.imagem_url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display='none'" alt="">` : ''}
       <div class="app-info">
         <div class="app-nome">${a.nome} <span class="app-grupo-tag">${a.grupo_nome}</span></div>
         <div class="app-detalhe">${a.processo}${a.caminho ? ' · ' + a.caminho : ' · (sem caminho)'}</div>
@@ -1314,14 +1339,17 @@ async function criarApp() {
   if (!nome || !processo) { errEl.textContent = 'Preencha nome e processo (.exe)'; return; }
 
   try {
+    const imagemUrl = document.getElementById('novo-app-imagem-url').value.trim();
     await post('/api/apps/', {
       nome, processo,
       caminho: caminho || null,
-      grupo_id: grupoVal ? parseInt(grupoVal) : null
+      grupo_id: grupoVal ? parseInt(grupoVal) : null,
+      imagem_url: imagemUrl || null
     });
     document.getElementById('novo-app-nome').value = '';
     document.getElementById('novo-app-processo').value = '';
     document.getElementById('novo-app-caminho').value = '';
+    document.getElementById('novo-app-imagem-url').value = '';
     toast('App adicionado!', 'ok');
     await carregarApps();
   } catch(e) { errEl.textContent = e.message; }

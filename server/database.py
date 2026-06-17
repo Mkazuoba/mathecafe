@@ -31,6 +31,10 @@ def _migrar_colunas_faltantes():
             conn.execute(text("ALTER TABLE apps_permitidos ADD COLUMN caminho VARCHAR(500)"))
             conn.commit()
             print("✅ Migração: coluna 'caminho' adicionada em apps_permitidos")
+        if cols and "imagem_url" not in nomes:
+            conn.execute(text("ALTER TABLE apps_permitidos ADD COLUMN imagem_url VARCHAR(500)"))
+            conn.commit()
+            print("✅ Migração: coluna 'imagem_url' adicionada em apps_permitidos")
 
         cols_estacoes = conn.execute(text("PRAGMA table_info(estacoes)")).fetchall()
         nomes_estacoes = [c[1] for c in cols_estacoes]

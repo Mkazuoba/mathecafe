@@ -76,8 +76,10 @@ class AppPermitido(Base):
     nome = Column(String(100), nullable=False)
     processo = Column(String(100), nullable=False)
     caminho = Column(String(500), nullable=True)
+    imagem_url = Column(String(500), nullable=True)
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)
     ativo = Column(Boolean, default=True)
+    grupo = relationship("GrupoEstacao")
 
 
 class ConfiguracaoSistema(Base):

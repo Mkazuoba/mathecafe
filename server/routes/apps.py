@@ -13,12 +13,14 @@ class AppCreate(BaseModel):
     processo: str
     caminho: Optional[str] = None
     grupo_id: Optional[int] = None
+    imagem_url: Optional[str] = None
 
 class AppUpdate(BaseModel):
     nome: Optional[str] = None
     processo: Optional[str] = None
     caminho: Optional[str] = None
     ativo: Optional[bool] = None
+    imagem_url: Optional[str] = None
 
 def serial(a: AppPermitido):
     return {
@@ -26,6 +28,7 @@ def serial(a: AppPermitido):
         "nome": a.nome,
         "processo": a.processo,
         "caminho": a.caminho,
+        "imagem_url": a.imagem_url,
         "grupo_id": a.grupo_id,
         "grupo_nome": a.grupo.nome if a.grupo else "Todos os grupos",
         "ativo": a.ativo,
@@ -54,7 +57,8 @@ def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfi
     app_p = AppPermitido(
         nome=data.nome.strip(), processo=processo,
         caminho=data.caminho.strip() if data.caminho else None,
-        grupo_id=data.grupo_id
+        grupo_id=data.grupo_id,
+        imagem_url=data.imagem_url.strip() if data.imagem_url else None
     )
     db.add(app_p); db.commit(); db.refresh(app_p)
     return serial(app_p)
@@ -70,6 +74,8 @@ def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends
         app_p.processo = p if p.endswith(".exe") else p + ".exe"
     if data.caminho is not None:
         app_p.caminho = data.caminho.strip() or None
+    if data.imagem_url is not None:
+        app_p.imagem_url = data.imagem_url.strip() or None
     if data.ativo is not None: app_p.ativo = data.ativo
     db.commit()
     return serial(app_p)

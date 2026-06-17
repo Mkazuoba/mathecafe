@@ -26,11 +26,32 @@ import time
 import os
 import subprocess
 from datetime import datetime
+from io import BytesIO
+import urllib.request
 import tkinter as tk
 from tkinter import font as tkfont, scrolledtext
 
 import websockets
 import psutil
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+
+def carregar_imagem_url(url, largura=160, altura=140):
+    if not PIL_AVAILABLE:
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:
+            data = response.read()
+        img = Image.open(BytesIO(data))
+        img = img.resize((largura, altura), Image.LANCZOS)
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
 
 
 # Processos essenciais do Windows — NUNCA serão encerrados,
@@ -52,8 +73,9 @@ PROCESSOS_SEGUROS = {
 # whitelist ativa (terminais e interpretadores de script).
 PROCESSOS_SEMPRE_BLOQUEADOS = {
     "cmd.exe", "powershell.exe", "powershell_ise.exe",
-    "wt.exe",  # Windows Terminal
+    "wt.exe",          # Windows Terminal
     "mshta.exe", "wscript.exe", "cscript.exe",
+    "regedit.exe", "taskmgr.exe",
 }
 
 
@@ -77,6 +99,7 @@ class AgenteApp:
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self.reiniciar_ao_encerrar = False
+        self._img_refs = []
 
         self.root.title(f"MatheCafé — {estacao}")
         self.root.geometry("420x480")
@@ -320,9 +343,11 @@ class AgenteApp:
                       f"sem restrição de apps")
 
     def _montar_launcher(self):
-        """Cria os botões/ícones dos apps liberados na tela do launcher."""
+        """Cria o grid visual de cards de apps estilo SENET."""
         for widget in self.frame_launcher.winfo_children():
             widget.destroy()
+
+        self._img_refs = []
 
         apps = [a for a in self.whitelist_apps if a.get("caminho")]
 
@@ -334,25 +359,75 @@ class AgenteApp:
                      justify="center").pack(expand=True)
             return
 
-        colunas = 4
+        # Container scrollável via Canvas
+        canvas = tk.Canvas(self.frame_launcher, bg=self.c_bg, highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.frame_launcher, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=self.c_bg)
+
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        COLUNAS = 4
+        CARD_W, CARD_H = 160, 200
+        IMG_W, IMG_H = 160, 140
+
+        f_nome = tkfont.Font(family="Segoe UI", size=11)
+        f_inicial = tkfont.Font(family="Segoe UI", size=36, weight="bold")
+
         for idx, app in enumerate(apps):
-            row, col = divmod(idx, colunas)
-            self.frame_launcher.grid_columnconfigure(col, weight=1)
+            row, col = divmod(idx, COLUNAS)
 
-            card = tk.Frame(self.frame_launcher, bg=self.c_bg3, cursor="hand2")
-            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew", ipadx=10, ipady=14)
+            card = tk.Frame(scroll_frame, bg="#1e2333", width=CARD_W, height=CARD_H, cursor="hand2")
+            card.grid(row=row, column=col, padx=10, pady=10)
+            card.grid_propagate(False)
 
-            inicial = (app["nome"][:1] or "?").upper()
-            icone = tk.Label(card, text=inicial, font=self.f_icon, fg="white",
-                              bg=self.c_accent, width=3, height=1)
-            icone.pack(pady=(6, 8))
+            inicial = (app.get("nome", "?")[:1] or "?").upper()
+            img_lbl = tk.Label(card, text=inicial, font=f_inicial, fg="white", bg="#1e2333")
+            img_lbl.place(x=0, y=0, width=CARD_W, height=IMG_H)
 
-            nome_lbl = tk.Label(card, text=app["nome"], font=self.f_app,
-                                 fg=self.c_text, bg=self.c_bg3, wraplength=140, justify="center")
-            nome_lbl.pack(pady=(0, 6))
+            nome_raw = app.get("nome", "")
+            nome_txt = (nome_raw[:18] + "…") if len(nome_raw) > 18 else nome_raw
+            nome_lbl = tk.Label(card, text=nome_txt, font=f_nome,
+                                 fg=self.c_text, bg="#1e2333", justify="center")
+            nome_lbl.place(x=4, y=IMG_H + 4, width=CARD_W - 8, height=CARD_H - IMG_H - 8)
 
-            for widget in (card, icone, nome_lbl):
-                widget.bind("<Button-1>", lambda e, a=app: self._abrir_app(a))
+            for w in (card, img_lbl, nome_lbl):
+                w.bind("<Button-1>", lambda e, a=app: self._abrir_app(a))
+
+            ws = [card, img_lbl, nome_lbl]
+            def _enter(e, widgets=ws):
+                for w in widgets:
+                    try: w.config(bg="#252b3b")
+                    except Exception: pass
+            def _leave(e, widgets=ws):
+                for w in widgets:
+                    try: w.config(bg="#1e2333")
+                    except Exception: pass
+
+            for w in (card, img_lbl, nome_lbl):
+                w.bind("<Enter>", _enter)
+                w.bind("<Leave>", _leave)
+
+            url = app.get("imagem_url")
+            if url:
+                def _load_img(u=url, lbl=img_lbl, refs=self._img_refs):
+                    img = carregar_imagem_url(u, IMG_W, IMG_H)
+                    if img:
+                        refs.append(img)
+                        lbl.after(0, lambda i=img, l=lbl: l.config(image=i, text="") if l.winfo_exists() else None)
+                threading.Thread(target=_load_img, daemon=True).start()
 
     def _abrir_app(self, app):
         caminho = app.get("caminho")
@@ -417,6 +492,12 @@ class AgenteApp:
         self.sessao_id = None
         self.whitelist_apps = []
         self.whitelist_procs = set()
+        self._img_refs = []
+
+        try:
+            self.root.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
 
         self.root.attributes("-fullscreen", False)
         self.frame_sessao.pack_forget()
