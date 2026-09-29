@@ -59,6 +59,17 @@ def registrar_erro(tipo, valor, tb, mostrar=True):
 
 sys.excepthook = registrar_erro
 
+# Cópia do "LOG DE COMUNICAÇÃO" da janela, recriada a cada vez que o agente abre
+ARQUIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente.log")
+
+
+def gravar_log(linha: str, novo: bool = False):
+    try:
+        with open(ARQUIVO_LOG, "w" if novo else "a", encoding="utf-8") as f:
+            f.write(linha + "\n")
+    except OSError:
+        pass
+
 
 def servidor_na_rede_local(url: str) -> bool:
     """localhost, nome sem ponto ou IP privado (10.x, 172.16-31.x, 192.168.x)."""
@@ -261,6 +272,7 @@ class AgenteApp:
         self.log.insert("end", f"[{ts}] {msg}\n")
         self.log.see("end")
         self.log.configure(state="disabled")
+        gravar_log(f"[{ts}] {msg}")
 
     # ── WebSocket (thread separada) ──────────────────────────────────────────
     def _start_ws_thread(self):
@@ -747,6 +759,12 @@ def main():
         raise SystemExit(registrar_erro(
             ValueError, ValueError(f"Endereço do servidor inválido: {servidor!r}. "
                                    "Use ws://IP:8000 (ou wss:// no Render)."), None))
+
+    # Cabeçalho do agente.log: o que é preciso para diagnosticar a conexão
+    gravar_log(f"MatheCafé agente — {datetime.now():%Y-%m-%d %H:%M:%S}", novo=True)
+    gravar_log(f"Python {sys.version.split()[0]} | websockets {websockets.__version__} | "
+               f"servidor {servidor} | estação {args.estacao.strip()!r}")
+    gravar_log(f"Proxy do Windows: {urllib.request.getproxies() or 'nenhum'}")
 
     root = tk.Tk()
     # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
