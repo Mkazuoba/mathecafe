@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* Mesma identidade do painel HTML: fundo escuro, índigo como destaque e uma
+   cor por status de estação (livre, ocupada, desligada, manutenção). */
+@theme {
+  --font-sans: "Segoe UI", system-ui, sans-serif;
+
+  --color-fundo: #0f1117;
+  --color-superficie: #171b26;
+  --color-superficie-2: #1e2333;
+  --color-superficie-3: #252b3b;
+  --color-borda: #2a3045;
+  --color-borda-forte: #3a4560;
+  --color-texto: #e2e8f0;
+  --color-texto-suave: #94a3b8;
+  --color-texto-fraco: #64748b;
+
+  --color-destaque: #6366f1;
+  --color-destaque-forte: #4f46e5;
+  --color-destaque-fundo: #1e1b4b;
+
+  --color-livre: #22c55e;
+  --color-livre-fundo: #052e16;
+  --color-livre-borda: #166534;
+  --color-ocupada: #f97316;
+  --color-ocupada-fundo: #2c1003;
+  --color-ocupada-borda: #7c2d12;
+  --color-desligada: #64748b;
+  --color-desligada-fundo: #1e2333;
+  --color-manutencao: #f59e0b;
+  --color-manutencao-fundo: #2c1a00;
+  --color-manutencao-borda: #78350f;
+
+  --color-perigo: #ef4444;
+  --color-perigo-fundo: #2c0a0a;
+  --color-perigo-borda: #7f1d1d;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fundo);
+  color: var(--color-texto);
+  font-family: var(--font-sans);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-borda-forte);
+  border-radius: 3px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-destaque);
+  outline-offset: 2px;
+}
+
+.fundo-pontilhado {
+  background-color: var(--color-fundo);
+  background-image: radial-gradient(circle, var(--color-borda) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

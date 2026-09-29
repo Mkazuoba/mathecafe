@@ -35,7 +35,26 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` |
-| `static/index.html` | painel em HTML puro: Painel, Clientes, Mapa, Configurações |
+| `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
+| `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
+
+`server/main.py` só reexporta `app.main:app`, para o start command antigo do Render continuar valendo.
+
+## Painel (`server/frontend/`)
+
+React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de Banners.
+
+| Arquivo | Papel |
+|---|---|
+| `src/App.tsx` | rotas: `/login`, `/` (Painel), `/clientes`, `/mapa`, `/configuracoes` (só admin) |
+| `src/lib/api.ts` | chamadas à API com o token; 401 leva de volta ao login |
+| `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, clientes, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens |
+| `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
+| `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `ModalSaldo`, e `ui/` (botão, campos, modal, selos de status) |
+| `src/pages/` | uma tela por arquivo |
+
+O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.
 
 ## Tabelas
 
@@ -88,5 +107,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 - **Status vem do banco**: `GET /api/estacoes/` devolve o `status` gravado (e `online` separado). Ao subir, o servidor marca todas as estações como `desligada`, exceto as em manutenção.
 - **Modo manutenção sem senha fixa**: o agente pede login e senha de admin/operador e o servidor confere (`validar_manutencao`). Sem conexão com o servidor, não há como entrar em manutenção.
 - **Exclusões preservam o histórico**: cliente com sessões e operador que já liberou alguém não podem ser excluídos (409, "desative"); o painel tem o botão "Ativo" para isso. Estação com sessões é desativada em vez de excluída (some do painel); cadastrar de novo o mesmo nome a reativa.
+- **WebSocket do painel exige login**: `/ws/painel?token=...` só aceita admin ou operador (os eventos trazem nomes de clientes).
+- **Mapa mostra estações sem grupo** numa aba "Sem grupo"; no painel lateral o admin troca o grupo da estação.
 - **Admin sem senha fixa**: criado por `python -m app.cli` ou pelas variáveis `ADMIN_LOGIN`/`ADMIN_SENHA`.
 - **Mensagens no console só com caracteres latinos**: emoji em `print` derruba o servidor num console Windows (cp1252).

@@ -39,7 +39,27 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 > Na própria máquina, use `127.0.0.1` em vez de `localhost`. No Windows, `localhost` tenta primeiro o IPv6 e perde cerca de 2s a cada conexão.
 
-## 2. Primeiro uso (pelo painel)
+## 2. Painel web (React)
+
+O painel já vem compilado em `server/app/static/`: para só usar o sistema, não precisa de Node. Para **mexer no painel**, instale o [Node.js LTS](https://nodejs.org) e:
+
+```bash
+cd server/frontend
+npm install
+npm run dev          # painel em http://localhost:5173, com recarga automática
+```
+
+O `npm run dev` usa o servidor Python (porta 8000) para `/api` e `/ws`, então deixe o `uvicorn` rodando junto.
+
+Terminou uma mudança? Gere o build e faça o commit dos arquivos de `server/app/static/` junto com o código:
+
+```bash
+npm run build        # compila para server/app/static
+```
+
+O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a transição.
+
+## 3. Primeiro uso (pelo painel)
 
 1. **Configurações → Operadores**: cadastre os operadores.
 2. **Configurações → Apps permitidos**: cadastre os programas que os clientes podem abrir (processo `.exe`, caminho completo e, se quiser, uma imagem de capa).
@@ -47,7 +67,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 4. **Clientes**: cadastre os clientes.
 5. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
 
-## 3. Agente (em cada estação)
+## 4. Agente (em cada estação)
 
 ```bash
 cd agente
@@ -62,7 +82,7 @@ python agente.py --servidor ws://IP_DO_SERVIDOR:8000 --estacao PC-01
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online).
 
-## 4. Testes automáticos
+## 5. Testes automáticos
 
 ```bash
 cd server
@@ -74,13 +94,14 @@ Cobrem o fluxo de sessão (liberar duas vezes, saldo, encerramento pelo operador
 
 A espera de 8s até a estação aparecer como desligada só se testa com o servidor rodando: o cliente de teste interrompe o servidor assim que a conexão fecha.
 
-## 5. Deploy
+## 6. Deploy
 
 ### Render
 
 - Root directory: `server`
 - Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (o antigo `uvicorn main:app ...` continua funcionando, via `server/main.py`)
+- Não precisa de Node no Render: o painel compilado já está em `server/app/static/`.
 - Variáveis: `SECRET_KEY`, e `ADMIN_LOGIN` / `ADMIN_SENHA` para criar o primeiro admin (o Render gratuito não tem terminal para rodar o `app.cli`).
 
 > O SQLite do Render é apagado a cada deploy. Para uso real, configure `DATABASE_URL` com um PostgreSQL (Supabase).

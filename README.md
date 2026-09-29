@@ -7,7 +7,7 @@ Sistema de gerenciamento de computadores de uso público da **SP Leituras**, fei
 | Pasta | O que é | Onde roda |
 |---|---|---|
 | `server/` | API FastAPI + WebSocket + painel web | um servidor (ou o Render) |
-| `server/app/static/` | painel atual (HTML puro): Painel, Clientes, Mapa, Configurações | servido pelo próprio servidor |
+| `server/frontend/` | painel web em React: Painel, Clientes, Mapa, Configurações | compilado em `server/app/static/` e servido pelo próprio servidor |
 | `agente/` | app Windows (Tkinter) que controla cada PC: launcher, bloqueio de programas, modo manutenção | em cada estação |
 
 ## Começo rápido

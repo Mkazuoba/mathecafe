@@ -20,9 +20,11 @@ Sistema de gerenciamento de computadores públicos da **SP Leituras** (bibliotec
 server/            FastAPI — rodar de dentro desta pasta
   app/main.py      app + WebSockets (/ws/painel, /ws/estacao/{nome}) + serve static/
   app/routers/     auth, clientes, estacoes (+grupos, fila), sessoes, apps, operadores, config, relatorios
-  app/static/      painel atual (HTML puro, 4 telas) — será substituído pelo React
+  app/static/      BUILD do painel React — gerado por `npm run build`, commitado (Render não tem Node)
+  app/static_antigo/  painel HTML anterior, em /antigo durante a transição
   tests/           pytest
-  frontend/        (a criar) painel React + Vite + Tailwind, como no Banners
+  frontend/        painel React + Vite + Tailwind (molde do Banners)
+  main.py          só reexporta app.main:app (start command antigo do Render)
 agente/agente.py   app Windows (Tkinter) em cada estação
 ```
 
@@ -48,4 +50,6 @@ Rode os testes antes de dar um ciclo por concluído e acrescente um teste para c
 - **Saldo sempre em HH:MM:SS** em todo o painel.
 - **Agente precisa rodar como Administrador** para o psutil encerrar processos.
 - **SQLite no Render zera a cada deploy** — produção vai para PostgreSQL (Supabase). A migração leve de colunas em `database.py` só funciona no SQLite.
-- Node.js não está instalado nesta máquina (necessário para o React).
+- **Node.js é portátil nesta máquina**, em `%LOCALAPPDATA%\Programs\nodejs` (fora do PATH). No bash: `export PATH="$LOCALAPPDATA/Programs/nodejs:$PATH"` antes de `npm`.
+- **Mexeu no painel? Rode `npm run build`** em `server/frontend` e commite `server/app/static/` junto — é o que o servidor serve.
+- Painel React: dados compartilhados em `src/lib/dados.tsx` (não buscar a mesma lista em cada tela); textos sempre via JSX, nunca `dangerouslySetInnerHTML`.

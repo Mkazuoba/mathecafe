@@ -246,3 +246,32 @@ def test_manutencao_aceita_operador_e_recusa_cliente(c, operador, cenario):
 
         ws.send_json({"evento": "validar_manutencao", "login": "operador.teste", "senha": "errada"})
         assert ws.receive_json()["dados"]["ok"] is False
+
+
+# ── Painel web ────────────────────────────────────────────────────────────────
+
+def test_ws_painel_exige_login(c, admin):
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect):
+        with c.websocket_connect("/ws/painel") as ws:
+            ws.receive_text()
+    token = admin["Authorization"].removeprefix("Bearer ")
+    with c.websocket_connect(f"/ws/painel?token={token}"):
+        pass  # aceito
+
+
+def test_rota_de_api_inexistente_continua_404(c, admin):
+    r = c.get("/api/nao-existe", headers=admin)
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+
+
+def test_painel_nao_serve_arquivos_fora_da_pasta(c):
+    r = c.get("/..%2Fmain.py")
+    assert "from app.main import app" not in r.text
+
+
+def test_painel_antigo_continua_disponivel(c):
+    r = c.get("/antigo/")
+    assert r.status_code == 200
+    assert "MatheCafé" in r.text

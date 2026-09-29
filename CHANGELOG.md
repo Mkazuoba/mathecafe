@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-29 — Painel em React (Ciclo 2)
+
+- Painel reescrito em React + Vite + Tailwind (`server/frontend`), com as mesmas 4 telas e o mesmo visual. O build fica em `server/app/static`, então o deploy não precisa de Node.
+- Endereços próprios por tela (`/clientes`, `/mapa`, `/configuracoes?secao=apps`...), que funcionam ao recarregar a página.
+- Mapa: aba "Sem grupo" (antes essas estações não apareciam), troca de grupo no painel lateral, arrastar com o mouse ou o dedo.
+- Painel: cliente em sessão aparece como "Em uso no PC-X" e não pode ser liberado de novo; lista só clientes ativos.
+- Saldo editado sempre em HH:MM:SS, com validação do formato.
+- Segurança: o WebSocket do painel passou a exigir login; nomes e textos não são mais inseridos como HTML.
+- Painel antigo disponível em `/antigo` durante a transição.
+- `server/main.py` mantém o start command antigo do Render funcionando.
+
 ## 2026-09-29 — Bugs confirmados (Ciclo 1)
 
 - O servidor não subia num console Windows comum: emoji nas mensagens de inicialização. Removido.

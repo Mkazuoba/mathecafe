@@ -1,5 +1,6 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -7,7 +8,7 @@ import asyncio, json, os
 
 from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
-from app.security import verificar_senha, requer_perfil
+from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
 
@@ -41,7 +42,15 @@ def startup():
 
 # ── WebSocket: painel ─────────────────────────────────────────────────────────
 @app.websocket("/ws/painel")
-async def ws_painel(ws: WebSocket):
+async def ws_painel(ws: WebSocket, token: str = ""):
+    # Os eventos trazem nomes de clientes: só admin/operador logado recebe
+    try:
+        usuario = decodificar_token(token)
+    except HTTPException:
+        usuario = {}
+    if usuario.get("perfil") not in ("admin", "operador"):
+        await ws.close(code=4401, reason="Não autenticado")
+        return
     await manager.conectar_painel(ws)
     try:
         while True:
@@ -272,7 +281,27 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 def health():
     return {"status": "ok"}
 
-# Painel (HTML puro) — será substituído pelo React em server/frontend.
-# Sempre por último: o mount de "/" casa com qualquer caminho.
-app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True),
-          name="static")
+# ── Painel web ────────────────────────────────────────────────────────────────
+# static/ é o build do React (server/frontend → `npm run build`).
+# static_antigo/ é o painel HTML anterior, mantido em /antigo na transição.
+_STATIC = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
+_ANTIGO = os.path.join(os.path.dirname(__file__), "static_antigo")
+
+app.mount("/antigo", StaticFiles(directory=_ANTIGO, html=True), name="antigo")
+
+
+@app.get("/{caminho:path}", include_in_schema=False)
+def painel(caminho: str):
+    """Arquivos do build do React; qualquer outra rota (ex.: /clientes)
+    devolve o index.html e o React Router assume a partir daí."""
+    if caminho.startswith(("api/", "ws/")):
+        raise HTTPException(404)
+    arquivo = os.path.realpath(os.path.join(_STATIC, caminho))
+    if caminho and arquivo.startswith(_STATIC + os.sep) and os.path.isfile(arquivo):
+        return FileResponse(arquivo)
+    index = os.path.join(_STATIC, "index.html")
+    if not os.path.isfile(index):
+        return HTMLResponse("<p>Painel não compilado. Rode <code>npm run build</code> em server/frontend "
+                            "ou use o <a href='/antigo/'>painel antigo</a>.</p>", status_code=503)
+    # index.html sem cache: um build novo aparece no próximo carregamento
+    return FileResponse(index, headers={"Cache-Control": "no-store"})
