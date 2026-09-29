@@ -59,6 +59,19 @@ def registrar_erro(tipo, valor, tb, mostrar=True):
 
 sys.excepthook = registrar_erro
 
+
+def servidor_na_rede_local(url: str) -> bool:
+    """localhost, nome sem ponto ou IP privado (10.x, 172.16-31.x, 192.168.x)."""
+    import ipaddress
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host == "localhost" or "." not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False  # nome de domínio, ex.: mathecafe.onrender.com
+    return ip.is_private or ip.is_loopback
+
 import websockets
 import psutil
 
@@ -262,9 +275,14 @@ class AgenteApp:
     async def _ws_loop(self):
         # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
         url = f"{self.servidor}/ws/estacao/{urllib.parse.quote(self.estacao)}"
+        # Servidor na rede interna: conexão direta. O websockets usa o proxy do
+        # Windows por padrão, e redes com proxy desviam até IPs internos.
+        proxy = None if servidor_na_rede_local(url) else True
+        self.incoming.put({"evento": "_info", "dados": {
+            "msg": f"Conectando a {url}" + (" (direto, sem proxy)" if proxy is None else "")}})
         while True:
             try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20, proxy=proxy) as ws:
                     # Só fica "online" quando o servidor responder: uma estação
                     # não cadastrada é fechada antes do pong
                     await ws.send(json.dumps({"evento": "ping"}))
@@ -323,6 +341,9 @@ class AgenteApp:
             if self.sessao_ativa:
                 self._log("⚠ Conexão perdida durante a sessão — retornando ao login")
                 self._voltar_login()
+
+        elif evento == "_info":
+            self._log(dados.get("msg", ""))
 
         elif evento == "_erro":
             self._log(f"Erro de conexão: {dados.get('msg')}")
