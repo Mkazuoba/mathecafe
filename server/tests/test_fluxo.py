@@ -275,3 +275,27 @@ def test_painel_antigo_continua_disponivel(c):
     r = c.get("/antigo/")
     assert r.status_code == 200
     assert "MatheCafé" in r.text
+
+
+# ── Nome da estação ──────────────────────────────────────────────────────────
+
+def test_estacao_nao_cadastrada_recebe_motivo(c):
+    from starlette.websockets import WebSocketDisconnect
+    with pytest.raises(WebSocketDisconnect) as erro:
+        with c.websocket_connect("/ws/estacao/PC-QUE-NAO-EXISTE") as ws:
+            ws.receive_text()
+    assert erro.value.code == 4004
+
+
+def test_nome_com_espaco_e_acento(c, admin):
+    from urllib.parse import quote
+    nome = "Sala Leitura 1"
+    assert c.post("/api/estacoes/", params={"nome": nome}, headers=admin).status_code == 200
+    with c.websocket_connect(f"/ws/estacao/{quote(nome)}") as ws:
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"
+    nome = "Estação 2"
+    assert c.post("/api/estacoes/", params={"nome": nome}, headers=admin).status_code == 200
+    with c.websocket_connect(f"/ws/estacao/{quote(nome)}") as ws:
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"

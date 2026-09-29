@@ -86,6 +86,9 @@ async def _encerrar_sessao_orfa(db: Session, estacao: Estacao, fim: datetime):
 async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     estacao = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
     if not estacao:
+        # Aceita antes de fechar: assim o agente recebe o código 4004 e o
+        # motivo, em vez de um "HTTP 403" genérico
+        await ws.accept()
         await ws.close(code=4004, reason="Estação não cadastrada")
         return
 

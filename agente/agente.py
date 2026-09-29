@@ -28,6 +28,7 @@ import subprocess
 import ctypes
 from datetime import datetime
 from io import BytesIO
+import urllib.parse
 import urllib.request
 import sys
 import traceback
@@ -259,15 +260,27 @@ class AgenteApp:
         self.loop.run_until_complete(self._ws_loop())
 
     async def _ws_loop(self):
-        url = f"{self.servidor}/ws/estacao/{self.estacao}"
+        # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
+        url = f"{self.servidor}/ws/estacao/{urllib.parse.quote(self.estacao)}"
         while True:
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    self.ws = ws
-                    self.conectado = True
-                    self.incoming.put({"evento": "_conectado"})
+                    # Só fica "online" quando o servidor responder: uma estação
+                    # não cadastrada é fechada antes do pong
+                    await ws.send(json.dumps({"evento": "ping"}))
                     async for raw in ws:
+                        if not self.conectado:
+                            self.ws = ws
+                            self.conectado = True
+                            self.incoming.put({"evento": "_conectado"})
                         self.incoming.put(json.loads(raw))
+            except websockets.exceptions.ConnectionClosed as e:
+                if e.rcvd and e.rcvd.code == 4004:
+                    self.incoming.put({"evento": "_erro", "dados": {"nao_cadastrada": True, "msg": (
+                        f"Estação '{self.estacao}' não está cadastrada no servidor. "
+                        "Cadastre no painel (Mapa → Modo configuração) com esse nome exato.")}})
+                else:
+                    self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
             except Exception as e:
                 self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
 
@@ -300,6 +313,7 @@ class AgenteApp:
         if evento == "_conectado":
             self.lbl_status.config(text="● online", fg="#22c55e")
             self.btn_login.config(state="normal")
+            self.lbl_login_erro.config(text="")
             self._log("Conectado ao servidor")
 
         elif evento == "_desconectado":
@@ -312,6 +326,8 @@ class AgenteApp:
 
         elif evento == "_erro":
             self._log(f"Erro de conexão: {dados.get('msg')}")
+            if dados.get("nao_cadastrada"):
+                self.lbl_login_erro.config(text=dados["msg"], wraplength=340)
 
         elif evento == "login_resultado":
             self._log(f"← login_resultado: {dados}")
