@@ -299,3 +299,17 @@ def test_nome_com_espaco_e_acento(c, admin):
     with c.websocket_connect(f"/ws/estacao/{quote(nome)}") as ws:
         ws.send_json({"evento": "ping"})
         assert ws.receive_json()["evento"] == "pong"
+
+
+# ── Apps permitidos ──────────────────────────────────────────────────────────
+
+def test_app_exige_caminho_do_exe(c, admin):
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Chrome", "processo": "chrome.exe",
+               "caminho": r"C:\Program Files\Google\Chrome\Application"})
+    assert r.status_code == 400
+    assert ".exe" in r.json()["detail"]
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Chrome", "processo": "chrome",
+               "caminho": r'"C:\Program Files\Google\Chrome\Application\chrome.exe"'})
+    assert r.status_code == 200, r.text
+    assert r.json()["processo"] == "chrome.exe"
+    assert r.json()["caminho"] == r"C:\Program Files\Google\Chrome\Application\chrome.exe"
