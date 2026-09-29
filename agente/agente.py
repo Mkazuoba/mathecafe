@@ -119,6 +119,10 @@ PROCESSOS_SEGUROS = {
     "securityhealthsystray.exe", "securityhealthservice.exe",
     "nvcontainer.exe", "nvdisplay.container.exe",
     "python.exe", "pythonw.exe",
+    # Auxiliares que rodam como o usuário logado (áudio, shell do Windows 11,
+    # tela de bloqueio, Defender, vídeo Intel)
+    "rtkauduservice64.exe", "wavessvc64.exe", "shellhost.exe", "lockapp.exe",
+    "defendersessionhelper.exe", "igfxem.exe", "igfxtray.exe", "igfxhk.exe",
 }
 
 # Processos que devem ser sempre bloqueados durante a sessão, mesmo sem
@@ -153,6 +157,13 @@ class AgenteApp:
         self.reiniciar_ao_encerrar = False
         self._img_refs = []
         self.modo_manutencao_ativo = False
+        self.app_em_uso = False  # launcher recuado para mostrar um app aberto
+        # Só programas do usuário logado são fechados; processos do sistema e de
+        # serviços (SYSTEM, LOCAL SERVICE...) nunca são tocados.
+        try:
+            self.usuario = psutil.Process().username()
+        except Exception:
+            self.usuario = None
 
         self.root.title(f"MatheCafé — {estacao}")
         self.root.geometry("420x480")
@@ -167,6 +178,8 @@ class AgenteApp:
         # Atalho oculto de manutenção (ambas as formas para compatibilidade)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
+        # Cliente voltou ao launcher (clicou nele): volta a ficar por cima
+        self.root.bind("<FocusIn>", self._launcher_em_foco)
 
         self.root.after(100, self._processar_fila)
         self.root.after(500, self._verificar_privilegios)
@@ -533,6 +546,22 @@ class AgenteApp:
             self._log(f"▶ Abrindo: {app['nome']}")
         except Exception as e:
             self._log(f"⚠ Erro ao abrir {app['nome']}: {e}")
+            return
+        # O launcher fica em tela cheia e por cima de tudo: recua para o app
+        # aparecer. O cliente volta ao launcher pela barra de tarefas.
+        self.app_em_uso = True
+        self.root.attributes("-topmost", False)
+        self.root.attributes("-fullscreen", False)
+        self.root.iconify()
+
+    def _launcher_em_foco(self, event=None):
+        if event is not None and event.widget is not self.root:
+            return
+        if self.app_em_uso and self.sessao_ativa and not self.modo_manutencao_ativo:
+            self.app_em_uso = False
+            self.root.attributes("-fullscreen", True)
+            self.root.attributes("-topmost", True)
+            self.root.lift()
 
     def _atualizar_countdown(self):
         if self.sessao_ativa:
@@ -589,6 +618,10 @@ class AgenteApp:
     def _voltar_login(self):
         self.sessao_ativa = False
         self.sessao_id = None
+        # Fecha os apps que o cliente abriu, para o próximo não encontrá-los
+        self._fechar_processos(lambda nome: nome in self.whitelist_procs, "encerrado ao fim da sessão")
+        self.app_em_uso = False
+        self.root.deiconify()
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self._img_refs = []
@@ -715,34 +748,31 @@ class AgenteApp:
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     # ── Whitelist de apps ─────────────────────────────────────────────────────
-    def _verificar_processos(self):
-        if self.sessao_ativa:
-            pid_atual = os.getpid()
-            for proc in psutil.process_iter(["pid", "name"]):
-                try:
-                    nome = (proc.info["name"] or "").lower()
-                    pid = proc.info["pid"]
-
-                    if pid == pid_atual or not nome:
-                        continue
-
-                    if nome in PROCESSOS_SEMPRE_BLOQUEADOS:
-                        proc.kill()
-                        self._log(f"🚫 Bloqueado (proibido): {nome}")
-                        continue
-
-                    if not self.whitelist_procs:
-                        continue
-                    if nome in PROCESSOS_SEGUROS:
-                        continue
-                    if nome in self.whitelist_procs:
-                        continue
-
-                    proc.kill()
-                    self._log(f"🚫 Bloqueado (fora da whitelist): {nome}")
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+    def _fechar_processos(self, deve_fechar, motivo):
+        """Fecha processos do usuário logado para os quais deve_fechar(nome) é
+        verdadeiro. Processos de outros usuários e do sistema nunca são tocados."""
+        pid_atual = os.getpid()
+        for proc in psutil.process_iter(["pid", "name", "username"]):
+            try:
+                nome = (proc.info["name"] or "").lower()
+                if proc.info["pid"] == pid_atual or not nome or nome in PROCESSOS_SEGUROS:
                     continue
+                if not self.usuario or proc.info["username"] != self.usuario:
+                    continue
+                if deve_fechar(nome):
+                    proc.kill()
+                    self._log(f"🚫 {nome}: {motivo}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
 
+    def _verificar_processos(self):
+        if self.sessao_ativa and not self.modo_manutencao_ativo:
+            whitelist = self.whitelist_procs
+            self._fechar_processos(
+                lambda nome: nome in PROCESSOS_SEMPRE_BLOQUEADOS
+                or (bool(whitelist) and nome not in whitelist),
+                "bloqueado (fora dos apps permitidos)",
+            )
         self.root.after(3000, self._verificar_processos)
 
 
