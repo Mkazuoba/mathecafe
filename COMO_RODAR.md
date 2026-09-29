@@ -69,16 +69,16 @@ O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a trans
 
 ## 4. Agente (em cada estação)
 
-```bash
-cd agente
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python agente.py --servidor ws://IP_DO_SERVIDOR:8000 --estacao PC-01
-```
+Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/), marcando "Add python.exe to PATH"). Copie a pasta `agente/` para o PC e:
 
-- `--estacao` precisa ser exatamente o nome cadastrado no servidor.
-- Rode como **Administrador**, senão o bloqueio de programas não funciona.
+1. Dois cliques em **`instalar.bat`** (uma vez só): cria o ambiente e instala as dependências.
+2. Dois cliques em **`iniciar.bat`**: pergunta o endereço do servidor e o nome da estação e abre o agente como Administrador (o Windows pede confirmação).
+
+Ou direto, sem perguntas: `iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-01`
+
+- O nome da estação precisa ser exatamente o cadastrado no Mapa.
+- Rode como **Administrador** (o `iniciar.bat` já faz isso), senão o bloqueio de programas não funciona.
+- Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online).
 
