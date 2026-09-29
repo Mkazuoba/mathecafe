@@ -1,18 +1,19 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import asyncio, json, os
 
-from database import get_db, init_db
-from models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
-from auth import verificar_senha, requer_perfil
-from websocket_manager import manager
-from routes import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
+from app.database import get_db, init_db, SessionLocal
+from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
+from app.security import verificar_senha, requer_perfil
+from app.websocket_manager import manager
+from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
+
+SEGUNDOS_ATE_OFFLINE = 8
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
@@ -26,21 +27,17 @@ app.include_router(operadores.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(relatorios.router, prefix="/api")
 
-# Caminhos possíveis para o frontend
-_BASE = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_PATHS = [
-    os.path.join(_BASE, "../frontend"),
-    os.path.join(_BASE, "frontend"),
-    "/opt/render/project/src/frontend",
-]
-frontend_path = next((p for p in FRONTEND_PATHS if os.path.isdir(p)), None)
-if frontend_path:
-    app.mount("/static", StaticFiles(directory=frontend_path), name="static")
-
 @app.on_event("startup")
 def startup():
     init_db()
-    print(f"Frontend path: {frontend_path}")
+    # Nenhum agente está conectado quando o servidor acaba de subir
+    # (manutenção é mantida: vale mesmo com o PC desligado)
+    db = SessionLocal()
+    try:
+        db.query(Estacao).filter(Estacao.status != "manutencao").update({Estacao.status: "desligada"})
+        db.commit()
+    finally:
+        db.close()
 
 # ── WebSocket: painel ─────────────────────────────────────────────────────────
 @app.websocket("/ws/painel")
@@ -53,6 +50,29 @@ async def ws_painel(ws: WebSocket):
         manager.desconectar_painel(ws)
 
 # ── WebSocket: agente da estação ──────────────────────────────────────────────
+async def _encerrar_sessao_orfa(db: Session, estacao: Estacao, fim: datetime):
+    """Encerra a sessão que ficou aberta quando a conexão do agente caiu,
+    devolvendo ao cliente o tempo não usado até a queda."""
+    sessao = db.query(Sessao).filter(
+        Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
+    if not sessao:
+        return
+    total = sessao.tempo_total_segundos or 0
+    consumido = min(total, max(0, int((fim - sessao.iniciada_em).total_seconds())))
+    restante = total - consumido
+    sessao.encerrada_em = fim
+    sessao.tempo_consumido_segundos = consumido
+    sessao.motivo_encerramento = "conexao_perdida"
+    sessao.cliente.saldo_segundos = restante
+    db.commit()
+    await manager.broadcast_paineis("sessao_encerrada", {
+        "estacao": estacao.nome,
+        "cliente": sessao.cliente.login,
+        "motivo": "conexao_perdida",
+        "saldo_restante": restante
+    })
+
+
 @app.websocket("/ws/estacao/{nome}")
 async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     estacao = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
@@ -62,7 +82,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 
     await manager.conectar_estacao(nome, ws)
     estacao.ultimo_ping = datetime.utcnow()
-    if estacao.status == "desligada":
+    # Ao perder a conexão o agente volta para a tela de login, então uma
+    # sessão ainda aberta nesta estação ficou órfã.
+    await _encerrar_sessao_orfa(db, estacao, datetime.utcnow())
+    if estacao.status != "manutencao":
         estacao.status = "livre"
     db.commit()
     await manager.broadcast_paineis("estacao_online", {"nome": nome})
@@ -70,6 +93,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     try:
         while True:
             raw = await ws.receive_text()
+            # Esta sessão do banco vive a conexão inteira; o painel altera os
+            # mesmos registros por outras sessões (liberar, encerrar, saldo).
+            # Descarta o cache para ler o estado atual a cada mensagem.
+            db.expire_all()
             dados = json.loads(raw)
             evento = dados.get("evento")
 
@@ -79,7 +106,6 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 await ws.send_text(json.dumps({"evento": "pong"}))
 
             elif evento == "login_cliente":
-                db.refresh(estacao)  # força releitura do banco, evitando cache stale
                 login = dados.get("login")
                 senha = dados.get("senha")
 
@@ -208,18 +234,36 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     await manager.broadcast_paineis("estacao_online", {"nome": nome})
 
             elif evento == "status_estacao":
-                novo_status = dados.get("status", "livre")
-                db.refresh(estacao)
-                estacao.status = novo_status
-                db.commit()
-                await manager.broadcast_paineis("estacao_online", {"nome": nome})
+                # O agente só alterna entre manutenção e livre
+                novo_status = dados.get("status")
+                if novo_status in ("manutencao", "livre"):
+                    estacao.status = novo_status
+                    db.commit()
+                    await manager.broadcast_paineis("estacao_online", {"nome": nome})
+
+            elif evento == "validar_manutencao":
+                # Modo manutenção exige login de admin ou operador, conferido
+                # aqui — assim não existe senha fixa gravada no agente.
+                usuario = db.query(Usuario).filter(
+                    Usuario.login == dados.get("login"),
+                    Usuario.perfil.in_(("admin", "operador")),
+                    Usuario.ativo == True
+                ).first()
+                ok = bool(usuario and verificar_senha(dados.get("senha") or "", usuario.senha_hash))
+                await ws.send_text(json.dumps({"evento": "manutencao_resultado", "dados": {"ok": ok}}))
 
     except WebSocketDisconnect:
-        manager.desconectar_estacao(nome)
-        # Aguarda 8s antes de marcar offline — permite reconexão rápida do agente
-        await asyncio.sleep(8)
-        if nome not in manager.estacoes_online():
-            estacao.status = "desligada"
+        desconectou_em = datetime.utcnow()
+        manager.desconectar_estacao(nome, ws)
+        # Espera antes de marcar offline: uma queda rápida de rede não deve
+        # fazer a estação "piscar" no painel. Se o agente voltar nesse
+        # intervalo, a nova conexão cuida da sessão órfã.
+        await asyncio.sleep(SEGUNDOS_ATE_OFFLINE)
+        if not manager.estacao_conectada(nome):
+            db.expire_all()
+            await _encerrar_sessao_orfa(db, estacao, desconectou_em)
+            if estacao.status != "manutencao":
+                estacao.status = "desligada"
             db.commit()
             await manager.broadcast_paineis("estacao_offline", {"nome": nome})
 
@@ -228,10 +272,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 def health():
     return {"status": "ok"}
 
-@app.get("/")
-def root():
-    if frontend_path:
-        index = os.path.join(frontend_path, "index.html")
-        if os.path.exists(index):
-            return FileResponse(index)
-    return HTMLResponse("<h1>MatheCafé</h1><p>Acesse <a href='/docs'>/docs</a></p>")
+# Painel (HTML puro) — será substituído pelo React em server/frontend.
+# Sempre por último: o mount de "/" casa com qualquer caminho.
+app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True),
+          name="static")

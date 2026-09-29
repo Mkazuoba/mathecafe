@@ -31,8 +31,14 @@ class ConnectionManager:
         await ws.accept()
         self.estacoes[nome] = ws
 
-    def desconectar_estacao(self, nome: str):
-        self.estacoes.pop(nome, None)
+    def desconectar_estacao(self, nome: str, ws: WebSocket = None):
+        # Com ws informado, só remove se ainda for a mesma conexão: se o agente
+        # já reconectou, a conexão antiga não pode derrubar a nova.
+        if ws is None or self.estacoes.get(nome) is ws:
+            self.estacoes.pop(nome, None)
+
+    def estacao_conectada(self, nome: str) -> bool:
+        return nome in self.estacoes
 
     async def enviar_estacao(self, nome: str, evento: str, dados: dict):
         ws = self.estacoes.get(nome)

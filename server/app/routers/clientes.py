@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
-from models import Usuario
-from auth import hash_senha, requer_perfil
+from app.database import get_db
+from app.models import Usuario, Sessao
+from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
@@ -70,6 +70,12 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    # Quem já usou os computadores fica no histórico de sessões (e nos relatórios)
+    if db.query(Sessao).filter(Sessao.cliente_id == id).first():
+        raise HTTPException(status_code=409,
+                            detail="Cliente tem histórico de uso. Desative-o em vez de excluir.")
+    if cliente.autorizacao:
+        db.delete(cliente.autorizacao)
     db.delete(cliente)
     db.commit()
     return {"ok": True}

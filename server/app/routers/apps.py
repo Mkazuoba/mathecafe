@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
-from models import AppPermitido, GrupoEstacao
-from auth import requer_perfil
+from app.database import get_db
+from app.models import AppPermitido, GrupoEstacao
+from app.security import requer_perfil
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 

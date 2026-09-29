@@ -3,7 +3,7 @@ from jose import JWTError, jwt
 import bcrypt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from config import get_settings
+from app.config import get_settings
 
 settings = get_settings()
 bearer = HTTPBearer()

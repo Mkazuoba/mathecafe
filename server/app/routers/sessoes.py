@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
-from database import get_db
-from models import Sessao, Estacao
-from auth import requer_perfil
-from websocket_manager import manager
+from app.database import get_db
+from app.models import Sessao, Estacao
+from app.security import requer_perfil
+from app.websocket_manager import manager
 
 router = APIRouter(prefix="/sessoes", tags=["sessoes"])
 

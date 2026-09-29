@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from database import get_db
-from models import Estacao, GrupoEstacao, Autorizacao, Usuario
-from auth import requer_perfil
-from websocket_manager import manager
+from app.database import get_db
+from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
+from app.security import requer_perfil
+from app.websocket_manager import manager
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
 
@@ -23,8 +23,9 @@ class PosicaoUpdate(BaseModel):
 
 def serial_estacao(e: Estacao):
     online = e.nome in manager.estacoes_online()
-    # "manutencao" persiste mesmo com WebSocket desconectado (reconexão rápida)
-    status = e.status if (online or e.status == "manutencao") else "desligada"
+    # Status do banco: respeita a espera antes de marcar offline (main.py) e
+    # mantém "manutencao" mesmo com o agente desconectado.
+    status = e.status
     return {
         "id": e.id,
         "nome": e.nome,
@@ -74,10 +75,18 @@ def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),
 @router.post("/")
 def criar(nome: str, grupo_id: Optional[int] = None,
           db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
-    if db.query(Estacao).filter(Estacao.nome == nome).first():
+    existente = db.query(Estacao).filter(Estacao.nome == nome).first()
+    if existente and existente.ativa:
         raise HTTPException(400, "Estação já existe")
-    e = Estacao(nome=nome, grupo_id=grupo_id)
-    db.add(e); db.commit(); db.refresh(e)
+    if existente:
+        # Estação excluída que tinha histórico: reativa, mantendo o histórico
+        existente.ativa = True
+        existente.grupo_id = grupo_id
+        e = existente
+    else:
+        e = Estacao(nome=nome, grupo_id=grupo_id)
+        db.add(e)
+    db.commit(); db.refresh(e)
     return serial_estacao(e)
 
 @router.put("/{id}")
@@ -110,6 +119,12 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
     e = db.query(Estacao).filter(Estacao.id == id).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
+    # O histórico de sessões (e os relatórios) aponta para a estação: nesse
+    # caso ela só é desativada, o que já a tira de todas as listas do painel.
+    if db.query(Sessao).filter(Sessao.estacao_id == id).first():
+        e.ativa = False
+        db.commit()
+        return {"ok": True, "desativada": True}
     db.delete(e); db.commit()
     return {"ok": True}
 

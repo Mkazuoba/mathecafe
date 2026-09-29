@@ -297,6 +297,9 @@ class AgenteApp:
         elif evento == "pong":
             pass  # keep-alive, ignora
 
+        elif evento == "manutencao_resultado":
+            self._resultado_manutencao(dados.get("ok", False))
+
         elif evento == "encerrar_sessao":
             if self.sessao_ativa:
                 saldo = dados.get("saldo_restante", 0)
@@ -542,38 +545,60 @@ class AgenteApp:
 
         from tkinter import messagebox
 
+        if not self.conectado:
+            messagebox.showerror("Sem conexão",
+                                 "O modo manutenção precisa do servidor para conferir o login.",
+                                 parent=self.root)
+            return
+
         prompt = tk.Toplevel(self.root)
         prompt.title("Acesso Administrativo")
-        prompt.geometry("300x150")
+        prompt.geometry("300x210")
         prompt.configure(bg="#1A1B26")
         prompt.attributes("-topmost", True)
         prompt.grab_set()
 
         pos_x = int(self.root.winfo_screenwidth() / 2 - 150)
-        pos_y = int(self.root.winfo_screenheight() / 2 - 75)
+        pos_y = int(self.root.winfo_screenheight() / 2 - 105)
         prompt.geometry(f"+{pos_x}+{pos_y}")
 
-        tk.Label(prompt, text="Senha de Manutenção:", bg="#1A1B26", fg="white",
-                 font=("Arial", 10)).pack(pady=10)
+        # Login de operador ou admin, conferido pelo servidor
+        tk.Label(prompt, text="Login do operador:", bg="#1A1B26", fg="white",
+                 font=("Arial", 10)).pack(pady=(10, 2))
+        login_entry = tk.Entry(prompt, font=("Arial", 12),
+                               bg="#2A2B3D", fg="white", insertbackground="white")
+        login_entry.pack(pady=2)
+        login_entry.focus()
 
+        tk.Label(prompt, text="Senha:", bg="#1A1B26", fg="white",
+                 font=("Arial", 10)).pack(pady=(8, 2))
         senha_entry = tk.Entry(prompt, show="*", font=("Arial", 12),
                                bg="#2A2B3D", fg="white", insertbackground="white")
-        senha_entry.pack(pady=5)
-        senha_entry.focus()
+        senha_entry.pack(pady=2)
 
         def validar(event=None):
-            if senha_entry.get() == "admin123":
-                prompt.destroy()
-                self._modo_manutencao()
-            else:
-                messagebox.showerror("Acesso Negado", "Senha incorreta.", parent=prompt)
-                senha_entry.delete(0, tk.END)
+            self._prompt_manutencao = (prompt, senha_entry)
+            self._enviar({"evento": "validar_manutencao",
+                          "login": login_entry.get().strip(), "senha": senha_entry.get()})
 
         tk.Button(prompt, text="Entrar", command=validar,
                   bg="#4CAF50", fg="white", relief="flat").pack(pady=10)
 
         prompt.bind("<Return>", validar)
         prompt.bind("<Escape>", lambda e: prompt.destroy())
+
+    def _resultado_manutencao(self, ok):
+        from tkinter import messagebox
+        prompt, senha_entry = getattr(self, "_prompt_manutencao", (None, None))
+        self._prompt_manutencao = (None, None)
+        if not prompt or not prompt.winfo_exists():
+            return
+        if ok:
+            prompt.destroy()
+            self._modo_manutencao()
+        else:
+            messagebox.showerror("Acesso Negado", "Login ou senha incorretos.", parent=prompt)
+            senha_entry.delete(0, tk.END)
 
     def _modo_manutencao(self):
         if self.sessao_ativa:

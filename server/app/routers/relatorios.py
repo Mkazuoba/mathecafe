@@ -5,9 +5,9 @@ from typing import Optional
 from datetime import datetime, timedelta
 import csv
 import io
-from database import get_db
-from models import Sessao, Estacao
-from auth import requer_perfil
+from app.database import get_db
+from app.models import Sessao, Estacao
+from app.security import requer_perfil
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
 

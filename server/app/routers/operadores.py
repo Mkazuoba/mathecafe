@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
-from models import Usuario
-from auth import hash_senha, requer_perfil
+from app.database import get_db
+from app.models import Usuario, Autorizacao
+from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/operadores", tags=["operadores"])
 
@@ -62,6 +62,10 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
     operador = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "operador").first()
     if not operador:
         raise HTTPException(status_code=404, detail="Operador não encontrado")
+    # A fila guarda quem liberou cada cliente
+    if db.query(Autorizacao).filter(Autorizacao.autorizado_por_id == id).first():
+        raise HTTPException(status_code=409,
+                            detail="Operador já liberou clientes. Desative-o em vez de excluir.")
     db.delete(operador)
     db.commit()
     return {"ok": True}
