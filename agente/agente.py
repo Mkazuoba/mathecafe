@@ -29,8 +29,34 @@ import ctypes
 from datetime import datetime
 from io import BytesIO
 import urllib.request
+import sys
+import traceback
 import tkinter as tk
 from tkinter import font as tkfont, scrolledtext
+
+# Com pythonw (iniciar.bat) não há console: qualquer erro fatal vai para
+# agente_erro.log, ao lado deste arquivo, e aparece numa janela.
+ARQUIVO_ERRO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_erro.log")
+
+
+def registrar_erro(tipo, valor, tb, mostrar=True):
+    texto = "".join(traceback.format_exception(tipo, valor, tb))
+    try:
+        with open(ARQUIVO_ERRO, "a", encoding="utf-8") as f:
+            f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n{texto}")
+    except OSError:
+        pass
+    if not mostrar:
+        return
+    try:
+        from tkinter import messagebox
+        messagebox.showerror("MatheCafé — erro no agente",
+                             f"{valor}\n\nDetalhes em:\n{ARQUIVO_ERRO}")
+    except Exception:
+        pass
+
+
+sys.excepthook = registrar_erro
 
 import websockets
 import psutil
@@ -679,8 +705,16 @@ def main():
                          help="Nome da estação cadastrada no painel, ex: PC-01")
     args = parser.parse_args()
 
+    servidor = args.servidor.strip()
+    if not servidor.startswith(("ws://", "wss://")):
+        raise SystemExit(registrar_erro(
+            ValueError, ValueError(f"Endereço do servidor inválido: {servidor!r}. "
+                                   "Use ws://IP:8000 (ou wss:// no Render)."), None))
+
     root = tk.Tk()
-    app = AgenteApp(root, args.servidor, args.estacao)
+    # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
+    root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
+    app = AgenteApp(root, servidor, args.estacao.strip())
     root.mainloop()
 
 
