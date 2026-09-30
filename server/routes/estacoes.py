@@ -71,13 +71,38 @@ def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),
         q = q.filter(Estacao.grupo_id == grupo_id)
     return [serial_estacao(e) for e in q.order_by(Estacao.nome).all()]
 
+PIN_PASSO = 100      # distância entre pins no mapa (pin tem 80px)
+PIN_TOPO = 56        # deixa espaço para o botão "+ Adicionar estação"
+PIN_COLUNAS = 8
+
+def proxima_posicao_livre(db: Session, grupo_id: Optional[int]):
+    ocupadas = {(e.pos_x or 0, e.pos_y or 0) for e in
+                db.query(Estacao).filter(Estacao.grupo_id == grupo_id).all()}
+    i = 0
+    while True:
+        pos = (12 + (i % PIN_COLUNAS) * PIN_PASSO, PIN_TOPO + (i // PIN_COLUNAS) * PIN_PASSO)
+        if pos not in ocupadas:
+            return pos
+        i += 1
+
 @router.post("/")
-def criar(nome: str, grupo_id: Optional[int] = None,
-          db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def criar(nome: str, grupo_id: Optional[int] = None,
+                db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    nome = nome.strip()
+    if not nome:
+        raise HTTPException(400, "Informe o nome da estação")
+    if len(nome) > 20:
+        raise HTTPException(400, "Nome deve ter no máximo 20 caracteres")
     if db.query(Estacao).filter(Estacao.nome == nome).first():
         raise HTTPException(400, "Estação já existe")
-    e = Estacao(nome=nome, grupo_id=grupo_id)
+    if grupo_id is not None and not db.query(GrupoEstacao).filter(
+            GrupoEstacao.id == grupo_id, GrupoEstacao.ativo == True).first():
+        raise HTTPException(400, "Grupo não encontrado")
+
+    pos_x, pos_y = proxima_posicao_livre(db, grupo_id)
+    e = Estacao(nome=nome, grupo_id=grupo_id, pos_x=pos_x, pos_y=pos_y)
     db.add(e); db.commit(); db.refresh(e)
+    await manager.broadcast_paineis("estacao_criada", {"nome": e.nome})
     return serial_estacao(e)
 
 @router.put("/{id}")

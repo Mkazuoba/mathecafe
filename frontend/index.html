@@ -318,6 +318,7 @@ table.data-table tr:hover td{background:var(--bg3)}
           <div class="panel-header">
             <span class="panel-title">Estações</span>
             <span class="panel-count" id="count-estacoes">0</span>
+            <button class="btn-sm" id="btn-nova-estacao" style="margin-left:auto" onclick="abrirModalEstacao()">+ Nova</button>
           </div>
           <div class="panel-body" id="lista-estacoes">
             <div class="empty">Carregando estações...</div>
@@ -518,7 +519,7 @@ table.data-table tr:hover td{background:var(--bg3)}
     <h3>Nova estação</h3>
     <div class="form-group">
       <label for="nova-estacao-nome">Nome da estação</label>
-      <input type="text" id="nova-estacao-nome" placeholder="ex: PC-01" autocomplete="off">
+      <input type="text" id="nova-estacao-nome" placeholder="ex: PC-01" autocomplete="off" maxlength="20" onkeydown="if(event.key==='Enter') criarEstacao()">
     </div>
     <div class="form-group">
       <label for="nova-estacao-grupo">Grupo</label>
@@ -635,6 +636,7 @@ async function fazerLogin() {
       document.getElementById('nav-config').style.display = 'none';
       document.getElementById('btn-export-csv').style.display = 'none';
       document.getElementById('btn-modo-config').style.display = 'none';
+      document.getElementById('btn-nova-estacao').style.display = 'none';
     }
     iniciar();
   } catch(e) {
@@ -1107,8 +1109,9 @@ function renderMapa() {
   document.getElementById('mapa-contador').textContent = `${ocupadas}/${estacoesDoGrupo.length} ocupadas`;
 
   const canvas = document.getElementById('mapa-canvas');
+  const btnAdicionar = mapaModoConfig ? `<button class="btn-sm" style="position:absolute;left:12px;top:12px" onclick="abrirModalEstacao()">+ Adicionar estação</button>` : '';
   if (!estacoesDoGrupo.length) {
-    canvas.innerHTML = '<div class="empty" style="padding:3rem">Nenhuma estação neste grupo</div>';
+    canvas.innerHTML = '<div class="empty" style="padding:3rem">Nenhuma estação neste grupo</div>' + btnAdicionar;
     return;
   }
 
@@ -1126,7 +1129,7 @@ function renderMapa() {
       ${sessao ? `<div class="pin-cliente">${sessao.cliente_nome}</div><div class="pin-countdown" id="pin-cd-${sessao.id}">${formatarTempo(restante)}</div>` : ''}
       ${mapaModoConfig ? `<button class="pin-del" onclick="excluirEstacaoMapa(event, ${e.id})" aria-label="Excluir estação">✕</button>` : ''}
     </div>`;
-  }).join('') + (mapaModoConfig ? `<button class="btn-sm" style="position:absolute;left:12px;top:12px" onclick="abrirModalEstacao()">+ Adicionar estação</button>` : '');
+  }).join('') + btnAdicionar;
 
   if (mapaModoConfig) {
     canvas.ondragover = (ev) => ev.preventDefault();
@@ -1213,12 +1216,25 @@ async function excluirEstacaoMapa(ev, id) {
 }
 
 async function abrirModalEstacao() {
-  document.getElementById('nova-estacao-nome').value = '';
+  if (perfil !== 'admin') return;
+  const inputNome = document.getElementById('nova-estacao-nome');
+  inputNome.value = sugerirNomeEstacao();
   document.getElementById('modal-estacao-error').textContent = '';
   if (!grupos.length) await carregarGrupos();
   const sel = document.getElementById('nova-estacao-grupo');
-  sel.innerHTML = grupos.map(g => `<option value="${g.id}" ${g.id === mapaGrupoAtivo ? 'selected' : ''}>${g.nome}</option>`).join('');
+  sel.innerHTML = grupos.length
+    ? grupos.map(g => `<option value="${g.id}" ${g.id === mapaGrupoAtivo ? 'selected' : ''}>${g.nome}</option>`).join('')
+    : '<option value="">Sem grupo</option>';
   document.getElementById('modal-estacao').classList.add('show');
+  inputNome.focus();
+  inputNome.select();
+}
+
+// Sugere o próximo nome no padrão PC-01, PC-02... com base nas estações existentes
+function sugerirNomeEstacao() {
+  const numeros = estacoes.map(e => /^PC-(\d+)$/i.exec(e.nome)).filter(Boolean).map(m => parseInt(m[1]));
+  const proximo = numeros.length ? Math.max(...numeros) + 1 : 1;
+  return 'PC-' + String(proximo).padStart(2, '0');
 }
 
 async function criarEstacao() {
@@ -1228,15 +1244,19 @@ async function criarEstacao() {
   errEl.textContent = '';
 
   if (!nome) { errEl.textContent = 'Informe o nome da estação'; return; }
+  if (nome.length > 20) { errEl.textContent = 'Nome deve ter no máximo 20 caracteres'; return; }
+  if (estacoes.some(e => e.nome.toLowerCase() === nome.toLowerCase())) {
+    errEl.textContent = 'Já existe uma estação com esse nome'; return;
+  }
 
   try {
     const params = new URLSearchParams({nome});
     if (grupoId) params.append('grupo_id', grupoId);
     await post('/api/estacoes/?' + params.toString());
-    toast('Estação criada com sucesso!', 'ok');
+    toast(`Estação ${nome} criada! Rode o agente com --estacao ${nome}`, 'ok');
     fecharModal('modal-estacao');
+    if (grupoId) mapaGrupoAtivo = parseInt(grupoId);
     await carregarEstacoes();
-    renderMapa();
   } catch(e) { errEl.textContent = e.message; }
 }
 
@@ -1525,7 +1545,7 @@ function handleEvento(evento, dados) {
       carregarTudo(); break;
     case 'fila_atualizada':
       carregarFila(); carregarClientes(); break;
-    case 'estacao_online': case 'estacao_offline':
+    case 'estacao_online': case 'estacao_offline': case 'estacao_criada':
       carregarEstacoes(); break;
   }
 }
