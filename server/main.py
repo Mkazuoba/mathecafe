@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -8,7 +8,7 @@ import asyncio, json, os
 
 from database import get_db, init_db
 from models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
-from auth import verificar_senha, requer_perfil
+from auth import verificar_senha, requer_perfil, decodificar_token
 from websocket_manager import manager
 from routes import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
 
@@ -44,7 +44,14 @@ def startup():
 
 # ── WebSocket: painel ─────────────────────────────────────────────────────────
 @app.websocket("/ws/painel")
-async def ws_painel(ws: WebSocket):
+async def ws_painel(ws: WebSocket, token: str = ""):
+    try:
+        usuario = decodificar_token(token)
+    except HTTPException:
+        usuario = None
+    if not usuario or usuario.get("perfil") not in ("admin", "operador"):
+        await ws.close(code=4001, reason="Token inválido")
+        return
     await manager.conectar_painel(ws)
     try:
         while True:

@@ -1516,14 +1516,16 @@ async function encerrarSessao(sessaoId, estacao) {
 
 // ── WEBSOCKET ──────────────────────────────────────────────────────────────
 function conectarWS() {
+  if (!token) return; // deslogado: não tenta conectar com token=null
   try {
-    ws = new WebSocket(WS_URL + '?token=' + token);
+    ws = new WebSocket(WS_URL + '?token=' + encodeURIComponent(token));
     ws.onopen = () => {
       document.getElementById('ws-dot').className = 'ws-dot online';
       document.getElementById('ws-label').textContent = 'tempo real';
     };
     ws.onclose = () => {
       document.getElementById('ws-dot').className = 'ws-dot';
+      if (!token) { document.getElementById('ws-label').textContent = 'desconectado'; return; }
       document.getElementById('ws-label').textContent = 'reconectando...';
       setTimeout(conectarWS, 3000);
     };
