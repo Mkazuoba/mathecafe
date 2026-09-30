@@ -76,7 +76,7 @@ Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downlo
 
 Ou direto, sem perguntas: `iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-01`
 
-Num PC de testes (o seu, por exemplo), acrescente `teste` no fim: `iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-TESTE teste`. Nesse modo o agente **não fecha nenhum programa**; só registra no `agente.log` o que fecharia (`[teste] fecharia ...`). A faixa "MODO TESTE" aparece no topo do agente.
+Num PC de testes (o seu, por exemplo), acrescente `teste` no fim: `iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-TESTE teste`. Nesse modo o agente **não fecha nenhum programa nem reinicia o PC**; só registra no `agente.log` o que fecharia (`[teste] fecharia ...`). A faixa "MODO TESTE" aparece no topo do agente.
 
 - O nome da estação precisa ser exatamente o cadastrado no Mapa.
 - Rode como **Administrador** (o `iniciar.bat` já faz isso), senão o bloqueio de programas não funciona.

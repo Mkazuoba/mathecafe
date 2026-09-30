@@ -682,13 +682,15 @@ class AgenteApp:
         self._log("⏰ Tempo esgotado!")
         vai_reiniciar = self.reiniciar_ao_encerrar
         self._voltar_login()
-        if vai_reiniciar:
+        if vai_reiniciar and not self.modo_teste:
             self.lbl_login_erro.config(
                 text="⏰ Sessão encerrada. PC reiniciando em 30s...", fg="#f59e0b")
         self._reiniciar_se_necessario()
 
     def _reiniciar_se_necessario(self):
-        if self.reiniciar_ao_encerrar:
+        if self.reiniciar_ao_encerrar and self.modo_teste:
+            self._log("[teste] reiniciaria o PC (Reiniciar ao encerrar está ligado)")
+        elif self.reiniciar_ao_encerrar:
             self._log("🔄 Reiniciando o PC em 30 segundos...")
             subprocess.run(["shutdown", "/r", "/f", "/t", "30"],
                            shell=False, capture_output=True)

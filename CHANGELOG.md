@@ -4,7 +4,7 @@
 
 - Launcher não minimiza mais ao abrir um app: fica em tela cheia atrás, cobrindo a área de trabalho (como VSCyber/Senet). Ao fechar o app, o cliente volta ao launcher.
 - Faixa "Em uso" no launcher com os apps abertos; clicar traz o app para a frente.
-- `--teste` no agente (`iniciar.bat ... teste`): não fecha nenhum programa, só registra no log. Para testar no PC do desenvolvedor sem perder os outros programas.
+- `--teste` no agente (`iniciar.bat ... teste`): não fecha nenhum programa nem reinicia o PC, só registra no log. Para testar no PC do desenvolvedor sem perder os outros programas.
 
 ## 2026-09-29 — Painel em React (Ciclo 2)
 
