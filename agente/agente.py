@@ -135,8 +135,51 @@ PROCESSOS_SEMPRE_BLOQUEADOS = {
 }
 
 
+def listar_janelas(nomes_processo):
+    """Janelas visíveis (com título, sem dono) dos processos com esses nomes.
+    Devolve [(hwnd, titulo)]. Fora do Windows, lista vazia."""
+    try:
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+    except (AttributeError, OSError):
+        return []
+    janelas = []
+
+    def _cada(hwnd, _):
+        if not user32.IsWindowVisible(hwnd) or user32.GetWindow(hwnd, 4):  # 4 = GW_OWNER
+            return True
+        tam = user32.GetWindowTextLengthW(hwnd)
+        if not tam:
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            nome = psutil.Process(pid.value).name().lower()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return True
+        if nome in nomes_processo:
+            buf = ctypes.create_unicode_buffer(tam + 1)
+            user32.GetWindowTextW(hwnd, buf, tam + 1)
+            janelas.append((hwnd, buf.value))
+        return True
+
+    callback = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)(_cada)
+    user32.EnumWindows(callback, 0)
+    return janelas
+
+
+def trazer_para_frente(hwnd):
+    try:
+        user32 = ctypes.windll.user32
+    except (AttributeError, OSError):
+        return
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(hwnd)
+
+
 class AgenteApp:
-    def __init__(self, root, servidor, estacao):
+    def __init__(self, root, servidor, estacao, modo_teste=False):
         self.root = root
         self.servidor = servidor.rstrip("/")
         self.estacao = estacao
@@ -157,7 +200,10 @@ class AgenteApp:
         self.reiniciar_ao_encerrar = False
         self._img_refs = []
         self.modo_manutencao_ativo = False
-        self.app_em_uso = False  # launcher recuado para mostrar um app aberto
+        # --teste: não fecha nenhum programa, só registra no log o que fecharia
+        self.modo_teste = modo_teste
+        self._avisados_teste = set()
+        self._janelas_abertas = None
         # Só programas do usuário logado são fechados; processos do sistema e de
         # serviços (SYSTEM, LOCAL SERVICE...) nunca são tocados.
         try:
@@ -178,12 +224,11 @@ class AgenteApp:
         # Atalho oculto de manutenção (ambas as formas para compatibilidade)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
-        # Cliente voltou ao launcher (clicou nele): volta a ficar por cima
-        self.root.bind("<FocusIn>", self._launcher_em_foco)
 
         self.root.after(100, self._processar_fila)
         self.root.after(500, self._verificar_privilegios)
         self.root.after(1000, self._atualizar_countdown)
+        self.root.after(2000, self._atualizar_apps_abertos)
         self.root.after(3000, self._verificar_processos)
 
     # ── UI ──────────────────────────────────────────────────────────────────
@@ -212,6 +257,9 @@ class AgenteApp:
         self.lbl_estacao.pack(side="left", padx=4)
         self.lbl_status = tk.Label(header, text="● conectando...", font=small_font, fg="#f97316", bg=bg2)
         self.lbl_status.pack(side="right", padx=14)
+        if self.modo_teste:
+            tk.Label(header, text="MODO TESTE", font=small_font, fg="black",
+                     bg="#f59e0b", padx=6).pack(side="right", padx=4)
 
         # ── Frame de login ──
         self.frame_login = tk.Frame(self.root, bg=bg)
@@ -247,6 +295,9 @@ class AgenteApp:
         self.lbl_countdown = tk.Label(topo_sessao, text="00:00:00", font=tkfont.Font(family="Consolas", size=16, weight="bold"),
                                        fg="#22c55e", bg=bg2)
         self.lbl_countdown.pack(side="right", padx=16, pady=10)
+
+        # Apps abertos pelo cliente: clicar traz o app de volta para a frente
+        self.frame_abertos = tk.Frame(self.frame_sessao, bg=bg3)
 
         tk.Label(self.frame_sessao, text="Selecione um aplicativo para abrir",
                  font=small_font, fg=text2, bg=bg).pack(pady=(16, 8))
@@ -436,12 +487,16 @@ class AgenteApp:
         self.frame_log.pack_forget()
         self.frame_login.pack_forget()
         self.frame_sessao.pack(fill="both", expand=True)
+        self._avisados_teste = set()
+        self._janelas_abertas = None
 
-        # Modo tela cheia durante a sessão
-        self.root.attributes("-topmost", True)
+        # Tela cheia durante a sessão, cobrindo a área de trabalho. "Por cima de
+        # tudo" só no instante de entrar: depois os apps precisam abrir na frente.
         self.root.attributes("-fullscreen", True)
+        self.root.attributes("-topmost", True)
         self.root.lift()
         self.root.focus_force()
+        self.root.after(300, lambda: self.root.attributes("-topmost", False))
 
         if self.whitelist_procs:
             self._log(f"Sessão iniciada — {self._fmt(self.tempo_total)} disponíveis | "
@@ -547,21 +602,44 @@ class AgenteApp:
         except Exception as e:
             self._log(f"⚠ Erro ao abrir {app['nome']}: {e}")
             return
-        # O launcher fica em tela cheia e por cima de tudo: recua para o app
-        # aparecer. O cliente volta ao launcher pela barra de tarefas.
-        self.app_em_uso = True
-        self.root.attributes("-topmost", False)
-        self.root.attributes("-fullscreen", False)
-        self.root.iconify()
+        # O launcher continua em tela cheia atrás do app, como fundo: ao fechar
+        # o app, o cliente volta a ver o launcher e não a área de trabalho.
+        self.root.after(1500, self._atualizar_apps_abertos, False)
 
-    def _launcher_em_foco(self, event=None):
-        if event is not None and event.widget is not self.root:
+    def _nomes_processo_apps(self):
+        """Processos cujas janelas aparecem em "Em uso": os da whitelist e os
+        executáveis do launcher."""
+        nomes = set(self.whitelist_procs)
+        for a in self.whitelist_apps:
+            if a.get("caminho"):
+                nomes.add(os.path.basename(a["caminho"].strip().strip('"')).lower())
+        return nomes
+
+    def _atualizar_apps_abertos(self, reagendar=True):
+        if self.sessao_ativa:
+            janelas = listar_janelas(self._nomes_processo_apps())
+            if janelas != self._janelas_abertas:
+                self._janelas_abertas = janelas
+                self._montar_apps_abertos(janelas)
+        if reagendar:
+            self.root.after(2000, self._atualizar_apps_abertos)
+
+    def _montar_apps_abertos(self, janelas):
+        for w in self.frame_abertos.winfo_children():
+            w.destroy()
+        if not janelas:
+            self.frame_abertos.pack_forget()
             return
-        if self.app_em_uso and self.sessao_ativa and not self.modo_manutencao_ativo:
-            self.app_em_uso = False
-            self.root.attributes("-fullscreen", True)
-            self.root.attributes("-topmost", True)
-            self.root.lift()
+        tk.Label(self.frame_abertos, text="EM USO", font=self.f_small,
+                 fg=self.c_text2, bg=self.c_bg3).pack(side="left", padx=(16, 8), pady=6)
+        for hwnd, titulo in janelas:
+            texto = (titulo[:30] + "…") if len(titulo) > 30 else titulo
+            tk.Button(self.frame_abertos, text=texto, font=self.f_small,
+                      bg=self.c_bg2, fg=self.c_text, relief="flat", cursor="hand2",
+                      activebackground="#252b3b", activeforeground=self.c_text,
+                      command=lambda h=hwnd: trazer_para_frente(h)
+                      ).pack(side="left", padx=4, pady=6, ipadx=6)
+        self.frame_abertos.pack(fill="x", after=self.frame_sessao.winfo_children()[0])
 
     def _atualizar_countdown(self):
         if self.sessao_ativa:
@@ -620,8 +698,8 @@ class AgenteApp:
         self.sessao_id = None
         # Fecha os apps que o cliente abriu, para o próximo não encontrá-los
         self._fechar_processos(lambda nome: nome in self.whitelist_procs, "encerrado ao fim da sessão")
-        self.app_em_uso = False
-        self.root.deiconify()
+        self._janelas_abertas = None
+        self._montar_apps_abertos([])
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self._img_refs = []
@@ -760,6 +838,11 @@ class AgenteApp:
                 if not self.usuario or proc.info["username"] != self.usuario:
                     continue
                 if deve_fechar(nome):
+                    if self.modo_teste:
+                        if nome not in self._avisados_teste:
+                            self._avisados_teste.add(nome)
+                            self._log(f"[teste] fecharia {nome}: {motivo}")
+                        continue
                     proc.kill()
                     self._log(f"🚫 {nome}: {motivo}")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -782,6 +865,8 @@ def main():
                          help="URL do servidor, ex: ws://localhost:8000 ou wss://mathecafe.onrender.com")
     parser.add_argument("--estacao", required=True,
                          help="Nome da estação cadastrada no painel, ex: PC-01")
+    parser.add_argument("--teste", action="store_true",
+                         help="Não fecha nenhum programa, só registra no log o que fecharia")
     args = parser.parse_args()
 
     servidor = args.servidor.strip()
@@ -793,13 +878,14 @@ def main():
     # Cabeçalho do agente.log: o que é preciso para diagnosticar a conexão
     gravar_log(f"MatheCafé agente — {datetime.now():%Y-%m-%d %H:%M:%S}", novo=True)
     gravar_log(f"Python {sys.version.split()[0]} | websockets {websockets.__version__} | "
-               f"servidor {servidor} | estação {args.estacao.strip()!r}")
+               f"servidor {servidor} | estação {args.estacao.strip()!r}"
+               + (" | MODO TESTE (não fecha programas)" if args.teste else ""))
     gravar_log(f"Proxy do Windows: {urllib.request.getproxies() or 'nenhum'}")
 
     root = tk.Tk()
     # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
     root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
-    app = AgenteApp(root, servidor, args.estacao.strip())
+    app = AgenteApp(root, servidor, args.estacao.strip(), modo_teste=args.teste)
     root.mainloop()
 
 

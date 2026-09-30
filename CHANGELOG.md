@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-30 — Launcher como fundo e modo teste (Ciclo 3)
+
+- Launcher não minimiza mais ao abrir um app: fica em tela cheia atrás, cobrindo a área de trabalho (como VSCyber/Senet). Ao fechar o app, o cliente volta ao launcher.
+- Faixa "Em uso" no launcher com os apps abertos; clicar traz o app para a frente.
+- `--teste` no agente (`iniciar.bat ... teste`): não fecha nenhum programa, só registra no log. Para testar no PC do desenvolvedor sem perder os outros programas.
+
 ## 2026-09-29 — Painel em React (Ciclo 2)
 
 - Painel reescrito em React + Vite + Tailwind (`server/frontend`), com as mesmas 4 telas e o mesmo visual. O build fica em `server/app/static`, então o deploy não precisa de Node.

@@ -74,7 +74,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 2. Cliente digita login e senha no agente → `login_cliente` pelo WebSocket.
 3. Servidor confere: senha certa? está na fila? estação livre? Se não, responde o motivo.
 4. Se sim: tempo = saldo do cliente, ou o tempo padrão das configurações. Cria a `sessao`, marca a autorização como usada, estação vira `ocupada`, manda tempo, apps permitidos e `reiniciar_ao_encerrar` ao agente, avisa os painéis (`sessao_iniciada`).
-5. O agente mostra o launcher em tela cheia e conta o tempo; o painel conta junto.
+5. O agente mostra o launcher em tela cheia e conta o tempo; o painel conta junto. O launcher fica como fundo da tela (não minimiza, não fica "sempre por cima"): os apps abrem na frente dele e, ao fechar um app, o cliente volta ao launcher. A faixa "Em uso" lista as janelas dos apps permitidos abertos e traz cada uma de volta para a frente. Com `--teste`, o agente não fecha programas (só registra no log).
 6. Fim da sessão, de quatro jeitos:
    - cliente encerra ou o tempo acaba → agente manda `sessao_encerrada`;
    - operador encerra pelo painel → servidor manda `encerrar_sessao` ao agente;
