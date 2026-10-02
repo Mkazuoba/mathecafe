@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { IconPencil } from "@tabler/icons-react"
+import { IconPencil, IconHistory, IconMessageCircle } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
@@ -13,6 +13,17 @@ import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/com
 import { Modal } from "@/components/ui/modal"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
+
+interface SessaoHistorico {
+  id: number
+  estacao_nome: string
+  iniciada_em: string
+  encerrada_em: string | null
+  tempo_total_segundos: number
+  tempo_consumido_segundos: number
+  motivo_encerramento: string | null
+}
+
 type Filtro = "todos" | "ativos" | "inativos"
 
 export default function Clientes() {
@@ -24,6 +35,7 @@ export default function Clientes() {
   const [filtro, setFiltro] = useState<Filtro>("todos")
   const [editando, setEditando] = useState<Cliente | "novo" | null>(null)
   const [editandoSaldo, setEditandoSaldo] = useState<Cliente | null>(null)
+  const [verHistorico, setVerHistorico] = useState<Cliente | null>(null)
 
   const lista = useMemo(() => {
     const q = busca.trim().toLowerCase()
@@ -87,7 +99,14 @@ export default function Clientes() {
             {lista.map((c) => (
               <tr key={c.id} className="hover:bg-superficie-2">
                 <td className="border-b border-borda px-2.5 py-2.5">{c.login}</td>
-                <td className="border-b border-borda px-2.5 py-2.5">{c.nome}</td>
+                <td className="border-b border-borda px-2.5 py-2.5">
+                  <div>{c.nome}</div>
+                  {c.observacao && (
+                    <div className="mt-0.5 flex items-center gap-1 text-xs text-texto-fraco">
+                      <IconMessageCircle size={11} /> {c.observacao}
+                    </div>
+                  )}
+                </td>
                 <td className="border-b border-borda px-2.5 py-2.5">
                   <button
                     type="button"
@@ -110,6 +129,9 @@ export default function Clientes() {
                 </td>
                 <td className="border-b border-borda px-2.5 py-2.5">
                   <div className="flex gap-1.5">
+                    <Button variant="outline" size="xs" onClick={() => setVerHistorico(c)} title="Histórico">
+                      <IconHistory size={13} />
+                    </Button>
                     <Button variant="outline" size="xs" onClick={() => setEditando(c)}>
                       Editar
                     </Button>
@@ -129,6 +151,7 @@ export default function Clientes() {
 
       <ModalCliente cliente={editando} aoFechar={() => setEditando(null)} />
       <ModalSaldo cliente={editandoSaldo} aoFechar={() => setEditandoSaldo(null)} />
+      {verHistorico && <ModalHistoricoCliente cliente={verHistorico} aoFechar={() => setVerHistorico(null)} />}
     </>
   )
 }
@@ -238,6 +261,108 @@ function ModalCliente({ cliente, aoFechar }: { cliente: Cliente | "novo" | null;
           </Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Modal: Historico do cliente
+// ---------------------------------------------------------------------------
+function ModalHistoricoCliente({ cliente, aoFechar }: { cliente: Cliente; aoFechar: () => void }) {
+  const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState("")
+
+  useEffect(() => {
+    setCarregando(true)
+    setErro("")
+    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?cliente_id=${cliente.id}`)
+      .then((r) => setSessoes(r ?? []))
+      .catch((e) => setErro((e as Error).message))
+      .finally(() => setCarregando(false))
+  }, [cliente.id])
+
+  function motivoLabel(motivo: string | null) {
+    if (!motivo) return "—"
+    const mapa: Record<string, string> = {
+      saldo_zerado: "Saldo zerado",
+      encerrado_operador: "Operador",
+      desconexao: "Desconexao",
+      reinicio: "Reinicio",
+      manual: "Manual",
+    }
+    return mapa[motivo] ?? motivo
+  }
+
+  const totalUsado = sessoes.reduce((s, x) => s + (x.tempo_consumido_segundos ?? 0), 0)
+
+  return (
+    <Modal titulo={`Historico — ${cliente.nome}`} aberto aoFechar={aoFechar}>
+      <div className="flex flex-col gap-4" style={{ minWidth: 560 }}>
+        {cliente.observacao && (
+          <div className="flex items-start gap-2 rounded-md bg-superficie-2 px-3 py-2 text-sm text-texto-suave">
+            <IconMessageCircle size={15} className="mt-0.5 shrink-0" />
+            <span>{cliente.observacao}</span>
+          </div>
+        )}
+
+        {carregando && <p className="py-6 text-center text-sm text-texto-fraco">Carregando...</p>}
+        {erro && <p className="text-sm text-vermelho">{erro}</p>}
+
+        {!carregando && !erro && (
+          <>
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="sticky top-0 bg-superficie text-left text-xs tracking-wide text-texto-fraco uppercase">
+                    {["Data", "Estacao", "Duracao", "Consumido", "Encerramento"].map((h) => (
+                      <th key={h} className="border-b border-borda px-2.5 py-2 font-medium">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessoes.map((s) => (
+                    <tr key={s.id} className="hover:bg-superficie-2">
+                      <td className="border-b border-borda px-2.5 py-2 text-texto-suave">
+                        {s.iniciada_em ? dataDoServidor(s.iniciada_em).toLocaleDateString("pt-BR") : "—"}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 font-medium">{s.estacao_nome}</td>
+                      <td className="border-b border-borda px-2.5 py-2 tabular-nums">
+                        {formatarTempo(s.tempo_total_segundos ?? 0)}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 tabular-nums text-texto-suave">
+                        {formatarTempo(s.tempo_consumido_segundos ?? 0)}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 text-texto-fraco">
+                        {motivoLabel(s.motivo_encerramento)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!sessoes.length && <Vazio>Nenhuma sessao registrada</Vazio>}
+            </div>
+
+            {sessoes.length > 0 && (
+              <div className="flex items-center justify-between border-t border-borda pt-3 text-sm">
+                <span className="text-texto-fraco">{sessoes.length} sessao(oes)</span>
+                <span className="text-texto-suave">
+                  Total consumido:{" "}
+                  <span className="font-semibold tabular-nums text-texto">{formatarTempo(totalUsado)}</span>
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={aoFechar}>
+            Fechar
+          </Button>
+        </div>
+      </div>
     </Modal>
   )
 }

@@ -1,13 +1,28 @@
-import { useMemo, useState } from "react"
-import { IconAlertTriangle, IconClockPlay, IconPencil, IconDots, IconPlayerStop, IconRefresh, IconMessage, IconTool, IconUserPlus } from "@tabler/icons-react"
+import { useEffect, useMemo, useState } from "react"
+import { IconAlertTriangle, IconClockPlay, IconHistory, IconPencil, IconDots, IconPlayerStop, IconRefresh, IconMessage, IconTool, IconUserPlus } from "@tabler/icons-react"
+import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useDados } from "@/lib/dados"
-import { formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
+import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
 import type { Cliente, Estacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
 import { COR_BORDA_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
+
+
+interface SessaoHistorico {
+  id: number
+  cliente_id: number
+  cliente_login: string
+  cliente_nome: string
+  estacao_nome: string
+  iniciada_em: string
+  encerrada_em: string | null
+  tempo_total_segundos: number
+  tempo_consumido_segundos: number
+  motivo_encerramento: string | null
+}
 
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
@@ -97,6 +112,7 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
   const [menuAberto, setMenuAberto] = useState(false)
   const [modalMensagem, setModalMensagem] = useState(false)
   const [modalLiberarDireto, setModalLiberarDireto] = useState(false)
+  const [verHistoricoEstacao, setVerHistoricoEstacao] = useState(false)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
   const aceitaCliente = e.status === "livre"
@@ -155,6 +171,8 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
                       label={e.status === "manutencao" ? "Sair da manutencao" : "Modo manutencao"}
                       onClick={() => { setMenuAberto(false); alternarManutencao(e.nome) }}
                     />
+                    <MenuItemBtn icon={<IconHistory size={14} />} label="Ver historico"
+                      onClick={() => { setMenuAberto(false); setVerHistoricoEstacao(true) }} />
                     <MenuItemBtn icon={<IconRefresh size={14} />} label="Reiniciar PC"
                       onClick={() => { setMenuAberto(false); reiniciarPc(e.nome) }}
                       perigo />
@@ -199,6 +217,9 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
           aoFechar={() => setModalLiberarDireto(false)}
           aoLiberar={(id) => liberarDireto(e.nome, id).then((ok) => { if (ok) setModalLiberarDireto(false) })}
         />
+      )}
+      {verHistoricoEstacao && (
+        <ModalHistoricoEstacao estacao={e.nome} aoFechar={() => setVerHistoricoEstacao(false)} />
       )}
     </>
   )
@@ -448,5 +469,106 @@ function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente
         <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
       )}
     </Coluna>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Modal: Historico da estacao
+// ---------------------------------------------------------------------------
+function ModalHistoricoEstacao({ estacao, aoFechar }: { estacao: string; aoFechar: () => void }) {
+  const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState("")
+
+  useEffect(() => {
+    setCarregando(true)
+    setErro("")
+    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?estacao_nome=${encodeURIComponent(estacao)}`)
+      .then((r) => setSessoes(r ?? []))
+      .catch((e) => setErro((e as Error).message))
+      .finally(() => setCarregando(false))
+  }, [estacao])
+
+  function motivoLabel(motivo: string | null) {
+    if (!motivo) return "—"
+    const mapa: Record<string, string> = {
+      saldo_zerado: "Saldo zerado",
+      encerrado_operador: "Operador",
+      desconexao: "Desconexao",
+      reinicio: "Reinicio",
+      manual: "Manual",
+    }
+    return mapa[motivo] ?? motivo
+  }
+
+  const totalConsuming = sessoes.reduce((s, x) => s + (x.tempo_consumido_segundos ?? 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
+      <div
+        className="flex w-[640px] max-w-[95vw] flex-col gap-4 rounded-xl border border-borda bg-superficie p-5 shadow-xl"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <h3 className="text-sm font-semibold">Historico — {estacao}</h3>
+
+        {carregando && <p className="py-6 text-center text-sm text-texto-fraco">Carregando...</p>}
+        {erro && <p className="text-sm text-vermelho">{erro}</p>}
+
+        {!carregando && !erro && (
+          <>
+            <div className="max-h-80 overflow-auto rounded-md border border-borda">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="sticky top-0 bg-superficie text-left text-xs tracking-wide text-texto-fraco uppercase">
+                    {["Data", "Cliente", "Duracao", "Consumido", "Encerramento"].map((h) => (
+                      <th key={h} className="border-b border-borda px-2.5 py-2 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessoes.map((s) => (
+                    <tr key={s.id} className="hover:bg-superficie-2">
+                      <td className="border-b border-borda px-2.5 py-2 text-texto-suave">
+                        {s.iniciada_em ? dataDoServidor(s.iniciada_em).toLocaleDateString("pt-BR") : "—"}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2">
+                        <div className="font-medium">{s.cliente_nome}</div>
+                        <div className="text-xs text-texto-fraco">{s.cliente_login}</div>
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 tabular-nums">
+                        {formatarTempo(s.tempo_total_segundos ?? 0)}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 tabular-nums text-texto-suave">
+                        {formatarTempo(s.tempo_consumido_segundos ?? 0)}
+                      </td>
+                      <td className="border-b border-borda px-2.5 py-2 text-texto-fraco">
+                        {motivoLabel(s.motivo_encerramento)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!sessoes.length && (
+                <div className="px-3 py-6 text-center text-sm text-texto-fraco">Nenhuma sessao registrada</div>
+              )}
+            </div>
+
+            {sessoes.length > 0 && (
+              <div className="flex items-center justify-between border-t border-borda pt-2 text-sm">
+                <span className="text-texto-fraco">{sessoes.length} sessao(oes)</span>
+                <span className="text-texto-suave">
+                  Total consumido:{" "}
+                  <span className="font-semibold tabular-nums text-texto">{formatarTempo(totalConsuming)}</span>
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex justify-end">
+          <Button size="xs" variant="ghost" onClick={aoFechar}>Fechar</Button>
+        </div>
+      </div>
+    </div>
   )
 }
