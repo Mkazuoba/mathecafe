@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react"
 import { IconAlertTriangle, IconClockPlay, IconMessage, IconPencil, IconPlayerStop, IconRefresh, IconTool, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
+import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
-import type { Cliente, Estacao } from "@/lib/tipos"
+import type { Cliente, Estacao, Grupo } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
@@ -175,13 +176,76 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
   )
 }
 
+
+// ---------------------------------------------------------------------------
+// Form inline: editar nome e grupo da estação
+// ---------------------------------------------------------------------------
+function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
+  estacao: Estacao
+  grupos: Grupo[]
+  aoSalvar: () => Promise<void>
+  aoCancelar: () => void
+}) {
+  const avisar = useAvisos()
+  const [nome, setNome] = useState(estacao.nome)
+  const [grupoId, setGrupoId] = useState<number | "">(estacao.grupo_id ?? "")
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nome.trim()) return
+    setSalvando(true)
+    try {
+      await Api.put(`/api/estacoes/${estacao.id}`, {
+        nome: nome.trim(),
+        grupo_id: grupoId === "" ? null : grupoId,
+      })
+      await aoSalvar()
+      avisar("Estação atualizada")
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <form onSubmit={salvar} className="flex flex-1 items-center gap-2">
+      <input
+        autoFocus
+        type="text"
+        value={nome}
+        onChange={(ev) => setNome(ev.target.value)}
+        className="w-32 rounded-md border border-destaque bg-superficie-2 px-2 py-1 text-sm font-semibold outline-none"
+      />
+      <select
+        value={grupoId}
+        onChange={(ev) => setGrupoId(ev.target.value === "" ? "" : Number(ev.target.value))}
+        className="rounded-md border border-borda bg-superficie-2 px-2 py-1 text-sm outline-none focus:border-destaque"
+      >
+        <option value="">Sem grupo</option>
+        {grupos.map((g) => (
+          <option key={g.id} value={g.id}>{g.nome}</option>
+        ))}
+      </select>
+      <Button type="submit" size="xs" disabled={salvando || !nome.trim()}>
+        {salvando ? "..." : "Salvar"}
+      </Button>
+      <Button type="button" variant="outline" size="xs" onClick={aoCancelar}>
+        Cancelar
+      </Button>
+    </form>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Modal da estacao com abas: Geral | Comandos | Historico
 // ---------------------------------------------------------------------------
 function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
-  const { sessaoDaEstacao, agora, clientes } = useDados()
+  const { sessaoDaEstacao, agora, clientes, grupos, recarregarEstacoes } = useDados()
   const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
   const [aba, setAba] = useState<AbaEstacao>("geral")
+  const [editandoNome, setEditandoNome] = useState(false)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
 
@@ -198,20 +262,41 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         onClick={(ev) => ev.stopPropagation()}
       >
         {/* cabeçalho */}
-        <div className="flex items-center justify-between border-b border-borda px-5 pt-4 pb-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold">{e.nome}</span>
-            {e.online
-              ? <span className="flex items-center gap-1 text-xs text-livre"><IconWifi size={12} /> Online</span>
-              : <span className="flex items-center gap-1 text-xs text-texto-fraco"><IconWifiOff size={12} /> Offline</span>}
+        <div className="flex items-center justify-between border-b border-borda px-5 pt-4 pb-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {editandoNome ? (
+              <FormEditarEstacao
+                estacao={e}
+                grupos={grupos}
+                aoSalvar={async () => { await recarregarEstacoes(); setEditandoNome(false) }}
+                aoCancelar={() => setEditandoNome(false)}
+              />
+            ) : (
+              <>
+                <span className="font-semibold">{e.nome}</span>
+                <button
+                  type="button"
+                  title="Editar estação"
+                  onClick={() => setEditandoNome(true)}
+                  className="rounded p-0.5 text-texto-fraco hover:bg-superficie-2 hover:text-texto"
+                >
+                  <IconPencil size={13} />
+                </button>
+                {e.online
+                  ? <span className="flex items-center gap-1 text-xs text-livre"><IconWifi size={12} /> Online</span>
+                  : <span className="flex items-center gap-1 text-xs text-texto-fraco"><IconWifiOff size={12} /> Offline</span>}
+              </>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={aoFechar}
-            className="mb-1 rounded p-1 text-texto-fraco hover:bg-superficie-2 hover:text-texto"
-          >
-            ✕
-          </button>
+          {!editandoNome && (
+            <button
+              type="button"
+              onClick={aoFechar}
+              className="ml-2 shrink-0 rounded p-1 text-texto-fraco hover:bg-superficie-2 hover:text-texto"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* abas */}
