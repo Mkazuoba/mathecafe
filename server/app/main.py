@@ -281,6 +281,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 imagem_b64 = dados.get("imagem", "")
                 await manager.broadcast_paineis("captura_tela", {"estacao": nome, "imagem": imagem_b64})
 
+            elif evento == "tela_frame":
+                imagem_b64 = dados.get("imagem", "")
+                await manager.broadcast_paineis("tela_frame", {"estacao": nome, "imagem": imagem_b64})
+
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
         manager.desconectar_estacao(nome, ws)

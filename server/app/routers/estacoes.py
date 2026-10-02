@@ -338,3 +338,19 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     await manager.broadcast_paineis("estacao_atualizada", {"nome": nome})
 
     return {"ok": True, "sessao_id": sessao.id}
+
+
+@router.post("/{nome}/iniciar_streaming")
+async def iniciar_streaming(nome: str, _=Depends(requer_perfil("admin", "operador"))):
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estacao offline")
+    await manager.enviar_estacao(nome, "iniciar_streaming", {})
+    return {"ok": True}
+
+
+@router.post("/{nome}/parar_streaming")
+async def parar_streaming(nome: str, _=Depends(requer_perfil("admin", "operador"))):
+    if nome in manager.estacoes_online():
+        await manager.enviar_estacao(nome, "parar_streaming", {})
+    return {"ok": True}
+

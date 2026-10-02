@@ -108,6 +108,9 @@ class AgenteApp:
         # Prompt de manutenção pendente (aguardando resposta do servidor)
         self._prompt_manutencao = None
 
+        # Streaming ao vivo
+        self._streaming = False
+
         self.root.title(f"MatheCafe - {estacao}")
         self.root.geometry("420x480")
         self.root.configure(bg="#0f1117")
@@ -375,6 +378,16 @@ class AgenteApp:
             self._log("<- capturar_tela")
             self.root.after(0, self._capturar_e_enviar_tela)
 
+        elif evento == "iniciar_streaming":
+            self._log("<- iniciar_streaming")
+            if not self._streaming:
+                self._streaming = True
+                threading.Thread(target=self._loop_streaming, daemon=True).start()
+
+        elif evento == "parar_streaming":
+            self._log("<- parar_streaming")
+            self._streaming = False
+
         else:
             self._log(f"<- evento: {evento} | {dados}")
 
@@ -395,6 +408,26 @@ class AgenteApp:
             self._log("-> captura_tela_resultado enviada")
         except Exception as ex:
             self._log(f"Erro na captura de tela: {ex}")
+
+    def _loop_streaming(self):
+        if not PIL_AVAILABLE:
+            self._log("PIL nao disponivel, streaming ignorado")
+            return
+        import io, base64
+        from PIL import ImageGrab
+        self._log("-> streaming iniciado")
+        while self._streaming:
+            try:
+                img = ImageGrab.grab()
+                img.thumbnail((1280, 720))
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=60)
+                b64 = base64.b64encode(buf.getvalue()).decode()
+                self._enviar({"evento": "tela_frame", "dados": {"imagem": b64}})
+            except Exception as ex:
+                self._log(f"Erro no streaming: {ex}")
+            time.sleep(0.8)
+        self._log("-> streaming encerrado")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
     def _fazer_login(self):

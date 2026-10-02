@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage,  IconPencil, IconPlayerStop, IconRefresh, IconTool, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage,  IconPencil, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -260,21 +260,47 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
 
-  // Escuta captura_tela via WebSocket do painel
+  const [streaming, setStreaming] = useState(false)
+  const [frameUrl, setFrameUrl] = useState<string | null>(null)
+
+  // Escuta captura_tela e tela_frame via WebSocket
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       try {
         const msg = JSON.parse(ev.data)
-        if (msg.evento === "captura_tela" && msg.dados.estacao === e.nome) {
+        if (msg.dados?.estacao !== e.nome) return
+        if (msg.evento === "captura_tela") {
           setScreenshot("data:image/jpeg;base64," + msg.dados.imagem)
+        }
+        if (msg.evento === "tela_frame") {
+          setFrameUrl("data:image/jpeg;base64," + msg.dados.imagem)
         }
       } catch { /* ignore */ }
     }
-    // Acessa o WebSocket já existente no window (exposto pelo useDados)
     const ws = (window as any).__mathecafe_ws as WebSocket | undefined
     if (ws) ws.addEventListener("message", onMessage)
     return () => { if (ws) ws.removeEventListener("message", onMessage) }
   }, [e.nome])
+
+  // Para o streaming ao desmontar o modal
+  useEffect(() => {
+    return () => {
+      if (streaming) {
+        Api.post(`/api/estacoes/${e.nome}/parar_streaming`, {}).catch(() => {})
+      }
+    }
+  }, [streaming, e.nome])
+
+  async function toggleStreaming() {
+    if (streaming) {
+      await Api.post(`/api/estacoes/${e.nome}/parar_streaming`, {})
+      setStreaming(false)
+      setFrameUrl(null)
+    } else {
+      await Api.post(`/api/estacoes/${e.nome}/iniciar_streaming`, {})
+      setStreaming(true)
+    }
+  }
 
   const abas: { id: AbaEstacao; label: string }[] = [
     { id: "geral", label: "Geral" },
@@ -362,6 +388,9 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
               liberarDireto={liberarDireto}
               aoFechar={aoFechar}
               aoCapturarTela={() => Api.post(`/api/estacoes/${e.nome}/capturar_tela`, {})}
+              streaming={streaming}
+              frameUrl={frameUrl}
+              toggleStreaming={toggleStreaming}
             />
           )}
           {aba === "historico" && (
@@ -451,7 +480,7 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 // ---------------------------------------------------------------------------
 // Aba: Comandos
 // ---------------------------------------------------------------------------
-function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela }: {
+function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela, streaming, frameUrl, toggleStreaming }: {
   estacao: Estacao
   sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
   clientes: Cliente[]
@@ -462,6 +491,9 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
   liberarDireto: (nome: string, clienteId: number) => Promise<boolean>
   aoFechar: () => void
   aoCapturarTela: () => void
+  streaming: boolean
+  frameUrl: string | null
+  toggleStreaming: () => Promise<void>
 }) {
   const { sessoes, fila } = useDados()
   const [textoMsg, setTextoMsg] = useState("")
@@ -488,9 +520,31 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
   return (
     <div className="flex flex-col gap-5">
       <SecaoComando titulo="Monitoramento">
-        <Button variant="outline" size="sm" onClick={aoCapturarTela}>
-          <IconCamera size={14} className="mr-1.5" /> Capturar tela
-        </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={aoCapturarTela}>
+              <IconCamera size={14} className="mr-1.5" /> Captura rápida
+            </Button>
+            <Button
+              variant={streaming ? "perigo" : "outline"}
+              size="sm"
+              onClick={toggleStreaming}
+            >
+              {streaming
+                ? <><IconVideoOff size={14} className="mr-1.5" /> Parar live</>
+                : <><IconVideo size={14} className="mr-1.5" /> Ver ao vivo</>}
+            </Button>
+          </div>
+          {streaming && (
+            <div className="relative mt-1 overflow-hidden rounded-lg border border-borda bg-black">
+              {frameUrl
+                ? <img src={frameUrl} alt="Stream ao vivo" className="w-full rounded-lg" />
+                : <div className="flex h-32 items-center justify-center text-xs text-texto-fraco">Aguardando primeiro frame...</div>
+              }
+              <span className="absolute top-1.5 left-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">● ao vivo</span>
+            </div>
+          )}
+        </div>
       </SecaoComando>
       {/* Encerrar sessão */}
       {sessao && (
