@@ -532,19 +532,29 @@ class AgenteApp:
             "tempo_consumido_segundos": self.tempo_total
         })
         self._log("Tempo esgotado!")
-        vai_reiniciar = self.reiniciar_ao_encerrar
         self._voltar_login()
-        if vai_reiniciar:
-            self.lbl_login_erro.config(
-                text="Sessao encerrada. PC reiniciando em 30s...", fg="#f59e0b")
         self._reiniciar_se_necessario()
 
     def _reiniciar_se_necessario(self):
-        if self.reiniciar_ao_encerrar:
-            self._log("Reiniciando o PC em 30 segundos...")
+        if not self.reiniciar_ao_encerrar:
+            return
+        self._log("Iniciando contagem para reiniciar...")
+        self._countdown_reinicio(30)
+
+    def _countdown_reinicio(self, segundos):
+        """Exibe contagem regressiva no launcher e reinicia ao zerar."""
+        if segundos > 0:
+            self.lbl_login_erro.config(
+                text=f"Sessao encerrada. Reiniciando em {segundos}s...",
+                fg="#f59e0b"
+            )
+            self.root.after(1000, self._countdown_reinicio, segundos - 1)
+        else:
+            self.lbl_login_erro.config(text="Reiniciando agora...", fg="#ef4444")
+            self._log("Reiniciando o PC...")
             try:
                 resultado = subprocess.run(
-                    r"C:\Windows\System32\shutdown.exe /r /f /t 30",
+                    r"C:\Windows\System32\shutdown.exe /r /f /t 0",
                     shell=True, capture_output=True, text=True
                 )
                 if resultado.returncode != 0:
