@@ -273,6 +273,7 @@ function SecaoApps() {
   const { grupos } = useDados()
   const [apps, setApps] = useState<AppPermitido[] | null>(null)
   const [form, setForm] = useState({ nome: "", processo: "", grupo: "", caminho: "", imagem: "" })
+  const [editando, setEditando] = useState<AppPermitido | null>(null)
   const [erro, setErro] = useState("")
 
   const carregar = useCallback(async () => {
@@ -366,6 +367,9 @@ function SecaoApps() {
                 {a.processo} · {a.caminho || "(sem caminho: não aparece no launcher)"}
               </div>
             </div>
+            <Button variant="outline" size="xs" onClick={() => setEditando(a)}>
+              Editar
+            </Button>
             <Button variant="perigo" size="xs" onClick={() => remover(a)}>
               Remover
             </Button>
@@ -374,7 +378,98 @@ function SecaoApps() {
       ) : (
         <Vazio>Nenhum app cadastrado. Sem apps na lista, nenhum programa é bloqueado.</Vazio>
       )}
+      <ModalApp app={editando} grupos={grupos} aoFechar={() => setEditando(null)} aoSalvar={carregar} />
     </>
+  )
+}
+
+function ModalApp({
+  app,
+  grupos,
+  aoFechar,
+  aoSalvar,
+}: {
+  app: AppPermitido | null
+  grupos: { id: number; nome: string }[]
+  aoFechar: () => void
+  aoSalvar: () => Promise<void>
+}) {
+  const avisar = useAvisos()
+  const [nome, setNome] = useState("")
+  const [processo, setProcesso] = useState("")
+  const [caminho, setCaminho] = useState("")
+  const [imagem, setImagem] = useState("")
+  const [grupoId, setGrupoId] = useState("")
+  const [ativo, setAtivo] = useState(true)
+  const [erro, setErro] = useState("")
+  const [aberto, setAberto] = useState<AppPermitido | null>(null)
+
+  if (app !== aberto) {
+    setAberto(app)
+    setNome(app?.nome ?? "")
+    setProcesso(app?.processo ?? "")
+    setCaminho(app?.caminho ?? "")
+    setImagem(app?.imagem_url ?? "")
+    setGrupoId(app?.grupo_id != null ? String(app.grupo_id) : "")
+    setAtivo(app?.ativo ?? true)
+    setErro("")
+  }
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!app) return
+    if (!nome.trim() || !processo.trim()) return setErro("Preencha nome e processo")
+    try {
+      await Api.put(`/api/apps/${app.id}`, {
+        nome: nome.trim(),
+        processo: processo.trim(),
+        caminho: caminho.trim() || null,
+        imagem_url: imagem.trim() || null,
+        ativo,
+        grupo_id: grupoId ? Number(grupoId) : null,
+      })
+      avisar("App atualizado")
+      aoFechar()
+      await aoSalvar()
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
+  return (
+    <Modal titulo="Editar app" aberto={!!app} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="flex flex-col gap-4">
+        <Campo rotulo="Nome" id="app-nome">
+          <Input id="app-nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Processo (.exe)" id="app-proc">
+          <Input id="app-proc" value={processo} onChange={(e) => setProcesso(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Caminho do .exe" id="app-cam">
+          <Input id="app-cam" value={caminho} onChange={(e) => setCaminho(e.target.value)} placeholder="C:\\...\\app.exe" />
+        </Campo>
+        <Campo rotulo="URL da imagem" id="app-img">
+          <Input id="app-img" value={imagem} onChange={(e) => setImagem(e.target.value)} placeholder="https://..." />
+        </Campo>
+        <Campo rotulo="Grupo" id="app-grupo">
+          <Select id="app-grupo" value={grupoId} onChange={(e) => setGrupoId(e.target.value)}>
+            <option value="">Todos os grupos</option>
+            {grupos.map((g) => (
+              <option key={g.id} value={g.id}>{g.nome}</option>
+            ))}
+          </Select>
+        </Campo>
+        <div className="flex items-center justify-between">
+          <label htmlFor="app-ativo" className="text-sm text-texto-suave">Ativo</label>
+          <Interruptor id="app-ativo" rotulo="App ativo" ligado={ativo} aoMudar={setAtivo} />
+        </div>
+        <MensagemErro>{erro}</MensagemErro>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={aoFechar}>Cancelar</Button>
+          <Button type="submit" className="flex-1">Salvar</Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 

@@ -153,6 +153,14 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     }))
                     continue
 
+                # Reset diario: se a ultima sessao foi antes de hoje, zera o saldo
+                ultima_sessao = db.query(Sessao).filter(
+                    Sessao.cliente_id == cliente.id
+                ).order_by(Sessao.iniciada_em.desc()).first()
+                hoje = datetime.utcnow().date()
+                if ultima_sessao and ultima_sessao.iniciada_em.date() < hoje:
+                    cliente.saldo_segundos = 0
+
                 if cliente.saldo_segundos > 0:
                     tempo = cliente.saldo_segundos
                 else:
@@ -228,6 +236,11 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 
                 if sessao:
                     agora = datetime.utcnow()
+                    # Calculo pelo servidor — nao confia no valor do agente
+                    consumido = min(
+                        sessao.tempo_total_segundos,
+                        max(0, int((agora - sessao.iniciada_em).total_seconds()))
+                    )
                     restante = max(0, sessao.tempo_total_segundos - consumido)
                     sessao.encerrada_em = agora
                     sessao.tempo_consumido_segundos = consumido

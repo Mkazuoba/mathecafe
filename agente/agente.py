@@ -542,8 +542,15 @@ class AgenteApp:
     def _reiniciar_se_necessario(self):
         if self.reiniciar_ao_encerrar:
             self._log("Reiniciando o PC em 30 segundos...")
-            subprocess.run(["shutdown", "/r", "/f", "/t", "30"],
-                           shell=False, capture_output=True)
+            try:
+                resultado = subprocess.run(
+                    r"C:\Windows\System32\shutdown.exe /r /f /t 30",
+                    shell=True, capture_output=True, text=True
+                )
+                if resultado.returncode != 0:
+                    self._log(f"shutdown falhou (cod {resultado.returncode}): {resultado.stderr.strip()}")
+            except Exception as e:
+                self._log(f"Erro ao reiniciar: {e}")
 
     def _encerrar_apps_do_cliente(self):
         """Encerra os processos que o cliente abriu durante a sessao."""
