@@ -410,12 +410,13 @@ class AgenteApp:
             self._log(f"Erro na captura de tela: {ex}")
 
     def _loop_streaming(self):
+        # Roda em thread separada — NAO usar self._log() aqui (Tkinter nao e thread-safe)
         if not PIL_AVAILABLE:
-            self._log("PIL nao disponivel, streaming ignorado")
+            print("[streaming] PIL nao disponivel")
             return
         import io, base64
         from PIL import ImageGrab
-        self._log("-> streaming iniciado")
+        print("[streaming] iniciado")
         while self._streaming:
             try:
                 img = ImageGrab.grab()
@@ -425,9 +426,9 @@ class AgenteApp:
                 b64 = base64.b64encode(buf.getvalue()).decode()
                 self._enviar({"evento": "tela_frame", "dados": {"imagem": b64}})
             except Exception as ex:
-                self._log(f"Erro no streaming: {ex}")
+                print(f"[streaming] erro: {ex}")
             time.sleep(0.8)
-        self._log("-> streaming encerrado")
+        print("[streaming] encerrado")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
     def _fazer_login(self):
