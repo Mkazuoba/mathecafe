@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconAlertTriangle, IconClockPlay, IconMessage, IconPencil, IconPlayerStop, IconRefresh, IconTool, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage,  IconPencil, IconPlayerStop, IconRefresh, IconTool, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -189,6 +189,7 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
   const avisar = useAvisos()
   const [nome, setNome] = useState(estacao.nome)
   const [grupoId, setGrupoId] = useState<number | "">(estacao.grupo_id ?? "")
+  const [mac, setMac] = useState(estacao.mac_address ?? "")
   const [salvando, setSalvando] = useState(false)
 
   async function salvar(ev: React.FormEvent) {
@@ -199,6 +200,7 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
       await Api.put(`/api/estacoes/${estacao.id}`, {
         nome: nome.trim(),
         grupo_id: grupoId === "" ? null : grupoId,
+        mac_address: mac.trim() || null,
       })
       await aoSalvar()
       avisar("Estação atualizada")
@@ -228,6 +230,13 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
           <option key={g.id} value={g.id}>{g.nome}</option>
         ))}
       </select>
+      <input
+        type="text"
+        placeholder="MAC (AA:BB:CC:DD:EE:FF)"
+        value={mac}
+        onChange={(ev) => setMac(ev.target.value)}
+        className="w-44 rounded-md border border-borda bg-superficie-2 px-2 py-1 font-mono text-xs outline-none focus:border-destaque"
+      />
       <Button type="submit" size="xs" disabled={salvando || !nome.trim()}>
         {salvando ? "..." : "Salvar"}
       </Button>
@@ -244,10 +253,28 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
 function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
   const { sessaoDaEstacao, agora, clientes, grupos, recarregarEstacoes } = useDados()
   const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
+  const avisar = useAvisos()
   const [aba, setAba] = useState<AbaEstacao>("geral")
   const [editandoNome, setEditandoNome] = useState(false)
+  const [screenshot, setScreenshot] = useState<string | null>(null)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
+
+  // Escuta captura_tela via WebSocket do painel
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      try {
+        const msg = JSON.parse(ev.data)
+        if (msg.evento === "captura_tela" && msg.dados.estacao === e.nome) {
+          setScreenshot("data:image/jpeg;base64," + msg.dados.imagem)
+        }
+      } catch { /* ignore */ }
+    }
+    // Acessa o WebSocket já existente no window (exposto pelo useDados)
+    const ws = (window as any).__mathecafe_ws as WebSocket | undefined
+    if (ws) ws.addEventListener("message", onMessage)
+    return () => { if (ws) ws.removeEventListener("message", onMessage) }
+  }, [e.nome])
 
   const abas: { id: AbaEstacao; label: string }[] = [
     { id: "geral", label: "Geral" },
@@ -334,13 +361,50 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
               alternarManutencao={alternarManutencao}
               liberarDireto={liberarDireto}
               aoFechar={aoFechar}
+              aoCapturarTela={() => Api.post(`/api/estacoes/${e.nome}/capturar_tela`, {})}
             />
           )}
           {aba === "historico" && (
             <AbaHistorico estacao={e.nome} />
           )}
         </div>
+
+        {/* Botão Ligar PC — só quando offline e tem MAC */}
+        {!e.online && e.mac_address && (
+          <div className="border-t border-borda px-5 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                Api.post(`/api/estacoes/${e.nome}/ligar`, {})
+                  .then(() => avisar("Magic packet enviado!"))
+                  .catch((err: Error) => avisar(err.message, "erro"))
+              }
+            >
+              <IconWifi size={14} className="mr-1.5" /> Ligar PC
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Screenshot overlay */}
+      {screenshot && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80"
+          onClick={() => setScreenshot(null)}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(ev) => ev.stopPropagation()}>
+            <img src={screenshot} alt={`Tela de ${e.nome}`} className="max-h-[85vh] rounded-lg shadow-2xl" />
+            <button
+              type="button"
+              onClick={() => setScreenshot(null)}
+              className="absolute top-2 right-2 rounded-full bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80"
+            >
+              Fechar ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -357,6 +421,7 @@ function AbaGeral({ estacao: e, sessao, restante }: {
     ["Status", <SeloStatus status={e.status} />],
     ["Conexão", e.online ? <span className="text-livre">Online</span> : <span className="text-texto-fraco">Offline</span>],
     ...(e.grupo_nome ? [["Grupo", e.grupo_nome] as [string, React.ReactNode]] : []),
+    ...(e.mac_address ? [["MAC", <span className="font-mono text-xs text-texto-suave">{e.mac_address}</span>] as [string, React.ReactNode]] : []),
   ]
 
   if (sessao) {
@@ -386,7 +451,7 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 // ---------------------------------------------------------------------------
 // Aba: Comandos
 // ---------------------------------------------------------------------------
-function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar }: {
+function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela }: {
   estacao: Estacao
   sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
   clientes: Cliente[]
@@ -396,6 +461,7 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
   alternarManutencao: (nome: string) => void
   liberarDireto: (nome: string, clienteId: number) => Promise<boolean>
   aoFechar: () => void
+  aoCapturarTela: () => void
 }) {
   const { sessoes, fila } = useDados()
   const [textoMsg, setTextoMsg] = useState("")
@@ -421,6 +487,11 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
 
   return (
     <div className="flex flex-col gap-5">
+      <SecaoComando titulo="Monitoramento">
+        <Button variant="outline" size="sm" onClick={aoCapturarTela}>
+          <IconCamera size={14} className="mr-1.5" /> Capturar tela
+        </Button>
+      </SecaoComando>
       {/* Encerrar sessão */}
       {sessao && (
         <SecaoComando titulo="Sessão ativa">

@@ -38,6 +38,7 @@ class Estacao(Base):
     status = Column(String(20), default="desligada")
     ativa = Column(Boolean, default=True)
     ip = Column(String(50), nullable=True)
+    mac_address = Column(String(17), nullable=True)
     ultimo_ping = Column(DateTime, nullable=True)
     pos_x = Column(Integer, default=0)
     pos_y = Column(Integer, default=0)

@@ -11,6 +11,7 @@ export interface Estacao {
   ultimo_ping: string | null
   pos_x: number
   pos_y: number
+  mac_address: string | null
 }
 
 export interface Grupo {

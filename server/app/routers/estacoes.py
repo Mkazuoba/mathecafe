@@ -16,6 +16,7 @@ class EstacaoUpdate(BaseModel):
     ativa: Optional[bool] = None
     pos_x: Optional[int] = None
     pos_y: Optional[int] = None
+    mac_address: Optional[str] = None
 
 class PosicaoUpdate(BaseModel):
     pos_x: int
@@ -37,6 +38,7 @@ def serial_estacao(e: Estacao):
         "ultimo_ping": e.ultimo_ping.isoformat() if e.ultimo_ping else None,
         "pos_x": e.pos_x,
         "pos_y": e.pos_y,
+        "mac_address": e.mac_address,
     }
 
 def serial_autorizacao(a: Autorizacao):
@@ -100,6 +102,7 @@ def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
     if data.ativa is not None: e.ativa = data.ativa
     if data.pos_x is not None: e.pos_x = data.pos_x
     if data.pos_y is not None: e.pos_y = data.pos_y
+    if "mac_address" in data.model_fields_set: e.mac_address = data.mac_address
     db.commit()
     return serial_estacao(e)
 
@@ -113,6 +116,35 @@ def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db
     e.pos_y = data.pos_y
     db.commit()
     return serial_estacao(e)
+
+
+@router.post("/{nome}/ligar")
+async def ligar_pc(nome: str, db: Session = Depends(get_db),
+                   _=Depends(requer_perfil("admin", "operador"))):
+    """Envia magic packet Wake-on-LAN para a estacao."""
+    import socket, struct
+    e = db.query(Estacao).filter(Estacao.nome == nome).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    mac = e.mac_address
+    if not mac:
+        raise HTTPException(400, "MAC address não configurado para esta estação")
+    mac_limpo = mac.replace(":", "").replace("-", "")
+    if len(mac_limpo) != 12:
+        raise HTTPException(400, "MAC address inválido")
+    payload = bytes.fromhex("F" * 12 + mac_limpo * 16)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.sendto(payload, ("255.255.255.255", 9))
+    return {"ok": True}
+
+@router.post("/{nome}/capturar_tela")
+async def capturar_tela(nome: str, _=Depends(requer_perfil("admin", "operador"))):
+    """Pede ao agente uma captura de tela silenciosa."""
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estação offline")
+    await manager.enviar_estacao(nome, "capturar_tela", {})
+    return {"ok": True}
 
 @router.delete("/{id}")
 def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):

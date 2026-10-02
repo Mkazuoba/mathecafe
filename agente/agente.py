@@ -371,8 +371,30 @@ class AgenteApp:
             if not self.sessao_ativa:
                 self.root.after(0, lambda d=dados: self._iniciar_sessao(d))
 
+        elif evento == "capturar_tela":
+            self._log("<- capturar_tela")
+            self.root.after(0, self._capturar_e_enviar_tela)
+
         else:
             self._log(f"<- evento: {evento} | {dados}")
+
+    # ── Captura de tela ──────────────────────────────────────────────────────
+    def _capturar_e_enviar_tela(self):
+        if not PIL_AVAILABLE:
+            self._log("PIL nao disponivel, captura ignorada")
+            return
+        try:
+            import io, base64
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            img.thumbnail((1280, 720))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=70)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            self._enviar({"evento": "captura_tela_resultado", "dados": {"imagem": b64}})
+            self._log("-> captura_tela_resultado enviada")
+        except Exception as ex:
+            self._log(f"Erro na captura de tela: {ex}")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
     def _fazer_login(self):

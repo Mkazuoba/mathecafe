@@ -277,6 +277,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 ok = bool(usuario and verificar_senha(dados.get("senha") or "", usuario.senha_hash))
                 await ws.send_text(json.dumps({"evento": "validar_manutencao_resultado", "dados": {"ok": ok}}))
 
+            elif evento == "captura_tela_resultado":
+                imagem_b64 = dados.get("imagem", "")
+                await manager.broadcast_paineis("captura_tela", {"estacao": nome, "imagem": imagem_b64})
+
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
         manager.desconectar_estacao(nome, ws)
