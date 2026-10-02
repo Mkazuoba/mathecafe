@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconAlertTriangle, IconClockPlay, IconHistory, IconPencil, IconDots, IconPlayerStop, IconRefresh, IconMessage, IconTool, IconUserPlus } from "@tabler/icons-react"
+import { IconAlertTriangle, IconClockPlay, IconMessage, IconPencil, IconPlayerStop, IconRefresh, IconTool, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useDados } from "@/lib/dados"
@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
 import { COR_BORDA_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
-
 
 interface SessaoHistorico {
   id: number
@@ -23,6 +22,8 @@ interface SessaoHistorico {
   tempo_consumido_segundos: number
   motivo_encerramento: string | null
 }
+
+type AbaEstacao = "geral" | "comandos" | "historico"
 
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
@@ -105,24 +106,28 @@ function lerClienteArrastado(ev: React.DragEvent): number | null {
   return v ? Number(v) : null
 }
 
+// ---------------------------------------------------------------------------
+// Cartao da estacao (compacto) — clique abre a modal completa
+// ---------------------------------------------------------------------------
 function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
-  const { sessaoDaEstacao, agora, clientes } = useDados()
-  const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
+  const { sessaoDaEstacao, agora } = useDados()
+  const { liberarDireto } = useAcoes()
   const [alvo, setAlvo] = useState(false)
-  const [menuAberto, setMenuAberto] = useState(false)
-  const [modalMensagem, setModalMensagem] = useState(false)
-  const [modalLiberarDireto, setModalLiberarDireto] = useState(false)
-  const [verHistoricoEstacao, setVerHistoricoEstacao] = useState(false)
+  const [modalAberta, setModalAberta] = useState(false)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
   const aceitaCliente = e.status === "livre"
-  const online = e.online
 
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
+        title="Abrir painel da estação"
+        onClick={() => setModalAberta(true)}
+        onKeyDown={(ev) => ev.key === "Enter" && setModalAberta(true)}
         className={cn(
-          "rounded-lg border border-l-[3px] border-borda bg-superficie-2 px-3 py-2.5 transition-shadow",
+          "cursor-pointer rounded-lg border border-l-[3px] border-borda bg-superficie-2 px-3 py-2.5 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque",
           COR_BORDA_STATUS[e.status],
           alvo && "ring-2 ring-destaque",
         )}
@@ -143,189 +148,355 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[0.9rem] font-semibold">{e.nome}</span>
           <div className="flex items-center gap-1.5">
+            {e.online
+              ? <IconWifi size={13} className="text-livre" />
+              : <IconWifiOff size={13} className="text-texto-fraco" />}
             <SeloStatus status={e.status} />
-            {online && (
-              <div className="relative">
-                <button
-                  type="button"
-                  title="Comandos"
-                  onClick={() => setMenuAberto((v) => !v)}
-                  className="rounded p-0.5 text-texto-fraco hover:bg-superficie-3 hover:text-texto"
-                >
-                  <IconDots size={16} />
-                </button>
-                {menuAberto && (
-                  <div className="absolute right-0 top-6 z-20 min-w-[180px] rounded-lg border border-borda bg-superficie-3 py-1 shadow-lg">
-                    {sessao && (
-                      <MenuItem icon={<IconPlayerStop size={14} />} label="Encerrar sessao"
-                        onClick={() => { setMenuAberto(false); encerrarSessao(sessao.id, e.nome) }} />
-                    )}
-                    {aceitaCliente && (
-                      <MenuItemBtn icon={<IconUserPlus size={14} />} label="Liberar direto"
-                        onClick={() => { setMenuAberto(false); setModalLiberarDireto(true) }} />
-                    )}
-                    <MenuItemBtn icon={<IconMessage size={14} />} label="Mensagem na tela"
-                      onClick={() => { setMenuAberto(false); setModalMensagem(true) }} />
-                    <MenuItemBtn
-                      icon={<IconTool size={14} />}
-                      label={e.status === "manutencao" ? "Sair da manutencao" : "Modo manutencao"}
-                      onClick={() => { setMenuAberto(false); alternarManutencao(e.nome) }}
-                    />
-                    <MenuItemBtn icon={<IconHistory size={14} />} label="Ver historico"
-                      onClick={() => { setMenuAberto(false); setVerHistoricoEstacao(true) }} />
-                    <MenuItemBtn icon={<IconRefresh size={14} />} label="Reiniciar PC"
-                      onClick={() => { setMenuAberto(false); reiniciarPc(e.nome) }}
-                      perigo />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
         {sessao ? (
-          <>
-            <div className="mb-1 text-sm text-texto-suave">
-              {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
-            </div>
-            <div
-              className={cn(
-                "text-lg font-bold tracking-wide tabular-nums",
-                restante < 300 ? "text-perigo" : "text-ocupada",
-              )}
-            >
+          <div>
+            <div className="mb-0.5 truncate text-sm text-texto-suave">{sessao.cliente_nome}</div>
+            <div className={cn("text-lg font-bold tracking-wide tabular-nums", restante < 300 ? "text-perigo" : "text-ocupada")}>
               {formatarTempo(restante)}
             </div>
-            <Button variant="perigo" size="xs" className="mt-2" onClick={() => encerrarSessao(sessao.id, e.nome)}>
-              Encerrar sessao
-            </Button>
-          </>
+          </div>
         ) : (
-          <div className="text-sm text-texto-suave">
+          <div className="text-sm text-texto-fraco">
             {e.status === "livre" ? "Disponivel" : e.status === "manutencao" ? "Em manutencao" : "Offline"}
           </div>
         )}
       </div>
 
-      {modalMensagem && (
-        <ModalMensagem estacao={e.nome} aoFechar={() => setModalMensagem(false)}
-          aoEnviar={(t) => enviarMensagem(e.nome, t)} />
-      )}
-      {modalLiberarDireto && (
-        <ModalLiberarDireto
-          estacao={e.nome}
-          clientes={clientes}
-          aoFechar={() => setModalLiberarDireto(false)}
-          aoLiberar={(id) => liberarDireto(e.nome, id).then((ok) => { if (ok) setModalLiberarDireto(false) })}
-        />
-      )}
-      {verHistoricoEstacao && (
-        <ModalHistoricoEstacao estacao={e.nome} aoFechar={() => setVerHistoricoEstacao(false)} />
+      {modalAberta && (
+        <ModalEstacao estacao={e} aoFechar={() => setModalAberta(false)} />
       )}
     </>
   )
 }
 
-function MenuItemBtn({ icon, label, onClick, perigo }: { icon: React.ReactNode; label: string; onClick: () => void; perigo?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-superficie-2",
-        perigo ? "text-perigo" : "text-texto",
-      )}
-    >
-      {icon} {label}
-    </button>
-  )
-}
+// ---------------------------------------------------------------------------
+// Modal da estacao com abas: Geral | Comandos | Historico
+// ---------------------------------------------------------------------------
+function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
+  const { sessaoDaEstacao, agora, clientes } = useDados()
+  const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
+  const [aba, setAba] = useState<AbaEstacao>("geral")
+  const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+  const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
 
-// alias para uniformidade (alguns itens podem precisar de lógica de link)
-const MenuItem = MenuItemBtn
+  const abas: { id: AbaEstacao; label: string }[] = [
+    { id: "geral", label: "Geral" },
+    { id: "comandos", label: "Comandos" },
+    { id: "historico", label: "Historico" },
+  ]
 
-function ModalMensagem({ estacao, aoFechar, aoEnviar }: { estacao: string; aoFechar: () => void; aoEnviar: (t: string) => void }) {
-  const [texto, setTexto] = useState("")
-  function enviar() {
-    if (!texto.trim()) return
-    aoEnviar(texto.trim())
-    aoFechar()
-  }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
-      <div className="w-80 rounded-xl border border-borda bg-superficie p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-sm font-semibold">Mensagem para {estacao}</h3>
-        <textarea
-          className="mb-3 w-full resize-none rounded-md border border-borda bg-superficie-2 p-2 text-sm outline-none focus:border-destaque"
-          rows={3}
-          placeholder="Digite a mensagem..."
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          autoFocus
-        />
-        <div className="flex justify-end gap-2">
-          <Button size="xs" variant="ghost" onClick={aoFechar}>Cancelar</Button>
-          <Button size="xs" onClick={enviar} disabled={!texto.trim()}>Enviar</Button>
+      <div
+        className="flex w-[520px] max-w-[95vw] flex-col rounded-xl border border-borda bg-superficie shadow-xl"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        {/* cabeçalho */}
+        <div className="flex items-center justify-between border-b border-borda px-5 pt-4 pb-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold">{e.nome}</span>
+            {e.online
+              ? <span className="flex items-center gap-1 text-xs text-livre"><IconWifi size={12} /> Online</span>
+              : <span className="flex items-center gap-1 text-xs text-texto-fraco"><IconWifiOff size={12} /> Offline</span>}
+          </div>
+          <button
+            type="button"
+            onClick={aoFechar}
+            className="mb-1 rounded p-1 text-texto-fraco hover:bg-superficie-2 hover:text-texto"
+          >
+            ✕
+          </button>
         </div>
-      </div>
-    </div>
-  )
-}
 
-function ModalLiberarDireto({ estacao, clientes, aoFechar, aoLiberar }: {
-  estacao: string
-  clientes: Cliente[]
-  aoFechar: () => void
-  aoLiberar: (id: number) => void
-}) {
-  const { sessoes, fila } = useDados()
-  const [busca, setBusca] = useState("")
-  const idsEmUso = new Set(sessoes.map((s) => s.cliente_id))
-  const idsNaFila = new Set(fila.map((f) => f.cliente_id))
-
-  const lista = clientes
-    .filter((c) => c.ativo && !idsEmUso.has(c.id))
-    .filter((c) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()) || c.login.toLowerCase().includes(busca.toLowerCase()))
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
-      <div className="w-80 rounded-xl border border-borda bg-superficie p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-3 text-sm font-semibold">Liberar direto em {estacao}</h3>
-        <input
-          type="search"
-          placeholder="Buscar cliente..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          className="mb-2 w-full rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
-          autoFocus
-        />
-        <div className="max-h-52 overflow-y-auto rounded-md border border-borda">
-          {lista.length ? lista.map((c) => (
+        {/* abas */}
+        <div className="flex border-b border-borda px-5">
+          {abas.map((a) => (
             <button
-              key={c.id}
+              key={a.id}
               type="button"
-              onClick={() => aoLiberar(c.id)}
-              className="flex w-full items-center gap-2 border-b border-borda px-3 py-2 text-left text-sm last:border-0 hover:bg-superficie-2"
+              onClick={() => setAba(a.id)}
+              className={cn(
+                "border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                aba === a.id
+                  ? "border-destaque text-destaque"
+                  : "border-transparent text-texto-fraco hover:text-texto",
+              )}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
-                {c.nome.slice(0, 2)}
-              </span>
-              <div>
-                <div className="font-medium">{c.nome}</div>
-                <div className="text-xs text-texto-fraco">{c.login}{idsNaFila.has(c.id) ? " · na fila" : ""}</div>
-              </div>
+              {a.label}
             </button>
-          )) : (
-            <div className="px-3 py-4 text-center text-sm text-texto-fraco">Nenhum cliente disponivel</div>
+          ))}
+        </div>
+
+        {/* conteúdo */}
+        <div className="flex-1 p-5">
+          {aba === "geral" && (
+            <AbaGeral estacao={e} sessao={sessao} restante={restante} />
+          )}
+          {aba === "comandos" && (
+            <AbaComandos
+              estacao={e}
+              sessao={sessao}
+              clientes={clientes}
+              encerrarSessao={encerrarSessao}
+              reiniciarPc={reiniciarPc}
+              enviarMensagem={enviarMensagem}
+              alternarManutencao={alternarManutencao}
+              liberarDireto={liberarDireto}
+              aoFechar={aoFechar}
+            />
+          )}
+          {aba === "historico" && (
+            <AbaHistorico estacao={e.nome} />
           )}
         </div>
-        <div className="mt-3 flex justify-end">
-          <Button size="xs" variant="ghost" onClick={aoFechar}>Cancelar</Button>
-        </div>
       </div>
     </div>
   )
 }
 
+// ---------------------------------------------------------------------------
+// Aba: Geral
+// ---------------------------------------------------------------------------
+function AbaGeral({ estacao: e, sessao, restante }: {
+  estacao: Estacao
+  sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
+  restante: number
+}) {
+  const rows: [string, React.ReactNode][] = [
+    ["Status", <SeloStatus status={e.status} />],
+    ["Conexão", e.online ? <span className="text-livre">Online</span> : <span className="text-texto-fraco">Offline</span>],
+    ...(e.grupo_nome ? [["Grupo", e.grupo_nome] as [string, React.ReactNode]] : []),
+  ]
+
+  if (sessao) {
+    rows.push(
+      ["Cliente", `${sessao.cliente_nome} (${sessao.cliente_login})`],
+      ["Tempo restante", (
+        <span className={cn("tabular-nums font-semibold", restante < 300 ? "text-perigo" : "text-ocupada")}>
+          {formatarTempo(restante)}
+        </span>
+      )],
+      ["Tempo total", formatarTempo(sessao.tempo_total_segundos)],
+    )
+  }
+
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+      {rows.map(([label, valor]) => (
+        <>
+          <dt key={`dt-${label}`} className="text-texto-fraco">{label}</dt>
+          <dd key={`dd-${label}`} className="text-texto">{valor}</dd>
+        </>
+      ))}
+    </dl>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Aba: Comandos
+// ---------------------------------------------------------------------------
+function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar }: {
+  estacao: Estacao
+  sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
+  clientes: Cliente[]
+  encerrarSessao: (id: number, nome: string) => void
+  reiniciarPc: (nome: string) => void
+  enviarMensagem: (nome: string, texto: string) => void
+  alternarManutencao: (nome: string) => void
+  liberarDireto: (nome: string, clienteId: number) => Promise<boolean>
+  aoFechar: () => void
+}) {
+  const { sessoes, fila } = useDados()
+  const [textoMsg, setTextoMsg] = useState("")
+  const [buscaCliente, setBuscaCliente] = useState("")
+  const idsEmUso = useMemo(() => new Set(sessoes.map((s) => s.cliente_id)), [sessoes])
+  const idsNaFila = useMemo(() => new Set(fila.map((f) => f.cliente_id)), [fila])
+
+  const clientesDisponiveis = useMemo(() =>
+    clientes
+      .filter((c) => c.ativo && !idsEmUso.has(c.id))
+      .filter((c) => !buscaCliente || c.nome.toLowerCase().includes(buscaCliente.toLowerCase()) || c.login.toLowerCase().includes(buscaCliente.toLowerCase())),
+    [clientes, idsEmUso, buscaCliente]
+  )
+
+  if (!e.online) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+        <IconWifiOff size={32} className="text-texto-fraco" />
+        <p className="text-sm text-texto-fraco">Estação offline — comandos indisponíveis</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Encerrar sessão */}
+      {sessao && (
+        <SecaoComando titulo="Sessão ativa">
+          <div className="mb-2 text-sm text-texto-suave">
+            {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
+          </div>
+          <Button variant="perigo" size="sm" onClick={() => { encerrarSessao(sessao.id, e.nome); aoFechar() }}>
+            <IconPlayerStop size={14} className="mr-1.5" /> Encerrar sessão
+          </Button>
+        </SecaoComando>
+      )}
+
+      {/* Liberar direto */}
+      {e.status === "livre" && (
+        <SecaoComando titulo="Liberar cliente direto">
+          <input
+            type="search"
+            placeholder="Buscar cliente..."
+            value={buscaCliente}
+            onChange={(ev) => setBuscaCliente(ev.target.value)}
+            className="mb-2 w-full rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
+          />
+          <div className="max-h-36 overflow-y-auto rounded-md border border-borda">
+            {clientesDisponiveis.length ? clientesDisponiveis.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => liberarDireto(e.nome, c.id).then((ok) => { if (ok) aoFechar() })}
+                className="flex w-full items-center gap-2 border-b border-borda px-3 py-2 text-left text-sm last:border-0 hover:bg-superficie-2"
+              >
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
+                  {c.nome.slice(0, 2)}
+                </span>
+                <span className="flex-1 truncate">{c.nome}</span>
+                <span className="text-xs text-texto-fraco">{c.login}{idsNaFila.has(c.id) ? " · fila" : ""}</span>
+              </button>
+            )) : (
+              <div className="px-3 py-3 text-center text-xs text-texto-fraco">Nenhum cliente disponível</div>
+            )}
+          </div>
+        </SecaoComando>
+      )}
+
+      {/* Mensagem na tela */}
+      <SecaoComando titulo="Mensagem na tela">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Digite a mensagem..."
+            value={textoMsg}
+            onChange={(ev) => setTextoMsg(ev.target.value)}
+            onKeyDown={(ev) => { if (ev.key === "Enter" && textoMsg.trim()) { enviarMensagem(e.nome, textoMsg.trim()); setTextoMsg("") } }}
+            className="flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
+          />
+          <Button size="sm" disabled={!textoMsg.trim()} onClick={() => { enviarMensagem(e.nome, textoMsg.trim()); setTextoMsg("") }}>
+            <IconMessage size={14} />
+          </Button>
+        </div>
+      </SecaoComando>
+
+      {/* Manutenção + Reiniciar */}
+      <SecaoComando titulo="Outros">
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="flex-1" onClick={() => { alternarManutencao(e.nome); aoFechar() }}>
+            <IconTool size={14} className="mr-1.5" />
+            {e.status === "manutencao" ? "Sair da manutenção" : "Modo manutenção"}
+          </Button>
+          <Button variant="perigo" size="sm" onClick={() => { reiniciarPc(e.nome); aoFechar() }}>
+            <IconRefresh size={14} className="mr-1.5" /> Reiniciar
+          </Button>
+        </div>
+      </SecaoComando>
+    </div>
+  )
+}
+
+function SecaoComando({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold tracking-wider text-texto-fraco uppercase">{titulo}</p>
+      {children}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Aba: Histórico
+// ---------------------------------------------------------------------------
+function AbaHistorico({ estacao }: { estacao: string }) {
+  const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState("")
+
+  useEffect(() => {
+    setCarregando(true)
+    setErro("")
+    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?estacao_nome=${encodeURIComponent(estacao)}`)
+      .then((r) => setSessoes(r ?? []))
+      .catch((e) => setErro((e as Error).message))
+      .finally(() => setCarregando(false))
+  }, [estacao])
+
+  function motivoLabel(motivo: string | null) {
+    if (!motivo) return "—"
+    const mapa: Record<string, string> = {
+      saldo_zerado: "Saldo zerado", encerrado_operador: "Operador",
+      desconexao: "Desconexao", reinicio: "Reinicio", manual: "Manual",
+    }
+    return mapa[motivo] ?? motivo
+  }
+
+  const totalConsuming = sessoes.reduce((s, x) => s + (x.tempo_consumido_segundos ?? 0), 0)
+
+  if (carregando) return <p className="py-8 text-center text-sm text-texto-fraco">Carregando...</p>
+  if (erro) return <p className="text-sm text-perigo">{erro}</p>
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="max-h-72 overflow-auto rounded-md border border-borda">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="sticky top-0 bg-superficie text-left text-xs tracking-wide text-texto-fraco uppercase">
+              {["Data", "Cliente", "Duracao", "Consumido", "Encerr."].map((h) => (
+                <th key={h} className="border-b border-borda px-2.5 py-2 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sessoes.map((s) => (
+              <tr key={s.id} className="hover:bg-superficie-2">
+                <td className="border-b border-borda px-2.5 py-2 text-texto-suave">
+                  {s.iniciada_em ? dataDoServidor(s.iniciada_em).toLocaleDateString("pt-BR") : "—"}
+                </td>
+                <td className="border-b border-borda px-2.5 py-2">
+                  <div className="font-medium">{s.cliente_nome}</div>
+                  <div className="text-xs text-texto-fraco">{s.cliente_login}</div>
+                </td>
+                <td className="border-b border-borda px-2.5 py-2 tabular-nums">{formatarTempo(s.tempo_total_segundos ?? 0)}</td>
+                <td className="border-b border-borda px-2.5 py-2 tabular-nums text-texto-suave">{formatarTempo(s.tempo_consumido_segundos ?? 0)}</td>
+                <td className="border-b border-borda px-2.5 py-2 text-texto-fraco">{motivoLabel(s.motivo_encerramento)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!sessoes.length && <div className="px-3 py-6 text-center text-sm text-texto-fraco">Nenhuma sessao registrada</div>}
+      </div>
+      {sessoes.length > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-texto-fraco">{sessoes.length} sessão(ões)</span>
+          <span className="text-texto-suave">
+            Total consumido: <span className="font-semibold tabular-nums text-texto">{formatarTempo(totalConsuming)}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Coluna: Clientes
+// ---------------------------------------------------------------------------
 function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEditarSaldo: (c: Cliente) => void }) {
   const { fila, sessoes } = useDados()
   const { liberar } = useAcoes()
@@ -429,6 +600,9 @@ function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEd
   )
 }
 
+// ---------------------------------------------------------------------------
+// Coluna: Fila
+// ---------------------------------------------------------------------------
 function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente: (id: number) => void }) {
   const { fila, agora } = useDados()
   const { removerDaFila } = useAcoes()
@@ -469,106 +643,5 @@ function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente
         <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
       )}
     </Coluna>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Modal: Historico da estacao
-// ---------------------------------------------------------------------------
-function ModalHistoricoEstacao({ estacao, aoFechar }: { estacao: string; aoFechar: () => void }) {
-  const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState("")
-
-  useEffect(() => {
-    setCarregando(true)
-    setErro("")
-    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?estacao_nome=${encodeURIComponent(estacao)}`)
-      .then((r) => setSessoes(r ?? []))
-      .catch((e) => setErro((e as Error).message))
-      .finally(() => setCarregando(false))
-  }, [estacao])
-
-  function motivoLabel(motivo: string | null) {
-    if (!motivo) return "—"
-    const mapa: Record<string, string> = {
-      saldo_zerado: "Saldo zerado",
-      encerrado_operador: "Operador",
-      desconexao: "Desconexao",
-      reinicio: "Reinicio",
-      manual: "Manual",
-    }
-    return mapa[motivo] ?? motivo
-  }
-
-  const totalConsuming = sessoes.reduce((s, x) => s + (x.tempo_consumido_segundos ?? 0), 0)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
-      <div
-        className="flex w-[640px] max-w-[95vw] flex-col gap-4 rounded-xl border border-borda bg-superficie p-5 shadow-xl"
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <h3 className="text-sm font-semibold">Historico — {estacao}</h3>
-
-        {carregando && <p className="py-6 text-center text-sm text-texto-fraco">Carregando...</p>}
-        {erro && <p className="text-sm text-vermelho">{erro}</p>}
-
-        {!carregando && !erro && (
-          <>
-            <div className="max-h-80 overflow-auto rounded-md border border-borda">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="sticky top-0 bg-superficie text-left text-xs tracking-wide text-texto-fraco uppercase">
-                    {["Data", "Cliente", "Duracao", "Consumido", "Encerramento"].map((h) => (
-                      <th key={h} className="border-b border-borda px-2.5 py-2 font-medium">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessoes.map((s) => (
-                    <tr key={s.id} className="hover:bg-superficie-2">
-                      <td className="border-b border-borda px-2.5 py-2 text-texto-suave">
-                        {s.iniciada_em ? dataDoServidor(s.iniciada_em).toLocaleDateString("pt-BR") : "—"}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2">
-                        <div className="font-medium">{s.cliente_nome}</div>
-                        <div className="text-xs text-texto-fraco">{s.cliente_login}</div>
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 tabular-nums">
-                        {formatarTempo(s.tempo_total_segundos ?? 0)}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 tabular-nums text-texto-suave">
-                        {formatarTempo(s.tempo_consumido_segundos ?? 0)}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 text-texto-fraco">
-                        {motivoLabel(s.motivo_encerramento)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!sessoes.length && (
-                <div className="px-3 py-6 text-center text-sm text-texto-fraco">Nenhuma sessao registrada</div>
-              )}
-            </div>
-
-            {sessoes.length > 0 && (
-              <div className="flex items-center justify-between border-t border-borda pt-2 text-sm">
-                <span className="text-texto-fraco">{sessoes.length} sessao(oes)</span>
-                <span className="text-texto-suave">
-                  Total consumido:{" "}
-                  <span className="font-semibold tabular-nums text-texto">{formatarTempo(totalConsuming)}</span>
-                </span>
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="flex justify-end">
-          <Button size="xs" variant="ghost" onClick={aoFechar}>Fechar</Button>
-        </div>
-      </div>
-    </div>
   )
 }
