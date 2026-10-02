@@ -214,11 +214,6 @@ class AgenteApp:
         self.frame_launcher = tk.Frame(self.frame_sessao, bg=bg)
         self.frame_launcher.pack(expand=True, fill="both", padx=20)
 
-        self.btn_encerrar = tk.Button(self.frame_sessao, text="Encerrar sessao", font=normal_font,
-                                       bg="#ef4444", fg="white", relief="flat", activebackground="#dc2626",
-                                       command=self._encerrar_manual)
-        self.btn_encerrar.pack(fill="x", padx=40, pady=20, ipady=8)
-
         self.frame_login.pack(fill="both", expand=True)
 
         # ── Log ──
