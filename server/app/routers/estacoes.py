@@ -177,3 +177,125 @@ async def remover_fila(cliente_id: int, db: Session = Depends(get_db),
     db.delete(auth); db.commit()
     await manager.broadcast_paineis("fila_atualizada", {"acao": "removido", "cliente_id": cliente_id})
     return {"ok": True}
+
+# ── Comandos por estação ──────────────────────────────────────────────────────
+
+class MensagemBody(BaseModel):
+    texto: str
+
+class LiberarDiretoBody(BaseModel):
+    cliente_id: int
+
+@router.post("/{nome}/reiniciar")
+async def reiniciar_pc(nome: str, db: Session = Depends(get_db),
+                        _=Depends(requer_perfil("admin", "operador"))):
+    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estação offline")
+    await manager.enviar_estacao(nome, "reiniciar_pc", {})
+    return {"ok": True}
+
+@router.post("/{nome}/mensagem")
+async def enviar_mensagem(nome: str, body: MensagemBody, db: Session = Depends(get_db),
+                           _=Depends(requer_perfil("admin", "operador"))):
+    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estação offline")
+    await manager.enviar_estacao(nome, "mensagem_tela", {"texto": body.texto})
+    return {"ok": True}
+
+@router.post("/{nome}/manutencao")
+async def alternar_manutencao(nome: str, db: Session = Depends(get_db),
+                               _=Depends(requer_perfil("admin", "operador"))):
+    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estação offline")
+    if e.status == "manutencao":
+        await manager.enviar_estacao(nome, "desativar_manutencao", {})
+    else:
+        await manager.enviar_estacao(nome, "ativar_manutencao", {})
+    return {"ok": True}
+
+@router.post("/{nome}/iniciar_direto")
+async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depends(get_db),
+                          operador=Depends(requer_perfil("admin", "operador"))):
+    from datetime import datetime as dt
+    from app.models import Sessao as SessaoModel
+
+    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if nome not in manager.estacoes_online():
+        raise HTTPException(400, "Estação offline")
+    if e.status != "livre":
+        raise HTTPException(400, "Estação não está livre")
+
+    cliente = db.query(Usuario).filter(
+        Usuario.id == body.cliente_id, Usuario.perfil == "cliente", Usuario.ativo == True).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente não encontrado")
+
+    # Sessao ja ativa?
+    sessao_existente = db.query(SessaoModel).filter(
+        SessaoModel.cliente_id == cliente.id, SessaoModel.encerrada_em == None).first()
+    if sessao_existente:
+        raise HTTPException(400, "Cliente já tem sessão ativa")
+
+    # Tempo: saldo do cliente ou tempo padrao do grupo
+    if cliente.saldo_segundos > 0:
+        tempo = cliente.saldo_segundos
+    else:
+        tempo = e.grupo.tempo_padrao_segundos if e.grupo else 7200
+
+    # Cria/reusa autorizacao como usada
+    auth = db.query(Autorizacao).filter(Autorizacao.cliente_id == cliente.id).first()
+    if auth:
+        auth.usado = True
+        auth.autorizado_por_id = int(operador["sub"])
+        auth.autorizado_em = dt.utcnow()
+    else:
+        auth = Autorizacao(
+            cliente_id=cliente.id,
+            autorizado_por_id=int(operador["sub"]),
+            usado=True
+        )
+        db.add(auth)
+    db.flush()
+
+    # Cria sessao
+    sessao = SessaoModel(
+        cliente_id=cliente.id,
+        estacao_id=e.id,
+        tempo_total_segundos=tempo,
+        iniciada_em=dt.utcnow()
+    )
+    db.add(sessao)
+    e.status = "ocupada"
+    db.commit()
+    db.refresh(sessao)
+    db.refresh(cliente)
+
+    # Whitelist do grupo
+    from app.models import AppPermitido
+    apps = db.query(AppPermitido).filter(
+        AppPermitido.grupo_id == e.grupo_id, AppPermitido.ativo == True).all() if e.grupo_id else []
+
+    payload = {
+        "ok": True,
+        "sessao_id": sessao.id,
+        "cliente_nome": cliente.nome,
+        "tempo_segundos": tempo,
+        "reiniciar_ao_encerrar": False,
+        "whitelist": [{"nome": a.nome, "processo": a.processo, "caminho": a.caminho,
+                       "imagem_url": a.imagem_url} for a in apps],
+    }
+    await manager.enviar_estacao(nome, "iniciar_sessao_direta", payload)
+    await manager.broadcast_paineis("estacao_atualizada", {"nome": nome})
+
+    return {"ok": True, "sessao_id": sessao.id}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { IconAlertTriangle, IconClockPlay, IconPencil } from "@tabler/icons-react"
+import { IconAlertTriangle, IconClockPlay, IconPencil, IconDots, IconPlayerStop, IconRefresh, IconMessage, IconTool, IconUserPlus } from "@tabler/icons-react"
 import { useAcoes } from "@/lib/acoes"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
@@ -91,60 +91,216 @@ function lerClienteArrastado(ev: React.DragEvent): number | null {
 }
 
 function CartaoEstacao({ estacao: e, aoSoltarCliente }: { estacao: Estacao; aoSoltarCliente: (id: number) => void }) {
-  const { sessaoDaEstacao, agora } = useDados()
-  const { encerrarSessao } = useAcoes()
+  const { sessaoDaEstacao, agora, clientes } = useDados()
+  const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
   const [alvo, setAlvo] = useState(false)
+  const [menuAberto, setMenuAberto] = useState(false)
+  const [modalMensagem, setModalMensagem] = useState(false)
+  const [modalLiberarDireto, setModalLiberarDireto] = useState(false)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
   const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
   const aceitaCliente = e.status === "livre"
+  const online = e.online
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-l-[3px] border-borda bg-superficie-2 px-3 py-2.5 transition-shadow",
-        COR_BORDA_STATUS[e.status],
-        alvo && "ring-2 ring-destaque",
-      )}
-      onDragOver={(ev) => {
-        if (aceitaCliente && ev.dataTransfer.types.includes(TIPO_ARRASTO)) {
+    <>
+      <div
+        className={cn(
+          "rounded-lg border border-l-[3px] border-borda bg-superficie-2 px-3 py-2.5 transition-shadow",
+          COR_BORDA_STATUS[e.status],
+          alvo && "ring-2 ring-destaque",
+        )}
+        onDragOver={(ev) => {
+          if (aceitaCliente && ev.dataTransfer.types.includes(TIPO_ARRASTO)) {
+            ev.preventDefault()
+            setAlvo(true)
+          }
+        }}
+        onDragLeave={() => setAlvo(false)}
+        onDrop={(ev) => {
           ev.preventDefault()
-          setAlvo(true)
-        }
-      }}
-      onDragLeave={() => setAlvo(false)}
-      onDrop={(ev) => {
-        ev.preventDefault()
-        setAlvo(false)
-        const id = lerClienteArrastado(ev)
-        if (id && aceitaCliente) aoSoltarCliente(id)
-      }}
-    >
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[0.9rem] font-semibold">{e.nome}</span>
-        <SeloStatus status={e.status} />
-      </div>
-      {sessao ? (
-        <>
-          <div className="mb-1 text-sm text-texto-suave">
-            {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
-          </div>
-          <div
-            className={cn(
-              "text-lg font-bold tracking-wide tabular-nums",
-              restante < 300 ? "text-perigo" : "text-ocupada",
+          setAlvo(false)
+          const id = lerClienteArrastado(ev)
+          if (id && aceitaCliente) aoSoltarCliente(id)
+        }}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[0.9rem] font-semibold">{e.nome}</span>
+          <div className="flex items-center gap-1.5">
+            <SeloStatus status={e.status} />
+            {online && (
+              <div className="relative">
+                <button
+                  type="button"
+                  title="Comandos"
+                  onClick={() => setMenuAberto((v) => !v)}
+                  className="rounded p-0.5 text-texto-fraco hover:bg-superficie-3 hover:text-texto"
+                >
+                  <IconDots size={16} />
+                </button>
+                {menuAberto && (
+                  <div className="absolute right-0 top-6 z-20 min-w-[180px] rounded-lg border border-borda bg-superficie-3 py-1 shadow-lg">
+                    {sessao && (
+                      <MenuItem icon={<IconPlayerStop size={14} />} label="Encerrar sessao"
+                        onClick={() => { setMenuAberto(false); encerrarSessao(sessao.id, e.nome) }} />
+                    )}
+                    {aceitaCliente && (
+                      <MenuItemBtn icon={<IconUserPlus size={14} />} label="Liberar direto"
+                        onClick={() => { setMenuAberto(false); setModalLiberarDireto(true) }} />
+                    )}
+                    <MenuItemBtn icon={<IconMessage size={14} />} label="Mensagem na tela"
+                      onClick={() => { setMenuAberto(false); setModalMensagem(true) }} />
+                    <MenuItemBtn
+                      icon={<IconTool size={14} />}
+                      label={e.status === "manutencao" ? "Sair da manutencao" : "Modo manutencao"}
+                      onClick={() => { setMenuAberto(false); alternarManutencao(e.nome) }}
+                    />
+                    <MenuItemBtn icon={<IconRefresh size={14} />} label="Reiniciar PC"
+                      onClick={() => { setMenuAberto(false); reiniciarPc(e.nome) }}
+                      perigo />
+                  </div>
+                )}
+              </div>
             )}
-          >
-            {formatarTempo(restante)}
           </div>
-          <Button variant="perigo" size="xs" className="mt-2" onClick={() => encerrarSessao(sessao.id, e.nome)}>
-            Encerrar sessão
-          </Button>
-        </>
-      ) : (
-        <div className="text-sm text-texto-suave">
-          {e.status === "livre" ? "Disponível" : e.status === "manutencao" ? "Em manutenção" : "Offline"}
         </div>
+        {sessao ? (
+          <>
+            <div className="mb-1 text-sm text-texto-suave">
+              {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
+            </div>
+            <div
+              className={cn(
+                "text-lg font-bold tracking-wide tabular-nums",
+                restante < 300 ? "text-perigo" : "text-ocupada",
+              )}
+            >
+              {formatarTempo(restante)}
+            </div>
+            <Button variant="perigo" size="xs" className="mt-2" onClick={() => encerrarSessao(sessao.id, e.nome)}>
+              Encerrar sessao
+            </Button>
+          </>
+        ) : (
+          <div className="text-sm text-texto-suave">
+            {e.status === "livre" ? "Disponivel" : e.status === "manutencao" ? "Em manutencao" : "Offline"}
+          </div>
+        )}
+      </div>
+
+      {modalMensagem && (
+        <ModalMensagem estacao={e.nome} aoFechar={() => setModalMensagem(false)}
+          aoEnviar={(t) => enviarMensagem(e.nome, t)} />
       )}
+      {modalLiberarDireto && (
+        <ModalLiberarDireto
+          estacao={e.nome}
+          clientes={clientes}
+          aoFechar={() => setModalLiberarDireto(false)}
+          aoLiberar={(id) => liberarDireto(e.nome, id).then((ok) => { if (ok) setModalLiberarDireto(false) })}
+        />
+      )}
+    </>
+  )
+}
+
+function MenuItemBtn({ icon, label, onClick, perigo }: { icon: React.ReactNode; label: string; onClick: () => void; perigo?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-superficie-2",
+        perigo ? "text-perigo" : "text-texto",
+      )}
+    >
+      {icon} {label}
+    </button>
+  )
+}
+
+// alias para uniformidade (alguns itens podem precisar de lógica de link)
+const MenuItem = MenuItemBtn
+
+function ModalMensagem({ estacao, aoFechar, aoEnviar }: { estacao: string; aoFechar: () => void; aoEnviar: (t: string) => void }) {
+  const [texto, setTexto] = useState("")
+  function enviar() {
+    if (!texto.trim()) return
+    aoEnviar(texto.trim())
+    aoFechar()
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
+      <div className="w-80 rounded-xl border border-borda bg-superficie p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-3 text-sm font-semibold">Mensagem para {estacao}</h3>
+        <textarea
+          className="mb-3 w-full resize-none rounded-md border border-borda bg-superficie-2 p-2 text-sm outline-none focus:border-destaque"
+          rows={3}
+          placeholder="Digite a mensagem..."
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          autoFocus
+        />
+        <div className="flex justify-end gap-2">
+          <Button size="xs" variant="ghost" onClick={aoFechar}>Cancelar</Button>
+          <Button size="xs" onClick={enviar} disabled={!texto.trim()}>Enviar</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModalLiberarDireto({ estacao, clientes, aoFechar, aoLiberar }: {
+  estacao: string
+  clientes: Cliente[]
+  aoFechar: () => void
+  aoLiberar: (id: number) => void
+}) {
+  const { sessoes, fila } = useDados()
+  const [busca, setBusca] = useState("")
+  const idsEmUso = new Set(sessoes.map((s) => s.cliente_id))
+  const idsNaFila = new Set(fila.map((f) => f.cliente_id))
+
+  const lista = clientes
+    .filter((c) => c.ativo && !idsEmUso.has(c.id))
+    .filter((c) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()) || c.login.toLowerCase().includes(busca.toLowerCase()))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={aoFechar}>
+      <div className="w-80 rounded-xl border border-borda bg-superficie p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-3 text-sm font-semibold">Liberar direto em {estacao}</h3>
+        <input
+          type="search"
+          placeholder="Buscar cliente..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="mb-2 w-full rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
+          autoFocus
+        />
+        <div className="max-h-52 overflow-y-auto rounded-md border border-borda">
+          {lista.length ? lista.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => aoLiberar(c.id)}
+              className="flex w-full items-center gap-2 border-b border-borda px-3 py-2 text-left text-sm last:border-0 hover:bg-superficie-2"
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
+                {c.nome.slice(0, 2)}
+              </span>
+              <div>
+                <div className="font-medium">{c.nome}</div>
+                <div className="text-xs text-texto-fraco">{c.login}{idsNaFila.has(c.id) ? " · na fila" : ""}</div>
+              </div>
+            </button>
+          )) : (
+            <div className="px-3 py-4 text-center text-sm text-texto-fraco">Nenhum cliente disponivel</div>
+          )}
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button size="xs" variant="ghost" onClick={aoFechar}>Cancelar</Button>
+        </div>
+      </div>
     </div>
   )
 }

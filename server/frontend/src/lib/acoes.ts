@@ -55,5 +55,58 @@ export function useAcoes() {
     [avisar, recarregar],
   )
 
-  return { liberar, removerDaFila, encerrarSessao }
+  const reiniciarPc = useCallback(
+    async (nomeEstacao: string) => {
+      if (!window.confirm(`Reiniciar o PC da estacao ${nomeEstacao}?`)) return
+      try {
+        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/reiniciar`)
+        avisar(`Comando de reinicio enviado para ${nomeEstacao}`)
+      } catch (e) {
+        avisar((e as Error).message, "erro")
+      }
+    },
+    [avisar],
+  )
+
+  const enviarMensagem = useCallback(
+    async (nomeEstacao: string, texto: string) => {
+      try {
+        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/mensagem`, { texto })
+        avisar("Mensagem enviada")
+      } catch (e) {
+        avisar((e as Error).message, "erro")
+      }
+    },
+    [avisar],
+  )
+
+  const alternarManutencao = useCallback(
+    async (nomeEstacao: string) => {
+      try {
+        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/manutencao`)
+        avisar("Modo manutencao alternado")
+        await recarregar()
+      } catch (e) {
+        avisar((e as Error).message, "erro")
+      }
+    },
+    [avisar, recarregar],
+  )
+
+  const liberarDireto = useCallback(
+    async (nomeEstacao: string, clienteId: number) => {
+      try {
+        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/iniciar_direto`, { cliente_id: clienteId })
+        avisar(`Cliente liberado diretamente para ${nomeEstacao}`)
+        await recarregar()
+        return true
+      } catch (e) {
+        avisar((e as Error).message, "erro")
+        return false
+      }
+    },
+    [avisar, recarregar],
+  )
+
+  return { liberar, removerDaFila, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto }
 }

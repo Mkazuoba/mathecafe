@@ -343,6 +343,34 @@ class AgenteApp:
                     lbl._is_erro = True
                     lbl.pack(pady=(0, 4))
 
+        elif evento == "reiniciar_pc":
+            self._log("<- reiniciar_pc do operador")
+            self.reiniciar_ao_encerrar = True
+            if self.sessao_ativa:
+                self._log("Encerrando sessao para reiniciar...")
+                self._voltar_login()
+            self._countdown_reinicio(30)
+
+        elif evento == "mensagem_tela":
+            texto = dados.get("texto", "")
+            self._log(f"<- mensagem_tela: {texto}")
+            self.root.after(0, lambda t=texto: self._exibir_mensagem_operador(t))
+
+        elif evento == "ativar_manutencao":
+            self._log("<- ativar_manutencao do operador")
+            if not self.modo_manutencao_ativo:
+                self.root.after(0, self._modo_manutencao)
+
+        elif evento == "desativar_manutencao":
+            self._log("<- desativar_manutencao do operador")
+            if self.modo_manutencao_ativo:
+                self.root.after(0, self._sair_modo_manutencao)
+
+        elif evento == "iniciar_sessao_direta":
+            self._log(f"<- iniciar_sessao_direta: {dados}")
+            if not self.sessao_ativa:
+                self.root.after(0, lambda d=dados: self._iniciar_sessao(d))
+
         else:
             self._log(f"<- evento: {evento} | {dados}")
 
@@ -677,6 +705,30 @@ class AgenteApp:
             self._prompt_manutencao = None
             prompt.destroy()
         prompt.protocol("WM_DELETE_WINDOW", _on_close)
+
+    def _exibir_mensagem_operador(self, texto):
+        """Mostra mensagem enviada pelo operador em uma janela modal."""
+        popup = tk.Toplevel(self.root)
+        popup.title("Mensagem do operador")
+        popup.configure(bg="#1A1B26")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        # Centraliza
+        popup.update_idletasks()
+        w, h = 380, 160
+        x = (popup.winfo_screenwidth() - w) // 2
+        y = (popup.winfo_screenheight() - h) // 2
+        popup.geometry(f"{w}x{h}+{x}+{y}")
+        popup.grab_set()
+
+        tk.Label(popup, text="Mensagem do operador", font=("Arial", 11, "bold"),
+                 fg="#f59e0b", bg="#1A1B26").pack(pady=(16, 4))
+        tk.Label(popup, text=texto, font=("Arial", 10), fg="#e2e8f0",
+                 bg="#1A1B26", wraplength=340, justify="center").pack(padx=16, pady=4)
+        tk.Button(popup, text="OK", font=("Arial", 10, "bold"),
+                  bg="#3b82f6", fg="white", relief="flat", padx=20, pady=6,
+                  command=popup.destroy).pack(pady=(8, 0))
+        self._log(f"Mensagem exibida: {texto}")
 
     def _modo_manutencao(self):
         if self.sessao_ativa:
