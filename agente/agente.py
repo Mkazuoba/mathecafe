@@ -387,42 +387,58 @@ class AgenteApp:
             self._log(f"<- evento: {evento} | {dados}")
 
     # ── Captura de tela ──────────────────────────────────────────────────────
-    def _capturar_e_enviar_tela(self):
-        if not PIL_AVAILABLE:
-            self._log("PIL nao disponivel, captura ignorada")
-            return
-        try:
-            import io, base64
-            from PIL import ImageGrab
-            img = ImageGrab.grab()
+    def _tirar_screenshot(self):
+        """Captura a tela usando PowerShell (confiavel em qualquer Windows)."""
+        import io, base64, tempfile, os, subprocess
+        tmp = tempfile.mktemp(suffix=".png")
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+            "$b=New-Object System.Drawing.Bitmap("
+            "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width,"
+            "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height);"
+            "$g=[System.Drawing.Graphics]::FromImage($b);"
+            "$g.CopyFromScreen(0,0,0,0,$b.Size);"
+            f"$b.Save('{tmp}');"
+            "$g.Dispose();$b.Dispose()"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, timeout=10
+        )
+        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+            raise RuntimeError("Screenshot vazio ou nao gerado")
+        if PIL_AVAILABLE:
+            from PIL import Image
+            img = Image.open(tmp)
             img.thumbnail((1280, 720))
             buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=70)
-            b64 = base64.b64encode(buf.getvalue()).decode()
+            img.save(buf, format="JPEG", quality=65)
+            data = buf.getvalue()
+        else:
+            with open(tmp, "rb") as f:
+                data = f.read()
+        os.unlink(tmp)
+        return base64.b64encode(data).decode()
+
+    def _capturar_e_enviar_tela(self):
+        try:
+            b64 = self._tirar_screenshot()
             self._enviar({"evento": "captura_tela_resultado", "dados": {"imagem": b64}})
-            self._log("-> captura_tela_resultado enviada")
+            self._log(f"-> captura enviada ({len(b64)} chars)")
         except Exception as ex:
             self._log(f"Erro na captura de tela: {ex}")
 
     def _loop_streaming(self):
         # Roda em thread separada — NAO usar self._log() aqui (Tkinter nao e thread-safe)
-        if not PIL_AVAILABLE:
-            print("[streaming] PIL nao disponivel")
-            return
-        import io, base64
-        from PIL import ImageGrab
         print("[streaming] iniciado")
         while self._streaming:
             try:
-                img = ImageGrab.grab()
-                img.thumbnail((1280, 720))
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=60)
-                b64 = base64.b64encode(buf.getvalue()).decode()
+                b64 = self._tirar_screenshot()
                 self._enviar({"evento": "tela_frame", "dados": {"imagem": b64}})
+                print(f"[streaming] frame: {len(b64)} chars")
             except Exception as ex:
                 print(f"[streaming] erro: {ex}")
-            time.sleep(0.8)
+            time.sleep(1.2)
         print("[streaming] encerrado")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
