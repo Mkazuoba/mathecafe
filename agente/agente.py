@@ -111,6 +111,10 @@ class AgenteApp:
         # Streaming ao vivo
         self._streaming = False
 
+        # Pausa de sessão
+        self._sessao_pausada = False
+        self._aviso_5min_dado = False
+
         self.root.title(f"MatheCafe - {estacao}")
         self.root.geometry("420x480")
         self.root.configure(bg="#0f1117")
@@ -373,6 +377,20 @@ class AgenteApp:
             self._log("<- capturar_tela")
             self.root.after(0, self._capturar_e_enviar_tela)
 
+        elif evento == "pausar_sessao":
+            self._log("<- pausar_sessao")
+            self.root.after(0, self._pausar_sessao)
+
+        elif evento == "retomar_sessao":
+            self._log("<- retomar_sessao")
+            novo_total = dados.get("tempo_total_segundos")
+            self.root.after(0, lambda t=novo_total: self._retomar_sessao(t))
+
+        elif evento == "renovar_sessao":
+            self._log("<- renovar_sessao")
+            novo_total = dados.get("tempo_total_segundos")
+            self.root.after(0, lambda t=novo_total: self._renovar_sessao(t))
+
         elif evento == "iniciar_streaming":
             self._log("<- iniciar_streaming")
             if not self._streaming:
@@ -427,6 +445,49 @@ class AgenteApp:
             self._log(f"-> captura enviada ({len(b64)} chars)")
         except Exception as ex:
             self._log(f"Erro na captura de tela: {ex}")
+
+    def _avisar_saldo_baixo(self, restante_segundos: int):
+        mins = restante_segundos // 60
+        try:
+            import tkinter.messagebox as mb
+            mb.showwarning("Saldo acabando",
+                           f"Atencao: restam {mins} minutos de saldo.\nProcure o operador para renovar.")
+        except Exception:
+            pass
+
+    def _pausar_sessao(self):
+        self._sessao_pausada = True
+        self._log("Sessao pausada pelo operador")
+        # Mostra overlay de pausa na janela (por cima do launcher)
+        try:
+            self._overlay_pausa = tk.Toplevel(self.root)
+            self._overlay_pausa.overrideredirect(True)
+            self._overlay_pausa.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{self.root.winfo_x()}+{self.root.winfo_y()}")
+            self._overlay_pausa.configure(bg="#0f1117")
+            self._overlay_pausa.attributes("-topmost", True)
+            tk.Label(self._overlay_pausa, text="SESSAO PAUSADA",
+                     font=("Segoe UI", 22, "bold"), bg="#0f1117", fg="#f59e0b").pack(expand=True)
+            tk.Label(self._overlay_pausa, text="Aguarde o operador retomar",
+                     font=("Segoe UI", 12), bg="#0f1117", fg="#9ca3af").pack()
+        except Exception as ex:
+            self._log(f"Erro ao exibir overlay: {ex}")
+
+    def _retomar_sessao(self, novo_total: int):
+        self._sessao_pausada = False
+        if novo_total:
+            self.tempo_total = novo_total
+        self._log("Sessao retomada")
+        try:
+            if hasattr(self, "_overlay_pausa") and self._overlay_pausa:
+                self._overlay_pausa.destroy()
+                self._overlay_pausa = None
+        except Exception:
+            pass
+
+    def _renovar_sessao(self, novo_total: int):
+        if novo_total:
+            self.tempo_total = novo_total
+            self._log(f"Sessao renovada: {self._fmt(novo_total)} no total")
 
     def _loop_streaming(self):
         # Roda em thread separada — NAO usar self._log() aqui (Tkinter nao e thread-safe)
@@ -615,6 +676,11 @@ class AgenteApp:
             "tempo_consumido_segundos": consumido
         })
         restante = max(0, self.tempo_total - consumido)
+
+        # Aviso quando restam 5 minutos (apenas uma vez por sessão)
+        if restante <= 300 and restante > 0 and not self._aviso_5min_dado:
+            self._aviso_5min_dado = True
+            self.root.after(0, lambda r=restante: self._avisar_saldo_baixo(r))
         self._log(f"Sessao encerrada pelo cliente. Saldo: {self._fmt(restante)}")
         self._voltar_login()
         self._reiniciar_se_necessario()

@@ -53,6 +53,7 @@ export interface Sessao {
   tempo_consumido_segundos: number
   motivo_encerramento: string | null
   ativa: boolean
+  pausada: boolean
 }
 
 export interface Operador {

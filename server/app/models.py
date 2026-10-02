@@ -67,6 +67,9 @@ class Sessao(Base):
     tempo_total_segundos = Column(Integer, nullable=True)
     tempo_consumido_segundos = Column(Integer, default=0)
     motivo_encerramento = Column(String(30), nullable=True)
+    pausada = Column(Boolean, default=False)
+    pausada_em = Column(DateTime, nullable=True)
+    tempo_pausado_segundos = Column(Integer, default=0)
     cliente = relationship("Usuario", back_populates="sessoes", foreign_keys=[cliente_id])
     estacao = relationship("Estacao", back_populates="sessoes")
 

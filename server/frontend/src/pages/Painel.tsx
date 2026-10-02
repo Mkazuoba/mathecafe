@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage,  IconPencil, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -546,15 +546,36 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
           )}
         </div>
       </SecaoComando>
-      {/* Encerrar sessão */}
+      {/* Sessão ativa: pausar/retomar/renovar/encerrar */}
       {sessao && (
         <SecaoComando titulo="Sessão ativa">
           <div className="mb-2 text-sm text-texto-suave">
             {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
+            {sessao.pausada && <span className="ml-2 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs font-semibold text-yellow-400">PAUSADA</span>}
           </div>
-          <Button variant="perigo" size="sm" onClick={() => { encerrarSessao(sessao.id, e.nome); aoFechar() }}>
-            <IconPlayerStop size={14} className="mr-1.5" /> Encerrar sessão
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  if (sessao.pausada) {
+                    await Api.post(`/api/sessoes/retomar/${sessao.id}`)
+                  } else {
+                    await Api.post(`/api/sessoes/pausar/${sessao.id}`)
+                  }
+                } catch (err) { console.error(err) }
+              }}
+            >
+              {sessao.pausada
+                ? <><IconPlayerPlay size={14} className="mr-1.5" /> Retomar</>
+                : <><IconPlayerPause size={14} className="mr-1.5" /> Pausar</>}
+            </Button>
+            <Button variant="perigo" size="sm" onClick={() => { encerrarSessao(sessao.id, e.nome); aoFechar() }}>
+              <IconPlayerStop size={14} className="mr-1.5" /> Encerrar
+            </Button>
+          </div>
+          <RenovarSaldo sessaoId={sessao.id} />
         </SecaoComando>
       )}
 
@@ -618,6 +639,44 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
           </Button>
         </div>
       </SecaoComando>
+    </div>
+  )
+}
+
+function RenovarSaldo({ sessaoId }: { sessaoId: number }) {
+  const avisar = useAvisos()
+  const [minutos, setMinutos] = useState("")
+  const [salvando, setSalvando] = useState(false)
+
+  async function renovar() {
+    const m = parseInt(minutos)
+    if (!m || m <= 0) return
+    setSalvando(true)
+    try {
+      await Api.post(`/api/sessoes/renovar/${sessaoId}?minutos=${m}`, {})
+      avisar(`+${m} min adicionados`)
+      setMinutos("")
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <input
+        type="number"
+        min={1}
+        placeholder="min"
+        value={minutos}
+        onChange={(ev) => setMinutos(ev.target.value)}
+        onKeyDown={(ev) => ev.key === "Enter" && renovar()}
+        className="w-20 rounded-md border border-borda bg-superficie-2 px-2 py-1 text-sm tabular-nums outline-none focus:border-destaque"
+      />
+      <Button size="sm" variant="outline" disabled={!minutos || salvando} onClick={renovar}>
+        {salvando ? "..." : "Renovar saldo"}
+      </Button>
     </div>
   )
 }

@@ -65,6 +65,20 @@ def criar_grupo(nome: str, tempo_padrao_segundos: int = 7200,
     db.add(g); db.commit(); db.refresh(g)
     return {"id": g.id, "nome": g.nome, "tempo_padrao_segundos": g.tempo_padrao_segundos}
 
+class GrupoUpdate(BaseModel):
+    nome: Optional[str] = None
+    tempo_padrao_segundos: Optional[int] = None
+
+@router.put("/grupos/{grupo_id}")
+def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
+                    db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    g = db.query(GrupoEstacao).filter(GrupoEstacao.id == grupo_id, GrupoEstacao.ativo == True).first()
+    if not g: raise HTTPException(404, "Grupo nao encontrado")
+    if data.nome is not None: g.nome = data.nome
+    if data.tempo_padrao_segundos is not None: g.tempo_padrao_segundos = data.tempo_padrao_segundos
+    db.commit()
+    return {"id": g.id, "nome": g.nome, "tempo_padrao_segundos": g.tempo_padrao_segundos}
+
 # ── Estações ──────────────────────────────────────────────────────────────────
 @router.get("/")
 def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),

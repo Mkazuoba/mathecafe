@@ -4,7 +4,7 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, lerTempo } from "@/lib/tempo"
-import type { AppPermitido, ConfigSistema, Operador } from "@/lib/tipos"
+import type { AppPermitido, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
@@ -14,6 +14,7 @@ import { SeloAtivo, Vazio } from "@/components/ui/status"
 const SECOES = [
   { id: "operadores", rotulo: "Operadores" },
   { id: "comportamento", rotulo: "Comportamento" },
+  { id: "grupos", rotulo: "Grupos" },
   { id: "apps", rotulo: "Apps permitidos" },
   { id: "relatorios", rotulo: "Relatórios" },
 ] as const
@@ -46,6 +47,7 @@ export default function Configuracoes() {
         <div className="max-w-2xl">
           {secao === "operadores" && <SecaoOperadores />}
           {secao === "comportamento" && <SecaoComportamento />}
+          {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
           {secao === "relatorios" && <SecaoRelatorios />}
         </div>
@@ -470,6 +472,94 @@ function ModalApp({
         </div>
       </form>
     </Modal>
+  )
+}
+
+// ── Grupos ──────────────────────────────────────────────────────────────────
+
+function SecaoGrupos() {
+  const avisar = useAvisos()
+  const { grupos, recarregarEstacoes } = useDados()
+  const [novoNome, setNovoNome] = useState("")
+  const [novoTempo, setNovoTempo] = useState("02:00:00")
+  const [criando, setCriando] = useState(false)
+  const [editando, setEditando] = useState<Record<number, string>>({})
+
+  async function criarGrupo(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!novoNome.trim()) return
+    setCriando(true)
+    try {
+      const segundos = lerTempo(novoTempo)
+      await Api.post(`/api/estacoes/grupos?nome=${encodeURIComponent(novoNome.trim())}&tempo_padrao_segundos=${segundos}`, {})
+      avisar("Grupo criado")
+      setNovoNome("")
+      setNovoTempo("02:00:00")
+      await recarregarEstacoes()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setCriando(false)
+    }
+  }
+
+  async function salvarGrupo(g: Grupo) {
+    const tempo = editando[g.id]
+    const segundos = lerTempo(tempo ?? formatarTempo(g.tempo_padrao_segundos))
+    try {
+      await Api.put(`/api/estacoes/grupos/${g.id}`, { tempo_padrao_segundos: segundos })
+      avisar("Tempo padrao atualizado")
+      setEditando((prev) => { const n = { ...prev }; delete n[g.id]; return n })
+      await recarregarEstacoes()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    }
+  }
+
+  return (
+    <div>
+      <Titulo>Grupos de estacoes</Titulo>
+      <p className="mb-4 text-sm text-texto-fraco">
+        Defina um tempo padrao por grupo. Clientes sem saldo usam esse tempo ao serem liberados em estacoes do grupo.
+      </p>
+      <div className="mb-4 flex flex-col gap-2">
+        {grupos.map((g) => {
+          const tempoEditado = editando[g.id]
+          const tempoAtual = tempoEditado ?? formatarTempo(g.tempo_padrao_segundos)
+          return (
+            <div key={g.id} className="flex items-center gap-3 rounded-lg border border-borda bg-superficie-2 px-4 py-2.5">
+              <span className="flex-1 text-sm font-medium">{g.nome}</span>
+              <input
+                type="text"
+                value={tempoAtual}
+                onChange={(ev) => setEditando((prev) => ({ ...prev, [g.id]: ev.target.value }))}
+                className="w-28 rounded-md border border-borda bg-superficie px-2 py-1 text-center font-mono text-sm outline-none focus:border-destaque"
+                placeholder="HH:MM:SS"
+              />
+              {tempoEditado !== undefined && (
+                <Button size="sm" onClick={() => salvarGrupo(g)}>Salvar</Button>
+              )}
+            </div>
+          )
+        })}
+        {grupos.length === 0 && (
+          <p className="text-sm text-texto-fraco">Nenhum grupo cadastrado.</p>
+        )}
+      </div>
+      <form onSubmit={criarGrupo} className="flex items-end gap-2">
+        <div className="flex-1">
+          <Campo rotulo="Nome do novo grupo" id="novo-grupo-nome">
+            <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Sala VIP" />
+          </Campo>
+        </div>
+        <Campo rotulo="Tempo padrao" id="novo-grupo-tempo">
+          <Input id="novo-grupo-tempo" value={novoTempo} onChange={(e) => setNovoTempo(e.target.value)} placeholder="HH:MM:SS" className="w-28 font-mono text-center" />
+        </Campo>
+        <Button type="submit" disabled={criando || !novoNome.trim()}>
+          {criando ? "..." : "+ Criar grupo"}
+        </Button>
+      </form>
+    </div>
   )
 }
 
