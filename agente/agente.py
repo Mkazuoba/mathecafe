@@ -1,20 +1,21 @@
 """
-MatheCafé - Agente da Estação (versão de teste)
+MatheCafé - Agente da Estação
 
 Conecta a estação ao servidor via WebSocket e oferece:
 - Tela de login do cliente
 - Countdown da sessão
 - Encerramento manual ou automático (tempo esgotado)
-- Log de mensagens para debug
+- Launcher de apps com grade visual
+- Modo manutenção autenticado pelo servidor (Ctrl+Shift+M)
+- Log de comunicação para debug
 
 Uso:
     python agente.py --servidor ws://localhost:8000 --estacao PC-01
-
-Para o servidor no Render:
     python agente.py --servidor wss://mathecafe.onrender.com --estacao PC-01
 
-IMPORTANTE: a estação precisa estar cadastrada no painel admin
-(botão "+ Nova estação") com o MESMO NOME passado em --estacao.
+IMPORTANTE:
+- A estação precisa estar cadastrada no painel com o MESMO NOME de --estacao.
+- Rode como Administrador para que o bloqueio de processos funcione.
 """
 
 import asyncio
@@ -28,60 +29,9 @@ import subprocess
 import ctypes
 from datetime import datetime
 from io import BytesIO
-import urllib.parse
 import urllib.request
-import sys
-import traceback
 import tkinter as tk
 from tkinter import font as tkfont, scrolledtext
-
-# Com pythonw (iniciar.bat) não há console: qualquer erro fatal vai para
-# agente_erro.log, ao lado deste arquivo, e aparece numa janela.
-ARQUIVO_ERRO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_erro.log")
-
-
-def registrar_erro(tipo, valor, tb, mostrar=True):
-    texto = "".join(traceback.format_exception(tipo, valor, tb))
-    try:
-        with open(ARQUIVO_ERRO, "a", encoding="utf-8") as f:
-            f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n{texto}")
-    except OSError:
-        pass
-    if not mostrar:
-        return
-    try:
-        from tkinter import messagebox
-        messagebox.showerror("MatheCafé — erro no agente",
-                             f"{valor}\n\nDetalhes em:\n{ARQUIVO_ERRO}")
-    except Exception:
-        pass
-
-
-sys.excepthook = registrar_erro
-
-# Cópia do "LOG DE COMUNICAÇÃO" da janela, recriada a cada vez que o agente abre
-ARQUIVO_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente.log")
-
-
-def gravar_log(linha: str, novo: bool = False):
-    try:
-        with open(ARQUIVO_LOG, "w" if novo else "a", encoding="utf-8") as f:
-            f.write(linha + "\n")
-    except OSError:
-        pass
-
-
-def servidor_na_rede_local(url: str) -> bool:
-    """localhost, nome sem ponto ou IP privado (10.x, 172.16-31.x, 192.168.x)."""
-    import ipaddress
-    host = urllib.parse.urlsplit(url).hostname or ""
-    if host == "localhost" or "." not in host:
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False  # nome de domínio, ex.: mathecafe.onrender.com
-    return ip.is_private or ip.is_loopback
 
 import websockets
 import psutil
@@ -106,8 +56,7 @@ def carregar_imagem_url(url, largura=160, altura=140):
         return None
 
 
-# Processos essenciais do Windows — NUNCA serão encerrados,
-# independente da whitelist configurada.
+# Processos essenciais do Windows — NUNCA serão encerrados.
 PROCESSOS_SEGUROS = {
     "system", "system idle process", "registry", "smss.exe", "csrss.exe",
     "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "lsaiso.exe",
@@ -119,17 +68,12 @@ PROCESSOS_SEGUROS = {
     "securityhealthsystray.exe", "securityhealthservice.exe",
     "nvcontainer.exe", "nvdisplay.container.exe",
     "python.exe", "pythonw.exe",
-    # Auxiliares que rodam como o usuário logado (áudio, shell do Windows 11,
-    # tela de bloqueio, Defender, vídeo Intel)
-    "rtkauduservice64.exe", "wavessvc64.exe", "shellhost.exe", "lockapp.exe",
-    "defendersessionhelper.exe", "igfxem.exe", "igfxtray.exe", "igfxhk.exe",
 }
 
-# Processos que devem ser sempre bloqueados durante a sessão, mesmo sem
-# whitelist ativa (terminais e interpretadores de script).
+# Processos sempre bloqueados durante a sessão (terminais, interpretadores).
 PROCESSOS_SEMPRE_BLOQUEADOS = {
     "cmd.exe", "powershell.exe", "powershell_ise.exe",
-    "wt.exe",          # Windows Terminal
+    "wt.exe",
     "mshta.exe", "wscript.exe", "cscript.exe",
     "regedit.exe", "taskmgr.exe",
 }
@@ -157,34 +101,46 @@ class AgenteApp:
         self.reiniciar_ao_encerrar = False
         self._img_refs = []
         self.modo_manutencao_ativo = False
-        self.app_em_uso = False  # launcher recuado para mostrar um app aberto
-        # Só programas do usuário logado são fechados; processos do sistema e de
-        # serviços (SYSTEM, LOCAL SERVICE...) nunca são tocados.
-        try:
-            self.usuario = psutil.Process().username()
-        except Exception:
-            self.usuario = None
 
-        self.root.title(f"MatheCafé — {estacao}")
+        # PIDs que já existiam antes da sessão (não serão encerrados pela whitelist)
+        self._pids_pre_sessao = set()
+
+        # Prompt de manutenção pendente (aguardando resposta do servidor)
+        self._prompt_manutencao = None
+
+        self.root.title(f"MatheCafe - {estacao}")
         self.root.geometry("420x480")
         self.root.configure(bg="#0f1117")
         self.root.resizable(False, False)
 
+        # Impede fechar a janela durante a sessão
+        self.root.protocol("WM_DELETE_WINDOW", self._tentar_fechar)
+
         self._build_ui()
         self._start_ws_thread()
 
-        # Atalho de emergência/debug: ESC sai da tela cheia (não encerra a sessão)
-        self.root.bind("<Escape>", lambda e: self.root.attributes("-fullscreen", False))
-        # Atalho oculto de manutenção (ambas as formas para compatibilidade)
+        # Atalhos
+        self.root.bind("<Escape>", self._tentar_esc)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
-        # Cliente voltou ao launcher (clicou nele): volta a ficar por cima
-        self.root.bind("<FocusIn>", self._launcher_em_foco)
 
         self.root.after(100, self._processar_fila)
         self.root.after(500, self._verificar_privilegios)
         self.root.after(1000, self._atualizar_countdown)
         self.root.after(3000, self._verificar_processos)
+
+    # ── Controle de janela ────────────────────────────────────────────────────
+    def _tentar_fechar(self):
+        """Bloqueia fechamento durante sessão ativa fora do modo manutenção."""
+        if self.sessao_ativa and not self.modo_manutencao_ativo:
+            return  # ignora — não fecha
+        self.root.destroy()
+
+    def _tentar_esc(self, event=None):
+        """ESC só sai da tela cheia fora de sessão ativa ou em manutenção."""
+        if self.sessao_ativa and not self.modo_manutencao_ativo:
+            return  # bloqueado durante sessão
+        self.root.attributes("-fullscreen", False)
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -207,15 +163,15 @@ class AgenteApp:
         # ── Cabeçalho ──
         self.header_frame = header = tk.Frame(self.root, bg=bg2)
         header.pack(fill="x")
-        tk.Label(header, text="MatheCafé", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=14, pady=10)
+        tk.Label(header, text="MatheCafe", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=14, pady=10)
         self.lbl_estacao = tk.Label(header, text=self.estacao, font=normal_font, fg=text2, bg=bg2)
         self.lbl_estacao.pack(side="left", padx=4)
-        self.lbl_status = tk.Label(header, text="● conectando...", font=small_font, fg="#f97316", bg=bg2)
+        self.lbl_status = tk.Label(header, text="conectando...", font=small_font, fg="#f97316", bg=bg2)
         self.lbl_status.pack(side="right", padx=14)
 
         # ── Frame de login ──
         self.frame_login = tk.Frame(self.root, bg=bg)
-        tk.Label(self.frame_login, text="Faça login para iniciar sua sessão",
+        tk.Label(self.frame_login, text="Faca login para iniciar sua sessao",
                  font=normal_font, fg=text, bg=bg).pack(pady=(40, 20))
 
         tk.Label(self.frame_login, text="LOGIN", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=40)
@@ -225,7 +181,7 @@ class AgenteApp:
 
         tk.Label(self.frame_login, text="SENHA", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=40)
         self.entry_senha = tk.Entry(self.frame_login, font=normal_font, bg=bg3, fg=text,
-                                     insertbackground=text, relief="flat", show="●")
+                                     insertbackground=text, relief="flat", show="*")
         self.entry_senha.pack(fill="x", padx=40, pady=(2, 16), ipady=6)
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
 
@@ -244,18 +200,18 @@ class AgenteApp:
         topo_sessao.pack(fill="x")
         self.lbl_cliente = tk.Label(topo_sessao, text="", font=normal_font, fg=text, bg=bg2)
         self.lbl_cliente.pack(side="left", padx=16, pady=10)
-        self.lbl_countdown = tk.Label(topo_sessao, text="00:00:00", font=tkfont.Font(family="Consolas", size=16, weight="bold"),
+        self.lbl_countdown = tk.Label(topo_sessao, text="00:00:00",
+                                       font=tkfont.Font(family="Consolas", size=16, weight="bold"),
                                        fg="#22c55e", bg=bg2)
         self.lbl_countdown.pack(side="right", padx=16, pady=10)
 
         tk.Label(self.frame_sessao, text="Selecione um aplicativo para abrir",
                  font=small_font, fg=text2, bg=bg).pack(pady=(16, 8))
 
-        # Área dos ícones (grid de apps)
         self.frame_launcher = tk.Frame(self.frame_sessao, bg=bg)
         self.frame_launcher.pack(expand=True, fill="both", padx=20)
 
-        self.btn_encerrar = tk.Button(self.frame_sessao, text="Encerrar sessão", font=normal_font,
+        self.btn_encerrar = tk.Button(self.frame_sessao, text="Encerrar sessao", font=normal_font,
                                        bg="#ef4444", fg="white", relief="flat", activebackground="#dc2626",
                                        command=self._encerrar_manual)
         self.btn_encerrar.pack(fill="x", padx=40, pady=20, ipady=8)
@@ -264,18 +220,18 @@ class AgenteApp:
 
         # ── Log ──
         self.frame_log = tk.Frame(self.root, bg=bg)
-        tk.Label(self.frame_log, text="LOG DE COMUNICAÇÃO", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=10)
+        tk.Label(self.frame_log, text="LOG DE COMUNICACAO", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=10)
         self.log = scrolledtext.ScrolledText(self.frame_log, height=8, bg=bg3, fg=text2,
                                               font=small_font, relief="flat", wrap="word")
         self.log.pack(fill="both", padx=10, pady=(2, 10), expand=False)
         self.log.configure(state="disabled")
         self.frame_log.pack(fill="both", expand=False)
 
-        # ── Barra de manutenção (oculta inicialmente — exibida via pack before=header) ──
+        # ── Barra de manutenção (oculta inicialmente) ──
         self.frame_manutencao = tk.Frame(self.root, bg="#f59e0b")
-        tk.Label(self.frame_manutencao, text="🔧 Modo Manutenção ativo",
+        tk.Label(self.frame_manutencao, text="Modo Manutencao ativo",
                  bg="#f59e0b", fg="black", font=normal_font).pack(side="left", padx=14, pady=8)
-        tk.Button(self.frame_manutencao, text="Encerrar manutenção",
+        tk.Button(self.frame_manutencao, text="Encerrar manutencao",
                   bg="#92400e", fg="white", relief="flat", font=small_font,
                   command=self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
 
@@ -285,7 +241,6 @@ class AgenteApp:
         self.log.insert("end", f"[{ts}] {msg}\n")
         self.log.see("end")
         self.log.configure(state="disabled")
-        gravar_log(f"[{ts}] {msg}")
 
     # ── WebSocket (thread separada) ──────────────────────────────────────────
     def _start_ws_thread(self):
@@ -298,32 +253,15 @@ class AgenteApp:
         self.loop.run_until_complete(self._ws_loop())
 
     async def _ws_loop(self):
-        # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
-        url = f"{self.servidor}/ws/estacao/{urllib.parse.quote(self.estacao)}"
-        # Servidor na rede interna: conexão direta. O websockets usa o proxy do
-        # Windows por padrão, e redes com proxy desviam até IPs internos.
-        proxy = None if servidor_na_rede_local(url) else True
-        self.incoming.put({"evento": "_info", "dados": {
-            "msg": f"Conectando a {url}" + (" (direto, sem proxy)" if proxy is None else "")}})
+        url = f"{self.servidor}/ws/estacao/{self.estacao}"
         while True:
             try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20, proxy=proxy) as ws:
-                    # Só fica "online" quando o servidor responder: uma estação
-                    # não cadastrada é fechada antes do pong
-                    await ws.send(json.dumps({"evento": "ping"}))
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
+                    self.ws = ws
+                    self.conectado = True
+                    self.incoming.put({"evento": "_conectado"})
                     async for raw in ws:
-                        if not self.conectado:
-                            self.ws = ws
-                            self.conectado = True
-                            self.incoming.put({"evento": "_conectado"})
                         self.incoming.put(json.loads(raw))
-            except websockets.exceptions.ConnectionClosed as e:
-                if e.rcvd and e.rcvd.code == 4004:
-                    self.incoming.put({"evento": "_erro", "dados": {"nao_cadastrada": True, "msg": (
-                        f"Estação '{self.estacao}' não está cadastrada no servidor. "
-                        "Cadastre no painel (Mapa → Modo configuração) com esse nome exato.")}})
-                else:
-                    self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
             except Exception as e:
                 self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
 
@@ -335,11 +273,11 @@ class AgenteApp:
     def _enviar(self, msg: dict):
         if self.loop and self.ws:
             asyncio.run_coroutine_threadsafe(self.ws.send(json.dumps(msg)), self.loop)
-            self._log(f"→ enviado: {msg.get('evento')}")
+            self._log(f"-> enviado: {msg.get('evento')}")
         else:
-            self._log("⚠ não conectado, não foi possível enviar")
+            self._log("AVISO: nao conectado, mensagem nao enviada")
 
-    # ── Processamento de eventos vindos do servidor ──────────────────────────
+    # ── Processamento de eventos ─────────────────────────────────────────────
     def _processar_fila(self):
         try:
             while True:
@@ -354,63 +292,74 @@ class AgenteApp:
         dados = msg.get("dados", {})
 
         if evento == "_conectado":
-            self.lbl_status.config(text="● online", fg="#22c55e")
+            self.lbl_status.config(text="online", fg="#22c55e")
             self.btn_login.config(state="normal")
-            self.lbl_login_erro.config(text="")
             self._log("Conectado ao servidor")
 
         elif evento == "_desconectado":
-            self.lbl_status.config(text="● offline", fg="#ef4444")
+            self.lbl_status.config(text="offline", fg="#ef4444")
             self.btn_login.config(state="disabled")
-            self._log("Desconectado — tentando reconectar em 3s...")
+            self._log("Desconectado - tentando reconectar em 3s...")
             if self.sessao_ativa:
-                self._log("⚠ Conexão perdida durante a sessão — retornando ao login")
+                self._log("Conexao perdida durante sessao - retornando ao login")
                 self._voltar_login()
 
-        elif evento == "_info":
-            self._log(dados.get("msg", ""))
-
         elif evento == "_erro":
-            self._log(f"Erro de conexão: {dados.get('msg')}")
-            if dados.get("nao_cadastrada"):
-                self.lbl_login_erro.config(text=dados["msg"], wraplength=340)
+            self._log(f"Erro de conexao: {dados.get('msg')}")
 
         elif evento == "login_resultado":
-            self._log(f"← login_resultado: {dados}")
+            self._log(f"<- login_resultado: {dados}")
             if dados.get("ok"):
                 self._iniciar_sessao(dados)
             else:
                 self.lbl_login_erro.config(text=dados.get("motivo", "Erro desconhecido"))
 
         elif evento == "pong":
-            pass  # keep-alive, ignora
-
-        elif evento == "manutencao_resultado":
-            self._resultado_manutencao(dados.get("ok", False))
+            pass
 
         elif evento == "encerrar_sessao":
             if self.sessao_ativa:
                 saldo = dados.get("saldo_restante", 0)
-                self._log(f"⚠ Sessão encerrada pelo operador. Saldo: {self._fmt(saldo)}")
+                self._log(f"Sessao encerrada pelo operador. Saldo: {self._fmt(saldo)}")
                 self._voltar_login()
                 self._reiniciar_se_necessario()
 
+        elif evento == "validar_manutencao_resultado":
+            self._log(f"<- validar_manutencao_resultado: {dados}")
+            if self._prompt_manutencao and self._prompt_manutencao.winfo_exists():
+                if dados.get("ok"):
+                    self._prompt_manutencao.destroy()
+                    self._prompt_manutencao = None
+                    self._modo_manutencao()
+                else:
+                    motivo = dados.get("motivo", "Credenciais invalidas")
+                    # Mostra erro dentro do prompt
+                    for w in self._prompt_manutencao.winfo_children():
+                        if isinstance(w, tk.Label) and getattr(w, "_is_erro", False):
+                            w.config(text=motivo)
+                            return
+                    lbl = tk.Label(self._prompt_manutencao, text=motivo,
+                                   fg="#ef4444", bg="#1A1B26", font=("Arial", 9))
+                    lbl._is_erro = True
+                    lbl.pack(pady=(0, 4))
+
         else:
-            self._log(f"← evento: {evento} | {dados}")
+            self._log(f"<- evento: {evento} | {dados}")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
     def _fazer_login(self):
         login = self.entry_login.get().strip()
         senha = self.entry_senha.get()
         self.lbl_login_erro.config(text="")
-
         if not login or not senha:
             self.lbl_login_erro.config(text="Preencha login e senha")
             return
-
         self._enviar({"evento": "login_cliente", "login": login, "senha": senha})
 
     def _iniciar_sessao(self, dados):
+        # Captura os PIDs que ja existem ANTES da sessao comecar
+        self._pids_pre_sessao = {p.pid for p in psutil.process_iter(["pid"])}
+
         self.sessao_ativa = True
         self.sessao_id = dados["sessao_id"]
         self.cliente_nome = dados["cliente_nome"]
@@ -418,7 +367,6 @@ class AgenteApp:
         self.inicio_sessao = time.time()
 
         whitelist_apps = dados.get("whitelist", [])
-        # Compatibilidade: aceita lista de strings (versão antiga) ou de dicts
         if whitelist_apps and isinstance(whitelist_apps[0], str):
             whitelist_apps = [{"nome": p, "processo": p, "caminho": None} for p in whitelist_apps]
 
@@ -437,37 +385,33 @@ class AgenteApp:
         self.frame_login.pack_forget()
         self.frame_sessao.pack(fill="both", expand=True)
 
-        # Modo tela cheia durante a sessão
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-fullscreen", True)
+        self.root.attributes("-fullscreen", False)
+        self.root.attributes("-topmost", False)
+        self.root.state("zoomed")
         self.root.lift()
         self.root.focus_force()
 
         if self.whitelist_procs:
-            self._log(f"Sessão iniciada — {self._fmt(self.tempo_total)} disponíveis | "
+            self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | "
                       f"whitelist: {len(self.whitelist_procs)} app(s)")
         else:
-            self._log(f"Sessão iniciada — {self._fmt(self.tempo_total)} disponíveis | "
-                      f"sem restrição de apps")
+            self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | sem restricao")
 
     def _montar_launcher(self):
-        """Cria o grid visual de cards de apps estilo SENET."""
         for widget in self.frame_launcher.winfo_children():
             widget.destroy()
-
         self._img_refs = []
 
         apps = [a for a in self.whitelist_apps if a.get("caminho")]
 
         if not apps:
             tk.Label(self.frame_launcher,
-                     text="Nenhum app configurado com caminho de execução.\n"
-                          "Peça ao administrador para configurar a whitelist.",
+                     text="Nenhum app configurado com caminho de execucao.\n"
+                          "Peca ao administrador para configurar a whitelist.",
                      font=self.f_small, fg=self.c_text2, bg=self.c_bg,
                      justify="center").pack(expand=True)
             return
 
-        # Container scrollável via Canvas
         canvas = tk.Canvas(self.frame_launcher, bg=self.c_bg, highlightthickness=0)
         scrollbar = tk.Scrollbar(self.frame_launcher, orient="vertical", command=canvas.yview)
         scroll_frame = tk.Frame(canvas, bg=self.c_bg)
@@ -506,7 +450,7 @@ class AgenteApp:
             img_lbl.place(x=0, y=0, width=CARD_W, height=IMG_H)
 
             nome_raw = app.get("nome", "")
-            nome_txt = (nome_raw[:18] + "…") if len(nome_raw) > 18 else nome_raw
+            nome_txt = (nome_raw[:18] + "...") if len(nome_raw) > 18 else nome_raw
             nome_lbl = tk.Label(card, text=nome_txt, font=f_nome,
                                  fg=self.c_text, bg="#1e2333", justify="center")
             nome_lbl.place(x=4, y=IMG_H + 4, width=CARD_W - 8, height=CARD_H - IMG_H - 8)
@@ -543,25 +487,11 @@ class AgenteApp:
             return
         try:
             subprocess.Popen([caminho])
-            self._log(f"▶ Abrindo: {app['nome']}")
+            self._log(f"Abrindo: {app['nome']}")
+            # Envia launcher para tras sem minimizar
+            self.root.after(300, self.root.lower)
         except Exception as e:
-            self._log(f"⚠ Erro ao abrir {app['nome']}: {e}")
-            return
-        # O launcher fica em tela cheia e por cima de tudo: recua para o app
-        # aparecer. O cliente volta ao launcher pela barra de tarefas.
-        self.app_em_uso = True
-        self.root.attributes("-topmost", False)
-        self.root.attributes("-fullscreen", False)
-        self.root.iconify()
-
-    def _launcher_em_foco(self, event=None):
-        if event is not None and event.widget is not self.root:
-            return
-        if self.app_em_uso and self.sessao_ativa and not self.modo_manutencao_ativo:
-            self.app_em_uso = False
-            self.root.attributes("-fullscreen", True)
-            self.root.attributes("-topmost", True)
-            self.root.lift()
+            self._log(f"Erro ao abrir {app['nome']}: {e}")
 
     def _atualizar_countdown(self):
         if self.sessao_ativa:
@@ -590,7 +520,7 @@ class AgenteApp:
             "tempo_consumido_segundos": consumido
         })
         restante = max(0, self.tempo_total - consumido)
-        self._log(f"Sessão encerrada pelo cliente. Saldo: {self._fmt(restante)}")
+        self._log(f"Sessao encerrada pelo cliente. Saldo: {self._fmt(restante)}")
         self._voltar_login()
         self._reiniciar_se_necessario()
 
@@ -601,38 +531,52 @@ class AgenteApp:
             "motivo": "tempo_esgotado",
             "tempo_consumido_segundos": self.tempo_total
         })
-        self._log("⏰ Tempo esgotado!")
+        self._log("Tempo esgotado!")
         vai_reiniciar = self.reiniciar_ao_encerrar
         self._voltar_login()
         if vai_reiniciar:
             self.lbl_login_erro.config(
-                text="⏰ Sessão encerrada. PC reiniciando em 30s...", fg="#f59e0b")
+                text="Sessao encerrada. PC reiniciando em 30s...", fg="#f59e0b")
         self._reiniciar_se_necessario()
 
     def _reiniciar_se_necessario(self):
         if self.reiniciar_ao_encerrar:
-            self._log("🔄 Reiniciando o PC em 30 segundos...")
+            self._log("Reiniciando o PC em 30 segundos...")
             subprocess.run(["shutdown", "/r", "/f", "/t", "30"],
                            shell=False, capture_output=True)
 
+    def _encerrar_apps_do_cliente(self):
+        """Encerra os processos que o cliente abriu durante a sessao."""
+        if not self.whitelist_procs:
+            return
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                nome = (proc.info["name"] or "").lower()
+                if nome in self.whitelist_procs:
+                    proc.kill()
+                    self._log(f"Fechando app do cliente: {nome}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
     def _voltar_login(self):
+        self._encerrar_apps_do_cliente()
+
         self.sessao_ativa = False
         self.sessao_id = None
-        # Fecha os apps que o cliente abriu, para o próximo não encontrá-los
-        self._fechar_processos(lambda nome: nome in self.whitelist_procs, "encerrado ao fim da sessão")
-        self.app_em_uso = False
-        self.root.deiconify()
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self._img_refs = []
+        self._pids_pre_sessao = set()
 
         try:
             self.root.unbind_all("<MouseWheel>")
         except Exception:
             pass
 
-        self.root.attributes("-fullscreen", False)
-        self.root.attributes("-topmost", False)
+        self.root.deiconify()  # garante que a janela nao fica minimizada
+        self.root.attributes("-fullscreen", True)
+        self.root.attributes("-topmost", True)
+        self.root.lift()
         self.frame_sessao.pack_forget()
         self.frame_login.pack(fill="both", expand=True)
         self.frame_log.pack(fill="both", expand=False)
@@ -641,72 +585,81 @@ class AgenteApp:
     def _verificar_privilegios(self):
         try:
             if not ctypes.windll.shell32.IsUserAnAdmin():
-                self._log("⚠ AVISO: rodando sem privilégios de admin.")
-                self._log("  Bloqueio de processos pode não funcionar.")
+                self._log("AVISO: rodando sem privilegios de admin.")
+                self._log("  Bloqueio de processos pode nao funcionar.")
         except Exception:
             pass
 
     def _abrir_prompt_admin(self, event=None):
+        """Abre o prompt de manutencao. Credenciais validadas pelo servidor."""
         if self.modo_manutencao_ativo:
             self._sair_modo_manutencao()
             return
 
-        from tkinter import messagebox
-
-        if not self.conectado:
-            messagebox.showerror("Sem conexão",
-                                 "O modo manutenção precisa do servidor para conferir o login.",
-                                 parent=self.root)
-            return
+        # Fecha prompt anterior se houver
+        if self._prompt_manutencao and self._prompt_manutencao.winfo_exists():
+            self._prompt_manutencao.destroy()
 
         prompt = tk.Toplevel(self.root)
+        self._prompt_manutencao = prompt
         prompt.title("Acesso Administrativo")
-        prompt.geometry("300x210")
+        prompt.geometry("320x200")
         prompt.configure(bg="#1A1B26")
         prompt.attributes("-topmost", True)
         prompt.grab_set()
 
-        pos_x = int(self.root.winfo_screenwidth() / 2 - 150)
-        pos_y = int(self.root.winfo_screenheight() / 2 - 105)
+        pos_x = int(self.root.winfo_screenwidth() / 2 - 160)
+        pos_y = int(self.root.winfo_screenheight() / 2 - 100)
         prompt.geometry(f"+{pos_x}+{pos_y}")
 
-        # Login de operador ou admin, conferido pelo servidor
         tk.Label(prompt, text="Login do operador:", bg="#1A1B26", fg="white",
-                 font=("Arial", 10)).pack(pady=(10, 2))
-        login_entry = tk.Entry(prompt, font=("Arial", 12),
+                 font=("Segoe UI", 10)).pack(pady=(16, 2))
+        login_entry = tk.Entry(prompt, font=("Segoe UI", 11),
                                bg="#2A2B3D", fg="white", insertbackground="white")
-        login_entry.pack(pady=2)
+        login_entry.pack(padx=24, fill="x")
         login_entry.focus()
 
         tk.Label(prompt, text="Senha:", bg="#1A1B26", fg="white",
-                 font=("Arial", 10)).pack(pady=(8, 2))
-        senha_entry = tk.Entry(prompt, show="*", font=("Arial", 12),
+                 font=("Segoe UI", 10)).pack(pady=(8, 2))
+        senha_entry = tk.Entry(prompt, show="*", font=("Segoe UI", 11),
                                bg="#2A2B3D", fg="white", insertbackground="white")
-        senha_entry.pack(pady=2)
+        senha_entry.pack(padx=24, fill="x")
 
         def validar(event=None):
-            self._prompt_manutencao = (prompt, senha_entry)
-            self._enviar({"evento": "validar_manutencao",
-                          "login": login_entry.get().strip(), "senha": senha_entry.get()})
+            login = login_entry.get().strip()
+            senha = senha_entry.get()
+            if not login or not senha:
+                return
+            btn.config(state="disabled", text="Verificando...")
+            if self.conectado:
+                # Valida pelo servidor
+                self._enviar({"evento": "validar_manutencao", "login": login, "senha": senha})
+            else:
+                # Sem conexao: nao permite manutencao
+                for w in prompt.winfo_children():
+                    if isinstance(w, tk.Label) and getattr(w, "_is_erro", False):
+                        w.config(text="Sem conexao com o servidor")
+                        btn.config(state="normal", text="Entrar")
+                        return
+                lbl = tk.Label(prompt, text="Sem conexao com o servidor",
+                               fg="#ef4444", bg="#1A1B26", font=("Segoe UI", 9))
+                lbl._is_erro = True
+                lbl.pack(pady=(2, 0))
+                btn.config(state="normal", text="Entrar")
 
-        tk.Button(prompt, text="Entrar", command=validar,
-                  bg="#4CAF50", fg="white", relief="flat").pack(pady=10)
+        btn = tk.Button(prompt, text="Entrar", command=validar,
+                        bg="#4f46e5", fg="white", relief="flat",
+                        font=("Segoe UI", 10))
+        btn.pack(pady=12, padx=24, fill="x", ipady=6)
 
-        prompt.bind("<Return>", validar)
+        senha_entry.bind("<Return>", validar)
+        login_entry.bind("<Return>", lambda e: senha_entry.focus())
         prompt.bind("<Escape>", lambda e: prompt.destroy())
 
-    def _resultado_manutencao(self, ok):
-        from tkinter import messagebox
-        prompt, senha_entry = getattr(self, "_prompt_manutencao", (None, None))
-        self._prompt_manutencao = (None, None)
-        if not prompt or not prompt.winfo_exists():
-            return
-        if ok:
+        def _on_close():
+            self._prompt_manutencao = None
             prompt.destroy()
-            self._modo_manutencao()
-        else:
-            messagebox.showerror("Acesso Negado", "Login ou senha incorretos.", parent=prompt)
-            senha_entry.delete(0, tk.END)
+        prompt.protocol("WM_DELETE_WINDOW", _on_close)
 
     def _modo_manutencao(self):
         if self.sessao_ativa:
@@ -717,7 +670,7 @@ class AgenteApp:
                 "motivo": "manutencao",
                 "tempo_consumido_segundos": consumido
             })
-            self._voltar_login()  # já desativa fullscreen e topmost
+            self._voltar_login()
         else:
             self.root.attributes("-fullscreen", False)
             self.root.attributes("-topmost", False)
@@ -725,7 +678,7 @@ class AgenteApp:
         self.modo_manutencao_ativo = True
         self._enviar({"evento": "status_estacao", "status": "manutencao"})
         self.frame_manutencao.pack(fill="x", before=self.header_frame)
-        self._log("🔧 Modo manutenção ativado pelo admin")
+        self._log("Modo manutencao ativado")
 
     def _sair_modo_manutencao(self):
         self.modo_manutencao_ativo = False
@@ -738,7 +691,7 @@ class AgenteApp:
         self.root.attributes("-fullscreen", True)
         self.root.lift()
         self.root.focus_force()
-        self._log("🔧 Modo manutenção encerrado — retornando ao login")
+        self._log("Modo manutencao encerrado - retornando ao login")
 
     @staticmethod
     def _fmt(segundos):
@@ -747,59 +700,52 @@ class AgenteApp:
         m, s = divmod(r, 60)
         return f"{h:02d}:{m:02d}:{s:02d}"
 
-    # ── Whitelist de apps ─────────────────────────────────────────────────────
-    def _fechar_processos(self, deve_fechar, motivo):
-        """Fecha processos do usuário logado para os quais deve_fechar(nome) é
-        verdadeiro. Processos de outros usuários e do sistema nunca são tocados."""
-        pid_atual = os.getpid()
-        for proc in psutil.process_iter(["pid", "name", "username"]):
-            try:
-                nome = (proc.info["name"] or "").lower()
-                if proc.info["pid"] == pid_atual or not nome or nome in PROCESSOS_SEGUROS:
-                    continue
-                if not self.usuario or proc.info["username"] != self.usuario:
-                    continue
-                if deve_fechar(nome):
-                    proc.kill()
-                    self._log(f"🚫 {nome}: {motivo}")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-
+    # ── Whitelist de processos ────────────────────────────────────────────────
     def _verificar_processos(self):
-        if self.sessao_ativa and not self.modo_manutencao_ativo:
-            whitelist = self.whitelist_procs
-            self._fechar_processos(
-                lambda nome: nome in PROCESSOS_SEMPRE_BLOQUEADOS
-                or (bool(whitelist) and nome not in whitelist),
-                "bloqueado (fora dos apps permitidos)",
-            )
+        if self.sessao_ativa:
+            pid_atual = os.getpid()
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    nome = (proc.info["name"] or "").lower()
+                    pid = proc.info["pid"]
+
+                    if pid == pid_atual or not nome:
+                        continue
+
+                    # Processos que existiam antes da sessao: nunca toca
+                    if pid in self._pids_pre_sessao:
+                        continue
+
+                    if nome in PROCESSOS_SEMPRE_BLOQUEADOS:
+                        proc.kill()
+                        self._log(f"Bloqueado (proibido): {nome}")
+                        continue
+
+                    if not self.whitelist_procs:
+                        continue
+                    if nome in PROCESSOS_SEGUROS:
+                        continue
+                    if nome in self.whitelist_procs:
+                        continue
+
+                    proc.kill()
+                    self._log(f"Bloqueado (fora da whitelist): {nome}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
         self.root.after(3000, self._verificar_processos)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MatheCafé - Agente da Estação")
+    parser = argparse.ArgumentParser(description="MatheCafe - Agente da Estacao")
     parser.add_argument("--servidor", required=True,
-                         help="URL do servidor, ex: ws://localhost:8000 ou wss://mathecafe.onrender.com")
+                         help="URL do servidor: ws://localhost:8000 ou wss://mathecafe.onrender.com")
     parser.add_argument("--estacao", required=True,
-                         help="Nome da estação cadastrada no painel, ex: PC-01")
+                         help="Nome da estacao cadastrada no painel, ex: PC-01")
     args = parser.parse_args()
 
-    servidor = args.servidor.strip()
-    if not servidor.startswith(("ws://", "wss://")):
-        raise SystemExit(registrar_erro(
-            ValueError, ValueError(f"Endereço do servidor inválido: {servidor!r}. "
-                                   "Use ws://IP:8000 (ou wss:// no Render)."), None))
-
-    # Cabeçalho do agente.log: o que é preciso para diagnosticar a conexão
-    gravar_log(f"MatheCafé agente — {datetime.now():%Y-%m-%d %H:%M:%S}", novo=True)
-    gravar_log(f"Python {sys.version.split()[0]} | websockets {websockets.__version__} | "
-               f"servidor {servidor} | estação {args.estacao.strip()!r}")
-    gravar_log(f"Proxy do Windows: {urllib.request.getproxies() or 'nenhum'}")
-
     root = tk.Tk()
-    # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
-    root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
-    app = AgenteApp(root, servidor, args.estacao.strip())
+    app = AgenteApp(root, args.servidor, args.estacao)
     root.mainloop()
 
 

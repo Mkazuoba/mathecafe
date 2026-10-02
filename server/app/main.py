@@ -262,7 +262,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     Usuario.ativo == True
                 ).first()
                 ok = bool(usuario and verificar_senha(dados.get("senha") or "", usuario.senha_hash))
-                await ws.send_text(json.dumps({"evento": "manutencao_resultado", "dados": {"ok": ok}}))
+                await ws.send_text(json.dumps({"evento": "validar_manutencao_resultado", "dados": {"ok": ok}}))
 
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
