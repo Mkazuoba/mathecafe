@@ -38,7 +38,7 @@ export default function Painel() {
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[1fr_1.2fr_0.8fr] lg:overflow-hidden">
         <Coluna titulo="Estações" total={estacoes.length}>
           {estacoes.length ? (
-            estacoes.map((e) => <CartaoEstacao key={e.id} estacao={e} aoSoltarCliente={liberar} />)
+            estacoes.map((e) => <CartaoEstacao key={e.id} estacao={e} />)
           ) : (
             <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
           )}
@@ -90,7 +90,7 @@ function lerClienteArrastado(ev: React.DragEvent): number | null {
   return v ? Number(v) : null
 }
 
-function CartaoEstacao({ estacao: e, aoSoltarCliente }: { estacao: Estacao; aoSoltarCliente: (id: number) => void }) {
+function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
   const { sessaoDaEstacao, agora, clientes } = useDados()
   const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
   const [alvo, setAlvo] = useState(false)
@@ -121,7 +121,7 @@ function CartaoEstacao({ estacao: e, aoSoltarCliente }: { estacao: Estacao; aoSo
           ev.preventDefault()
           setAlvo(false)
           const id = lerClienteArrastado(ev)
-          if (id && aceitaCliente) aoSoltarCliente(id)
+          if (id && aceitaCliente) liberarDireto(e.nome, id)
         }}
       >
         <div className="mb-1 flex items-center justify-between">
