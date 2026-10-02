@@ -281,17 +281,24 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     db.refresh(sessao)
     db.refresh(cliente)
 
-    # Whitelist do grupo
-    from app.models import AppPermitido
+    # Whitelist: apps do grupo da estacao + apps globais (grupo_id=None)
+    from app.models import AppPermitido, ConfiguracaoSistema
+    from sqlalchemy import or_ as _or
     apps = db.query(AppPermitido).filter(
-        AppPermitido.grupo_id == e.grupo_id, AppPermitido.ativo == True).all() if e.grupo_id else []
+        AppPermitido.ativo == True,
+        _or(AppPermitido.grupo_id == e.grupo_id, AppPermitido.grupo_id == None)
+    ).all()
+
+    cfg_reiniciar = db.query(ConfiguracaoSistema).filter(
+        ConfiguracaoSistema.chave == "reiniciar_ao_encerrar").first()
+    reiniciar = cfg_reiniciar.valor == "true" if cfg_reiniciar else False
 
     payload = {
         "ok": True,
         "sessao_id": sessao.id,
         "cliente_nome": cliente.nome,
         "tempo_segundos": tempo,
-        "reiniciar_ao_encerrar": False,
+        "reiniciar_ao_encerrar": reiniciar,
         "whitelist": [{"nome": a.nome, "processo": a.processo, "caminho": a.caminho,
                        "imagem_url": a.imagem_url} for a in apps],
     }
