@@ -220,6 +220,17 @@ class AgenteApp:
 
         self.frame_login.pack(fill="both", expand=True)
 
+        # ── Frame de encerramento ──
+        self.frame_encerramento = tk.Frame(self.root, bg=bg)
+        tk.Label(self.frame_encerramento, text="SESSAO ENCERRADA",
+                 font=tkfont.Font(family="Segoe UI", size=24, weight="bold"),
+                 fg="#ef4444", bg=bg).pack(expand=False, pady=(80, 12))
+        tk.Label(self.frame_encerramento, text="Aguarde a liberacao do sistema...",
+                 font=normal_font, fg=text2, bg=bg).pack()
+        self._lbl_enc_relogio = tk.Label(self.frame_encerramento, text="6",
+                                          font=big_font, fg="#f59e0b", bg=bg)
+        self._lbl_enc_relogio.pack(pady=20)
+
         # ── Log ──
         self.frame_log = tk.Frame(self.root, bg=bg)
         tk.Label(self.frame_log, text="LOG DE COMUNICACAO", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=10)
@@ -650,13 +661,17 @@ class AgenteApp:
             self._log(f"Erro ao abrir {app['nome']}: {e}")
 
     def _atualizar_countdown(self):
-        if self.sessao_ativa:
+        if self.sessao_ativa and not self._sessao_pausada:
             decorrido = time.time() - self.inicio_sessao
             restante = max(0, self.tempo_total - decorrido)
             self.lbl_countdown.config(text=self._fmt(restante))
 
             if restante < 300:
                 self.lbl_countdown.config(fg="#ef4444")
+                # Aviso de 5 minutos — disparado uma unica vez pelo countdown
+                if not self._aviso_5min_dado and restante > 0:
+                    self._aviso_5min_dado = True
+                    self.root.after(0, lambda r=int(restante): self._avisar_saldo_baixo(r))
             else:
                 self.lbl_countdown.config(fg="#22c55e")
 
@@ -676,11 +691,6 @@ class AgenteApp:
             "tempo_consumido_segundos": consumido
         })
         restante = max(0, self.tempo_total - consumido)
-
-        # Aviso quando restam 5 minutos (apenas uma vez por sessão)
-        if restante <= 300 and restante > 0 and not self._aviso_5min_dado:
-            self._aviso_5min_dado = True
-            self.root.after(0, lambda r=restante: self._avisar_saldo_baixo(r))
         self._log(f"Sessao encerrada pelo cliente. Saldo: {self._fmt(restante)}")
         self._voltar_login()
         self._reiniciar_se_necessario()
@@ -737,25 +747,53 @@ class AgenteApp:
                 continue
 
     def _voltar_login(self):
+        """Encerra apps, exibe tela de encerramento por 6s e volta ao login."""
         self._encerrar_apps_do_cliente()
 
+        # Reseta estado imediatamente para parar o countdown e o monitor de processos
         self.sessao_ativa = False
         self.sessao_id = None
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self._img_refs = []
         self._pids_pre_sessao = set()
+        self._sessao_pausada = False
+        self._aviso_5min_dado = False
 
         try:
             self.root.unbind_all("<MouseWheel>")
         except Exception:
             pass
 
-        self.root.deiconify()  # garante que a janela nao fica minimizada
+        # Fecha overlay de pausa se houver
+        try:
+            if hasattr(self, "_overlay_pausa") and self._overlay_pausa:
+                self._overlay_pausa.destroy()
+                self._overlay_pausa = None
+        except Exception:
+            pass
+
+        self.root.deiconify()
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
         self.root.lift()
         self.frame_sessao.pack_forget()
+        self.frame_login.pack_forget()
+        self.frame_log.pack_forget()
+        self.frame_encerramento.pack(fill="both", expand=True)
+        self._countdown_encerramento(6)
+
+    def _countdown_encerramento(self, restante):
+        """Contagem regressiva na tela de encerramento antes de exibir o login."""
+        if restante > 0:
+            self._lbl_enc_relogio.config(text=str(restante))
+            self.root.after(1000, self._countdown_encerramento, restante - 1)
+        else:
+            self._ir_para_login()
+
+    def _ir_para_login(self):
+        """Exibe a tela de login apos o encerramento."""
+        self.frame_encerramento.pack_forget()
         self.frame_login.pack(fill="both", expand=True)
         self.frame_log.pack(fill="both", expand=False)
 

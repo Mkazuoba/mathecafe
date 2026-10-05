@@ -157,7 +157,14 @@ function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
         </div>
         {sessao ? (
           <div>
-            <div className="mb-0.5 truncate text-sm text-texto-suave">{sessao.cliente_nome}</div>
+            <div className="mb-0.5 flex items-center gap-1.5">
+              <span className="truncate text-sm text-texto-suave">{sessao.cliente_nome}</span>
+              {sessao.pausada && (
+                <span className="shrink-0 rounded bg-manutencao/20 px-1 py-0.5 text-[10px] font-bold uppercase text-manutencao">
+                  Pausada
+                </span>
+              )}
+            </div>
             <div className={cn("text-lg font-bold tracking-wide tabular-nums", restante < 300 ? "text-perigo" : "text-ocupada")}>
               {formatarTempo(restante)}
             </div>
@@ -836,6 +843,10 @@ function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEd
                 <div className="mt-0.5 flex items-center gap-1 text-xs">
                   {emUso ? (
                     <span className="font-semibold text-ocupada">Em uso no {emUso}</span>
+                  ) : c.uso_hoje_segundos > 0 && c.saldo_segundos === 0 ? (
+                    <span className="flex items-center gap-1 font-semibold text-perigo">
+                      <IconAlertTriangle size={13} /> Limite diário atingido
+                    </span>
                   ) : c.saldo_segundos > 0 ? (
                     <span className="flex items-center gap-1 font-semibold text-livre">
                       <IconClockPlay size={13} /> {formatarTempo(c.saldo_segundos)} disponível
