@@ -86,6 +86,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
         const { evento } = JSON.parse(ev.data) as { evento: string }
         const r = recarregarRef.current
         if (evento === "sessao_iniciada" || evento === "sessao_encerrada") r.recarregar()
+        else if (evento === "sessao_pausada" || evento === "sessao_retomada" || evento === "sessao_renovada") r.recarregar()
         else if (evento === "fila_atualizada") {
           r.recarregarFila()
           r.recarregarClientes()
