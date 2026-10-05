@@ -77,9 +77,15 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     function conectar() {
       const protocolo = window.location.protocol === "https:" ? "wss" : "ws"
       ws = new WebSocket(`${protocolo}://${window.location.host}/ws/painel?token=${Api.token()}`)
+      // Expõe o WS globalmente para componentes que precisam escutar eventos
+      // de captura de tela / streaming sem re-criar a conexão
+      ;(window as any).__mathecafe_ws = ws
       ws.onopen = () => setTempoReal(true)
       ws.onclose = () => {
         setTempoReal(false)
+        if ((window as any).__mathecafe_ws === ws) {
+          (window as any).__mathecafe_ws = null
+        }
         if (!encerrado) timer = setTimeout(conectar, 3000)
       }
       ws.onmessage = (ev) => {
@@ -97,6 +103,9 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     return () => {
       encerrado = true
       clearTimeout(timer)
+      if ((window as any).__mathecafe_ws === ws) {
+        (window as any).__mathecafe_ws = null
+      }
       ws?.close()
     }
   }, [])

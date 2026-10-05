@@ -431,8 +431,9 @@ class AgenteApp:
             "$g.Dispose();$b.Dispose()"
         )
         subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True, timeout=10
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+            capture_output=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
         if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
             raise RuntimeError("Screenshot vazio ou nao gerado")
