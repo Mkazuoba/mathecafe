@@ -31,7 +31,7 @@ from datetime import datetime
 from io import BytesIO
 import urllib.request
 import tkinter as tk
-from tkinter import font as tkfont, scrolledtext
+from tkinter import font as tkfont, scrolledtext, simpledialog
 
 import websockets
 import psutil
@@ -938,16 +938,79 @@ class AgenteApp:
         self.root.after(3000, self._verificar_processos)
 
 
+CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente.cfg")
+
+def carregar_cfg():
+    """Le servidor e estacao de agente.cfg (formato KEY=VALUE)."""
+    cfg = {}
+    if os.path.exists(CFG_FILE):
+        try:
+            with open(CFG_FILE, "r", encoding="utf-8") as f:
+                for linha in f:
+                    linha = linha.strip()
+                    if "=" in linha and not linha.startswith("#"):
+                        k, _, v = linha.partition("=")
+                        cfg[k.strip()] = v.strip()
+        except Exception:
+            pass
+    return cfg
+
+def salvar_cfg(servidor, estacao):
+    """Persiste servidor e estacao em agente.cfg para a proxima inicializacao."""
+    try:
+        with open(CFG_FILE, "w", encoding="utf-8") as f:
+            f.write(f"# MatheCafe - configuracao da estacao (gerado automaticamente)\n")
+            f.write(f"SERVIDOR={servidor}\n")
+            f.write(f"ESTACAO={estacao}\n")
+    except Exception as e:
+        print(f"Aviso: nao foi possivel salvar agente.cfg: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="MatheCafe - Agente da Estacao")
-    parser.add_argument("--servidor", required=True,
+    parser.add_argument("--servidor", default=None,
                          help="URL do servidor: ws://localhost:8000 ou wss://mathecafe.onrender.com")
-    parser.add_argument("--estacao", required=True,
+    parser.add_argument("--estacao", default=None,
                          help="Nome da estacao cadastrada no painel, ex: PC-01")
     args = parser.parse_args()
 
+    # Prioridade: argumento CLI > agente.cfg > perguntar
+    cfg = carregar_cfg()
+    servidor = args.servidor or cfg.get("SERVIDOR", "")
+    estacao = args.estacao or cfg.get("ESTACAO", "")
+
+    # Ainda falta algum dado — pede via caixa de dialogo simples
+    if not servidor or not estacao:
+        root_cfg = tk.Tk()
+        root_cfg.withdraw()
+
+        if not servidor:
+            servidor = tk.simpledialog.askstring(
+                "MatheCafe - Configuracao",
+                "Endereco do servidor (ex: ws://192.168.0.10:8000):",
+                parent=root_cfg
+            ) or ""
+        if not estacao:
+            estacao = tk.simpledialog.askstring(
+                "MatheCafe - Configuracao",
+                "Nome desta estacao (igual ao cadastrado no Mapa, ex: PC-01):",
+                parent=root_cfg
+            ) or ""
+
+        root_cfg.destroy()
+        if not servidor or not estacao:
+            print("Servidor ou estacao nao informados. Encerrando.")
+            return
+
+    # Normaliza protocolo (aceita IP puro, http://, https://)
+    servidor = servidor.strip().replace("https://", "wss://").replace("http://", "ws://")
+    if not servidor.startswith("ws"):
+        servidor = "ws://" + servidor
+
+    # Salva para a proxima vez
+    salvar_cfg(servidor, estacao)
+
     root = tk.Tk()
-    app = AgenteApp(root, args.servidor, args.estacao)
+    app = AgenteApp(root, servidor, estacao)
     root.mainloop()
 
 

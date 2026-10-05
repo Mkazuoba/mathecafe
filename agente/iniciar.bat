@@ -1,9 +1,7 @@
 @echo off
-rem Abre o agente do MatheCafe como Administrador (necessario para o
-rem bloqueio de programas).
-rem
-rem Uso:  iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-01
-rem Sem parametros, pergunta o servidor e o nome da estacao.
+rem MatheCafe - Inicia o agente como Administrador
+rem Na primeira vez, o proprio agente pergunta o servidor e o nome da estacao
+rem e salva em agente.cfg. Nas proximas, ja carrega automatico.
 cd /d "%~dp0"
 
 if not exist venv\Scripts\pythonw.exe (
@@ -12,17 +10,26 @@ if not exist venv\Scripts\pythonw.exe (
     exit /b 1
 )
 
+rem Aceita parametros opcionais para substituir o cfg
 set "SERVIDOR=%~1"
 set "ESTACAO=%~2"
-if "%SERVIDOR%"=="" set /p "SERVIDOR=Endereco do servidor (ex: ws://192.168.0.10:8000): "
-if "%ESTACAO%"=="" set /p "ESTACAO=Nome desta estacao, igual ao cadastrado no Mapa (ex: PC-01): "
 
-rem Aceita o endereco digitado de varios jeitos: 10.0.0.5:8000, http://..., ws://...
-set "SERVIDOR=%SERVIDOR: =%"
-set "SERVIDOR=%SERVIDOR:https://=wss://%"
-set "SERVIDOR=%SERVIDOR:http://=ws://%"
-if /i not "%SERVIDOR:~0,2%"=="ws" set "SERVIDOR=ws://%SERVIDOR%"
-echo Abrindo o agente: servidor %SERVIDOR%, estacao %ESTACAO%
-if exist agente_erro.log echo Se algo falhar, veja agente_erro.log nesta pasta.
+rem Normaliza protocolo se passado como argumento
+if not "%SERVIDOR%"=="" (
+    set "SERVIDOR=%SERVIDOR: =%"
+    set "SERVIDOR=%SERVIDOR:https://=wss://%"
+    set "SERVIDOR=%SERVIDOR:http://=ws://%"
+)
 
-powershell -NoProfile -Command "Start-Process -FilePath '%~dp0venv\Scripts\pythonw.exe' -ArgumentList '\"%~dp0agente.py\" --servidor %SERVIDOR% --estacao %ESTACAO%' -WorkingDirectory '%~dp0' -Verb RunAs"
+rem Monta argumentos extras apenas se fornecidos
+set "ARGS="
+if not "%SERVIDOR%"=="" set "ARGS=--servidor %SERVIDOR%"
+if not "%ESTACAO%"=="" set "ARGS=%ARGS% --estacao %ESTACAO%"
+
+if exist agente.cfg (
+    echo Usando configuracao salva em agente.cfg
+) else (
+    echo Primeira execucao - o agente ira pedir o servidor e o nome da estacao.
+)
+
+powershell -NoProfile -Command "Start-Process -FilePath '%~dp0venv\Scripts\pythonw.exe' -ArgumentList '\"%~dp0agente.py\" %ARGS%' -WorkingDirectory '%~dp0' -Verb RunAs"
