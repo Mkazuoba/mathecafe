@@ -24,7 +24,7 @@ interface SessaoHistorico {
   motivo_encerramento: string | null
 }
 
-type AbaEstacao = "geral" | "comandos" | "historico"
+type AbaEstacao = "geral" | "comandos" | "historico" | "logs"
 
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
@@ -269,8 +269,10 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
 
   const [streaming, setStreaming] = useState(false)
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
+  const [logs, setLogs] = useState<{ ts: string; msg: string }[]>([])
+  const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Escuta captura_tela e tela_frame via WebSocket
+  // Escuta captura_tela, tela_frame e log_agente via WebSocket
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       try {
@@ -282,12 +284,21 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         if (msg.evento === "tela_frame") {
           setFrameUrl("data:image/jpeg;base64," + msg.dados.imagem)
         }
+        if (msg.evento === "log_agente") {
+          const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          setLogs(prev => [...prev.slice(-49), { ts, msg: msg.dados.msg }])
+        }
       } catch { /* ignore */ }
     }
     const ws = (window as any).__mathecafe_ws as WebSocket | undefined
     if (ws) ws.addEventListener("message", onMessage)
     return () => { if (ws) ws.removeEventListener("message", onMessage) }
   }, [e.nome])
+
+  // Auto-scroll dos logs
+  useEffect(() => {
+    if (aba === "logs") logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logs, aba])
 
   // Para o streaming ao desmontar o modal
   useEffect(() => {
@@ -313,6 +324,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
     { id: "geral", label: "Geral" },
     { id: "comandos", label: "Comandos" },
     { id: "historico", label: "Historico" },
+    { id: "logs", label: `Logs${logs.length > 0 ? ` (${logs.length})` : ""}` },
   ]
 
   return (
@@ -402,6 +414,32 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
           )}
           {aba === "historico" && (
             <AbaHistorico estacao={e.nome} />
+          )}
+          {aba === "logs" && (
+            <div className="flex flex-col gap-1 p-3">
+              {logs.length === 0 ? (
+                <p className="text-center text-xs text-texto-fraco py-6">Nenhum log recebido ainda.</p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto rounded bg-black/20 p-2 font-mono text-xs">
+                  {logs.map((l, i) => (
+                    <div key={i} className="flex gap-2 leading-5">
+                      <span className="shrink-0 text-texto-fraco">{l.ts}</span>
+                      <span className="text-green-400 break-all">{l.msg}</span>
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              )}
+              {logs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLogs([])}
+                  className="mt-1 self-end text-xs text-texto-fraco hover:text-texto"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
           )}
         </div>
 

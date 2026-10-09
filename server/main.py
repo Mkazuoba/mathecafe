@@ -1,11 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from datetime import datetime, time as dt_time
-from zoneinfo import ZoneInfo
-from sqlalchemy import func
+from datetime import datetime
 import asyncio, json, os
 
 from app.database import get_db, init_db, SessionLocal
@@ -155,54 +152,25 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     }))
                     continue
 
-                # Limite diario: calcula disponivel no fuso horario do Brasil (UTC-3)
-                tz_br = ZoneInfo("America/Sao_Paulo")
-                hoje_br = datetime.now(tz=tz_br).date()
-                # Inicio do dia de hoje em UTC (sem tzinfo para comparar com dados do banco)
-                inicio_hoje_utc = (
-                    datetime.combine(hoje_br, dt_time.min)
-                    .replace(tzinfo=tz_br)
-                    .astimezone(ZoneInfo("UTC"))
-                    .replace(tzinfo=None)
-                )
-
-                # Zera carry-over se a ultima sessao foi antes de hoje (Brasil)
+                # Reset diario: se a ultima sessao foi antes de hoje, zera o saldo
                 ultima_sessao = db.query(Sessao).filter(
                     Sessao.cliente_id == cliente.id
                 ).order_by(Sessao.iniciada_em.desc()).first()
-                if ultima_sessao and ultima_sessao.iniciada_em < inicio_hoje_utc:
+                hoje = datetime.utcnow().date()
+                if ultima_sessao and ultima_sessao.iniciada_em.date() < hoje:
                     cliente.saldo_segundos = 0
 
-                # Busca o limite diario (config global > grupo > padrao 2h)
-                config_tempo = db.query(ConfiguracaoSistema).filter(
-                    ConfiguracaoSistema.chave == "tempo_padrao_segundos").first()
-                if config_tempo:
-                    limite_diario = int(config_tempo.valor)
-                else:
-                    grupo = db.query(GrupoEstacao).filter(
-                        GrupoEstacao.id == estacao.grupo_id).first()
-                    limite_diario = grupo.tempo_padrao_segundos if grupo else 7200
-
-                # Calcula quanto o cliente ja usou hoje (sessoes encerradas)
-                uso_hoje = db.query(func.sum(Sessao.tempo_consumido_segundos)).filter(
-                    Sessao.cliente_id == cliente.id,
-                    Sessao.iniciada_em >= inicio_hoje_utc,
-                    Sessao.encerrada_em != None
-                ).scalar() or 0
-
-                disponivel_hoje = max(0, limite_diario - int(uso_hoje))
-                if disponivel_hoje <= 0:
-                    await ws.send_text(json.dumps({
-                        "evento": "login_resultado",
-                        "dados": {"ok": False,
-                                  "motivo": "Limite diario de uso atingido. Volte amanha."}
-                    }))
-                    continue
-
                 if cliente.saldo_segundos > 0:
-                    tempo = min(cliente.saldo_segundos, disponivel_hoje)
+                    tempo = cliente.saldo_segundos
                 else:
-                    tempo = disponivel_hoje
+                    config_tempo = db.query(ConfiguracaoSistema).filter(
+                        ConfiguracaoSistema.chave == "tempo_padrao_segundos").first()
+                    if config_tempo:
+                        tempo = int(config_tempo.valor)
+                    else:
+                        grupo = db.query(GrupoEstacao).filter(
+                            GrupoEstacao.id == estacao.grupo_id).first()
+                        tempo = grupo.tempo_padrao_segundos if grupo else 7200
 
                 sessao = Sessao(
                     cliente_id=cliente.id,
@@ -318,6 +286,11 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 print(f"[tela] frame de {nome}: {len(imagem_b64)} chars")
                 await manager.broadcast_paineis("tela_frame", {"estacao": nome, "imagem": imagem_b64})
 
+            elif evento == "log_agente":
+                msg = dados.get("msg", "")
+                print(f"[agente:{nome}] {msg}")
+                await manager.broadcast_paineis("log_agente", {"estacao": nome, "msg": msg})
+
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
         manager.desconectar_estacao(nome, ws)
@@ -340,11 +313,7 @@ def health():
 
 # ── Painel web ────────────────────────────────────────────────────────────────
 # static/ é o build do React (server/frontend → `npm run build`).
-# static_antigo/ é o painel HTML anterior, mantido em /antigo na transição.
 _STATIC = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
-_ANTIGO = os.path.join(os.path.dirname(__file__), "static_antigo")
-
-app.mount("/antigo", StaticFiles(directory=_ANTIGO, html=True), name="antigo")
 
 
 @app.get("/{caminho:path}", include_in_schema=False)

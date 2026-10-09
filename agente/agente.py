@@ -248,12 +248,22 @@ class AgenteApp:
                   bg="#92400e", fg="white", relief="flat", font=small_font,
                   command=self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
 
-    def _log(self, msg):
+    def _log(self, msg, _remoto=True):
         self.log.configure(state="normal")
         ts = datetime.now().strftime("%H:%M:%S")
         self.log.insert("end", f"[{ts}] {msg}\n")
         self.log.see("end")
         self.log.configure(state="disabled")
+        # Repassa o log para o servidor (visivel no painel do operador)
+        # _remoto=False evita loop quando _enviar() por si chama _log()
+        if _remoto and self.loop and self.ws:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.ws.send(json.dumps({"evento": "log_agente", "dados": {"msg": msg}})),
+                    self.loop
+                )
+            except Exception:
+                pass
 
     # ── WebSocket (thread separada) ──────────────────────────────────────────
     def _start_ws_thread(self):
@@ -286,9 +296,9 @@ class AgenteApp:
     def _enviar(self, msg: dict):
         if self.loop and self.ws:
             asyncio.run_coroutine_threadsafe(self.ws.send(json.dumps(msg)), self.loop)
-            self._log(f"-> enviado: {msg.get('evento')}")
+            self._log(f"-> enviado: {msg.get('evento')}", _remoto=False)
         else:
-            self._log("AVISO: nao conectado, mensagem nao enviada")
+            self._log("AVISO: nao conectado, mensagem nao enviada", _remoto=False)
 
     # ── Processamento de eventos ─────────────────────────────────────────────
     def _processar_fila(self):
@@ -362,7 +372,7 @@ class AgenteApp:
             if self.sessao_ativa:
                 self._log("Encerrando sessao para reiniciar...")
                 self._voltar_login()
-            self._countdown_reinicio(30)
+            self._countdown_reinicio(10)
 
         elif evento == "mensagem_tela":
             texto = dados.get("texto", "")
@@ -417,38 +427,16 @@ class AgenteApp:
 
     # ── Captura de tela ──────────────────────────────────────────────────────
     def _tirar_screenshot(self):
-        """Captura a tela usando PowerShell (confiavel em qualquer Windows)."""
-        import io, base64, tempfile, os, subprocess
-        tmp = tempfile.mktemp(suffix=".png")
-        ps = (
-            "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
-            "$b=New-Object System.Drawing.Bitmap("
-            "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width,"
-            "[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height);"
-            "$g=[System.Drawing.Graphics]::FromImage($b);"
-            "$g.CopyFromScreen(0,0,0,0,$b.Size);"
-            f"$b.Save('{tmp}');"
-            "$g.Dispose();$b.Dispose()"
-        )
-        subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
-            capture_output=True, timeout=10,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
-            raise RuntimeError("Screenshot vazio ou nao gerado")
-        if PIL_AVAILABLE:
-            from PIL import Image
-            img = Image.open(tmp)
-            img.thumbnail((1280, 720))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=65)
-            data = buf.getvalue()
-        else:
-            with open(tmp, "rb") as f:
-                data = f.read()
-        os.unlink(tmp)
-        return base64.b64encode(data).decode()
+        """Captura a tela silenciosamente via PIL (sem abrir janela ou processo)."""
+        import io, base64
+        if not PIL_AVAILABLE:
+            raise RuntimeError("Pillow nao instalado -- instale com: pip install Pillow")
+        from PIL import ImageGrab
+        img = ImageGrab.grab()
+        img.thumbnail((1280, 720))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=65)
+        return base64.b64encode(buf.getvalue()).decode()
 
     def _capturar_e_enviar_tela(self):
         try:
@@ -711,7 +699,7 @@ class AgenteApp:
         if not self.reiniciar_ao_encerrar:
             return
         self._log("Iniciando contagem para reiniciar...")
-        self._countdown_reinicio(30)
+        self._countdown_reinicio(10)
 
     def _countdown_reinicio(self, segundos):
         """Exibe contagem regressiva no launcher e reinicia ao zerar."""
