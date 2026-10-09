@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
@@ -273,6 +273,8 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Escuta captura_tela, tela_frame e log_agente via WebSocket
+  // Usa ref para o handler e re-registra sempre que o WS for substituído
+  const onMessageRef = useRef<((ev: MessageEvent) => void) | null>(null)
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       try {
@@ -290,9 +292,24 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         }
       } catch { /* ignore */ }
     }
-    const ws = (window as any).__mathecafe_ws as WebSocket | undefined
-    if (ws) ws.addEventListener("message", onMessage)
-    return () => { if (ws) ws.removeEventListener("message", onMessage) }
+    onMessageRef.current = onMessage
+
+    // Registra no WS atual e fica re-registrando caso o WS reconecte
+    let wsAtual: WebSocket | undefined
+    function registrar() {
+      const ws = (window as any).__mathecafe_ws as WebSocket | undefined
+      if (ws && ws !== wsAtual) {
+        if (wsAtual) wsAtual.removeEventListener("message", onMessage)
+        wsAtual = ws
+        ws.addEventListener("message", onMessage)
+      }
+    }
+    registrar()
+    const intervalo = setInterval(registrar, 1000)
+    return () => {
+      clearInterval(intervalo)
+      if (wsAtual) wsAtual.removeEventListener("message", onMessage)
+    }
   }, [e.nome])
 
   // Auto-scroll dos logs
