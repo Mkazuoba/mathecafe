@@ -56,6 +56,9 @@ def carregar_imagem_url(url, largura=160, altura=140):
         return None
 
 
+# Versao do agente — incrementar a cada publicacao de update
+VERSAO = "1.1.0"
+
 # Processos essenciais do Windows — NUNCA serão encerrados.
 PROCESSOS_SEGUROS = {
     "system", "system idle process", "registry", "smss.exe", "csrss.exe",
@@ -965,6 +968,54 @@ class AgenteApp:
         self.root.after(3000, self._verificar_processos)
 
 
+# ── Auto-update ──────────────────────────────────────────────────────────────
+
+def _versao_tuple(v: str):
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+def verificar_update(servidor_http: str) -> bool:
+    """
+    Consulta o servidor. Se houver versao mais nova, baixa e reinicia.
+    Retorna True se reiniciou (processo novo no ar), False se nao havia update.
+    servidor_http: URL HTTP, ex: http://192.168.0.10:8000
+    """
+    try:
+        url_versao = f"{servidor_http}/api/agente/versao"
+        with urllib.request.urlopen(url_versao, timeout=5) as r:
+            import json as _json
+            dados = _json.loads(r.read())
+        versao_servidor = dados.get("versao", "0.0.0")
+        if _versao_tuple(versao_servidor) <= _versao_tuple(VERSAO):
+            return False  # ja esta atualizado
+
+        print(f"Update disponivel: {VERSAO} -> {versao_servidor}. Baixando...")
+
+        url_download = f"{servidor_http}/api/agente/download"
+        caminho_atual = os.path.abspath(__file__)
+        caminho_novo = caminho_atual + ".novo"
+
+        with urllib.request.urlopen(url_download, timeout=30) as r:
+            conteudo = r.read()
+
+        with open(caminho_novo, "wb") as f:
+            f.write(conteudo)
+
+        # Substitui o arquivo atual e reinicia
+        os.replace(caminho_novo, caminho_atual)
+        print("Agente atualizado. Reiniciando...")
+        import sys as _sys
+        os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+        return True  # nao chega aqui (execv substitui o processo)
+
+    except Exception as e:
+        print(f"Aviso: falha ao verificar update: {e}")
+        return False
+
+
 CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente.cfg")
 
 def carregar_cfg():
@@ -1035,6 +1086,11 @@ def main():
 
     # Salva para a proxima vez
     salvar_cfg(servidor, estacao)
+
+    # Verifica update antes de abrir a janela
+    # Converte ws:// -> http:// para a chamada REST
+    servidor_http = servidor.replace("wss://", "https://").replace("ws://", "http://")
+    verificar_update(servidor_http)  # reinicia automaticamente se houver update
 
     root = tk.Tk()
     app = AgenteApp(root, servidor, estacao)

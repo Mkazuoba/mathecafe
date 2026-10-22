@@ -10,7 +10,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
-from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios
+from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, agente as agente_router
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
 
@@ -27,6 +27,7 @@ app.include_router(apps.router, prefix="/api")
 app.include_router(operadores.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(relatorios.router, prefix="/api")
+app.include_router(agente_router.router, prefix="/api")
 
 @app.on_event("startup")
 def startup():
