@@ -674,13 +674,16 @@ const MOTIVOS: Record<string, string> = {
 
 function SecaoHistorico() {
   const [sessoes, setSessoes] = useState<SessaoHist[] | null>(null)
-  const [busca, setBusca] = useState("")
+  const [filtroCliente, setFiltroCliente] = useState("")
+  const [filtroEstacao, setFiltroEstacao] = useState("")
+  const [filtroDe, setFiltroDe] = useState("")
+  const [filtroAte, setFiltroAte] = useState("")
   const [carregando, setCarregando] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
     try {
-      const params = new URLSearchParams({ limit: "200" })
+      const params = new URLSearchParams({ limit: "500" })
       const data = await Api.get<SessaoHist[]>(`/api/sessoes/historico?${params}`)
       setSessoes(data)
     } finally {
@@ -690,23 +693,61 @@ function SecaoHistorico() {
 
   useEffect(() => { void carregar() }, [carregar])
 
+  // listas únicas para os selects
+  const clientes = Array.from(new Map((sessoes ?? []).map(s => [s.cliente_login, s.cliente_nome])).entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const estacoes = Array.from(new Set((sessoes ?? []).map(s => s.estacao_nome))).sort()
+
   const lista = (sessoes ?? []).filter((s) => {
-    const q = busca.toLowerCase()
-    return !q || s.cliente_nome.toLowerCase().includes(q) || s.cliente_login.toLowerCase().includes(q) || s.estacao_nome.toLowerCase().includes(q)
+    if (filtroCliente && s.cliente_login !== filtroCliente) return false
+    if (filtroEstacao && s.estacao_nome !== filtroEstacao) return false
+    if (filtroDe) {
+      const inicio = new Date(s.iniciada_em)
+      const de = new Date(filtroDe + "T00:00:00")
+      if (inicio < de) return false
+    }
+    if (filtroAte) {
+      const inicio = new Date(s.iniciada_em)
+      const ate = new Date(filtroAte + "T23:59:59")
+      if (inicio > ate) return false
+    }
+    return true
   })
+
+  const temFiltro = filtroCliente || filtroEstacao || filtroDe || filtroAte
+  const selectCls = "rounded-md border border-borda bg-superficie-2 px-2 py-1.5 text-sm outline-none focus:border-destaque"
 
   return (
     <>
       <Titulo>Histórico de uso</Titulo>
-      <div className="mb-4 flex gap-2">
-        <input
-          type="search"
-          placeholder="Filtrar por cliente ou estação..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          className="flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
-        />
-        <Button variant="outline" size="xs" onClick={carregar} disabled={carregando}>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <select value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} className={selectCls}>
+          <option value="">Todos os clientes</option>
+          {clientes.map(([login, nome]) => (
+            <option key={login} value={login}>{nome} ({login})</option>
+          ))}
+        </select>
+        <select value={filtroEstacao} onChange={(e) => setFiltroEstacao(e.target.value)} className={selectCls}>
+          <option value="">Todas as estações</option>
+          {estacoes.map((e) => (
+            <option key={e} value={e}>{e}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-texto-suave">De</span>
+          <input type="date" value={filtroDe} onChange={(e) => setFiltroDe(e.target.value)} className={selectCls} />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-texto-suave">até</span>
+          <input type="date" value={filtroAte} onChange={(e) => setFiltroAte(e.target.value)} className={selectCls} />
+        </div>
+        {temFiltro && (
+          <button type="button" onClick={() => { setFiltroCliente(""); setFiltroEstacao(""); setFiltroDe(""); setFiltroAte("") }}
+            className="text-xs text-texto-suave underline hover:text-texto">
+            Limpar filtros
+          </button>
+        )}
+        <Button variant="outline" size="xs" onClick={carregar} disabled={carregando} className="ml-auto">
           {carregando ? "..." : "Atualizar"}
         </Button>
       </div>
