@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage, IconPencil, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -7,7 +7,9 @@ import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
 import type { Cliente, Estacao, Grupo } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
-import { ModalSaldo } from "@/components/ModalSaldo"
+import { Campo, Input, Interruptor, MensagemErro } from "@/components/ui/campos"
+import { Modal } from "@/components/ui/modal"
+
 import { Button } from "@/components/ui/button"
 import { COR_BORDA_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
 
@@ -24,15 +26,16 @@ interface SessaoHistorico {
   motivo_encerramento: string | null
 }
 
-type AbaEstacao = "geral" | "comandos" | "historico" | "logs"
+type AbaEstacao = "geral" | "comandos" | "historico"
 
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
 
 export default function Painel() {
-  const { estacoes, clientes, fila } = useDados()
+  const { estacoes, fila } = useDados()
   const { liberar } = useAcoes()
-  const [editandoSaldo, setEditandoSaldo] = useState<Cliente | null>(null)
+  const [editandoCliente, setEditandoCliente] = useState<Cliente | null>(null)
+  const [novoCliente, setNovoCliente] = useState(false)
 
   const contagem = useMemo(
     () => ({
@@ -60,10 +63,11 @@ export default function Painel() {
             <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
           )}
         </Coluna>
-        <ColunaClientes clientes={clientes} aoEditarSaldo={setEditandoSaldo} />
+        <ColunaClientes aoEditarCliente={setEditandoCliente} aoNovoCliente={() => setNovoCliente(true)} />
         <ColunaFila total={fila.length} aoSoltarCliente={liberar} />
       </div>
-      <ModalSaldo cliente={editandoSaldo} aoFechar={() => setEditandoSaldo(null)} />
+      <ModalEditarCliente cliente={editandoCliente} aoFechar={() => setEditandoCliente(null)} />
+      <ModalNovoCliente aberto={novoCliente} aoFechar={() => setNovoCliente(false)} />
     </>
   )
 }
@@ -258,7 +262,7 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
 // Modal da estacao com abas: Geral | Comandos | Historico
 // ---------------------------------------------------------------------------
 function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
-  const { sessaoDaEstacao, agora, clientes, grupos, recarregarEstacoes } = useDados()
+  const { sessaoDaEstacao, agora, grupos, recarregarEstacoes } = useDados()
   const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
   const avisar = useAvisos()
   const [aba, setAba] = useState<AbaEstacao>("geral")
@@ -269,12 +273,9 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
 
   const [streaming, setStreaming] = useState(false)
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
-  const [logs, setLogs] = useState<{ ts: string; msg: string }[]>([])
-  const logsEndRef = useRef<HTMLDivElement>(null)
 
-  // Escuta captura_tela, tela_frame e log_agente via WebSocket
-  // Usa ref para o handler e re-registra sempre que o WS for substituído
-  const onMessageRef = useRef<((ev: MessageEvent) => void) | null>(null)
+  // Escuta captura_tela, tela_frame e log_agente via WebSocket.
+  // Usa polling para re-registrar quando o WS for substituido apos reconexao.
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       try {
@@ -288,13 +289,10 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         }
         if (msg.evento === "log_agente") {
           const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-          setLogs(prev => [...prev.slice(-49), { ts, msg: msg.dados.msg }])
+          void ts // log_agente ignorado nesta versao
         }
       } catch { /* ignore */ }
     }
-    onMessageRef.current = onMessage
-
-    // Registra no WS atual e fica re-registrando caso o WS reconecte
     let wsAtual: WebSocket | undefined
     function registrar() {
       const ws = (window as any).__mathecafe_ws as WebSocket | undefined
@@ -311,11 +309,6 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
       if (wsAtual) wsAtual.removeEventListener("message", onMessage)
     }
   }, [e.nome])
-
-  // Auto-scroll dos logs
-  useEffect(() => {
-    if (aba === "logs") logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [logs, aba])
 
   // Para o streaming ao desmontar o modal
   useEffect(() => {
@@ -341,7 +334,6 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
     { id: "geral", label: "Geral" },
     { id: "comandos", label: "Comandos" },
     { id: "historico", label: "Historico" },
-    { id: "logs", label: `Logs${logs.length > 0 ? ` (${logs.length})` : ""}` },
   ]
 
   return (
@@ -416,7 +408,6 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
             <AbaComandos
               estacao={e}
               sessao={sessao}
-              clientes={clientes}
               encerrarSessao={encerrarSessao}
               reiniciarPc={reiniciarPc}
               enviarMensagem={enviarMensagem}
@@ -431,32 +422,6 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
           )}
           {aba === "historico" && (
             <AbaHistorico estacao={e.nome} />
-          )}
-          {aba === "logs" && (
-            <div className="flex flex-col gap-1 p-3">
-              {logs.length === 0 ? (
-                <p className="text-center text-xs text-texto-fraco py-6">Nenhum log recebido ainda.</p>
-              ) : (
-                <div className="max-h-72 overflow-y-auto rounded bg-black/20 p-2 font-mono text-xs">
-                  {logs.map((l, i) => (
-                    <div key={i} className="flex gap-2 leading-5">
-                      <span className="shrink-0 text-texto-fraco">{l.ts}</span>
-                      <span className="text-green-400 break-all">{l.msg}</span>
-                    </div>
-                  ))}
-                  <div ref={logsEndRef} />
-                </div>
-              )}
-              {logs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setLogs([])}
-                  className="mt-1 self-end text-xs text-texto-fraco hover:text-texto"
-                >
-                  Limpar
-                </button>
-              )}
-            </div>
           )}
         </div>
 
@@ -542,10 +507,32 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 // ---------------------------------------------------------------------------
 // Aba: Comandos
 // ---------------------------------------------------------------------------
-function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela, streaming, frameUrl, toggleStreaming }: {
+function useBuscaClientes(busca: string) {
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [carregando, setCarregando] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    const q = busca.trim()
+    if (!q) { setClientes([]); return }
+    timerRef.current = setTimeout(async () => {
+      setCarregando(true)
+      try {
+        const res = await Api.get<Cliente[]>(`/api/clientes/?busca=${encodeURIComponent(q)}`)
+        setClientes(res)
+      } catch { setClientes([]) }
+      finally { setCarregando(false) }
+    }, 300)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [busca])
+
+  return { clientes, carregando }
+}
+
+function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela, streaming, frameUrl, toggleStreaming }: {
   estacao: Estacao
   sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
-  clientes: Cliente[]
   encerrarSessao: (id: number, nome: string) => void
   reiniciarPc: (nome: string) => void
   enviarMensagem: (nome: string, texto: string) => void
@@ -563,11 +550,10 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
   const idsEmUso = useMemo(() => new Set(sessoes.map((s) => s.cliente_id)), [sessoes])
   const idsNaFila = useMemo(() => new Set(fila.map((f) => f.cliente_id)), [fila])
 
+  const { clientes: clientesBusca, carregando: buscando } = useBuscaClientes(buscaCliente)
   const clientesDisponiveis = useMemo(() =>
-    clientes
-      .filter((c) => c.ativo && !idsEmUso.has(c.id))
-      .filter((c) => !buscaCliente || c.nome.toLowerCase().includes(buscaCliente.toLowerCase()) || c.login.toLowerCase().includes(buscaCliente.toLowerCase())),
-    [clientes, idsEmUso, buscaCliente]
+    clientesBusca.filter((c) => c.ativo && !idsEmUso.has(c.id)),
+    [clientesBusca, idsEmUso]
   )
 
   if (!e.online) {
@@ -652,21 +638,27 @@ function AbaComandos({ estacao: e, sessao, clientes, encerrarSessao, reiniciarPc
             className="mb-2 w-full rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
           />
           <div className="max-h-36 overflow-y-auto rounded-md border border-borda">
-            {clientesDisponiveis.length ? clientesDisponiveis.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => liberarDireto(e.nome, c.id).then((ok) => { if (ok) aoFechar() })}
-                className="flex w-full items-center gap-2 border-b border-borda px-3 py-2 text-left text-sm last:border-0 hover:bg-superficie-2"
-              >
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
-                  {c.nome.slice(0, 2)}
-                </span>
-                <span className="flex-1 truncate">{c.nome}</span>
-                <span className="text-xs text-texto-fraco">{c.login}{idsNaFila.has(c.id) ? " · fila" : ""}</span>
-              </button>
-            )) : (
-              <div className="px-3 py-3 text-center text-xs text-texto-fraco">Nenhum cliente disponível</div>
+            {buscando ? (
+              <div className="px-3 py-3 text-center text-xs text-texto-fraco">Buscando...</div>
+            ) : !buscaCliente.trim() ? (
+              <div className="px-3 py-3 text-center text-xs text-texto-fraco">Digite para buscar um cliente</div>
+            ) : clientesDisponiveis.length === 0 ? (
+              <div className="px-3 py-3 text-center text-xs text-texto-fraco">Nenhum cliente encontrado</div>
+            ) : (
+              clientesDisponiveis.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => liberarDireto(e.nome, c.id).then((ok) => { if (ok) aoFechar() })}
+                  className="flex w-full items-center gap-2 border-b border-borda px-3 py-2 text-left text-sm last:border-0 hover:bg-superficie-2"
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
+                    {c.nome.slice(0, 2)}
+                  </span>
+                  <span className="flex-1 truncate">{c.nome}</span>
+                  <span className="text-xs text-texto-fraco">{c.login}{idsNaFila.has(c.id) ? " · fila" : ""}</span>
+                </button>
+              ))
             )}
           </div>
         </SecaoComando>
@@ -828,7 +820,7 @@ function AbaHistorico({ estacao }: { estacao: string }) {
 // ---------------------------------------------------------------------------
 // Coluna: Clientes
 // ---------------------------------------------------------------------------
-function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEditarSaldo: (c: Cliente) => void }) {
+function ColunaClientes({ aoEditarCliente, aoNovoCliente }: { aoEditarCliente: (c: Cliente) => void; aoNovoCliente: () => void }) {
   const { fila, sessoes } = useDados()
   const { liberar } = useAcoes()
   const [busca, setBusca] = useState("")
@@ -836,12 +828,8 @@ function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEd
   const idsNaFila = useMemo(() => new Set(fila.map((f) => f.cliente_id)), [fila])
   const estacaoEmUso = useMemo(() => new Map(sessoes.map((s) => [s.cliente_id, s.estacao_nome])), [sessoes])
 
-  const lista = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    const ativos = clientes.filter((c) => c.ativo)
-    if (!q) return ativos
-    return ativos.filter((c) => c.nome.toLowerCase().includes(q) || c.login.toLowerCase().includes(q))
-  }, [busca, clientes])
+  const { clientes, carregando } = useBuscaClientes(busca)
+  const lista = useMemo(() => clientes.filter((c) => c.ativo), [clientes])
 
   async function aoLiberar(id: number) {
     setLiberando(id)
@@ -854,7 +842,8 @@ function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEd
       titulo="Clientes"
       total={lista.length}
       topo={
-        <div className="shrink-0 border-b border-borda p-2">
+        <div className="shrink-0 border-b border-borda p-2 flex flex-col gap-2">
+          <Button size="xs" variant="outline" className="w-full gap-1 justify-center" onClick={aoNovoCliente}><IconUserPlus size={14} /> Novo cliente</Button>
           <input
             type="search"
             aria-label="Buscar cliente"
@@ -906,30 +895,22 @@ function ColunaClientes({ clientes, aoEditarSaldo }: { clientes: Cliente[]; aoEd
                     <span className="flex items-center gap-1 font-semibold text-livre">
                       <IconClockPlay size={13} /> {formatarTempo(c.saldo_segundos)} disponível
                     </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-manutencao">
-                      <IconAlertTriangle size={13} /> Sem saldo: receberá o tempo padrão
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => aoEditarSaldo(c)}
-                    title="Editar saldo"
-                    aria-label={`Editar saldo de ${c.nome}`}
-                    className="cursor-pointer rounded p-0.5 text-texto-fraco opacity-0 group-hover:opacity-100 hover:text-texto focus-visible:opacity-100"
-                  >
-                    <IconPencil size={13} />
-                  </button>
+                  ) : null}
                 </div>
               </div>
+              <button type="button" onClick={() => aoEditarCliente(c)} title="Editar cliente" className="shrink-0 rounded p-1 text-texto-fraco opacity-0 group-hover:opacity-100 hover:text-texto focus-visible:opacity-100"><IconSettings size={15} /></button>
               <Button size="xs" disabled={naFila || !!emUso || liberando === c.id} onClick={() => aoLiberar(c.id)}>
                 {naFila ? "Na fila" : emUso ? "Em uso" : liberando === c.id ? "..." : "Liberar"}
               </Button>
             </div>
           )
         })
-      ) : (
+      ) : carregando ? (
+        <Vazio>Buscando...</Vazio>
+      ) : busca.trim() ? (
         <Vazio>Nenhum cliente encontrado</Vazio>
+      ) : (
+        <Vazio>Digite o nome ou login para buscar</Vazio>
       )}
     </Coluna>
   )
@@ -978,5 +959,140 @@ function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente
         <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
       )}
     </Coluna>
+  )
+}
+
+// ─── Modal de edição completa do cliente ────────────────────────────────────
+function ModalEditarCliente({ cliente, aoFechar }: { cliente: Cliente | null; aoFechar: () => void }) {
+  const avisar = useAvisos()
+  const { recarregarClientes, recarregarFila } = useDados()
+  const [nome, setNome] = useState("")
+  const [senha, setSenha] = useState("")
+  const [ativo, setAtivo] = useState(true)
+  const [obs, setObs] = useState("")
+  const [erro, setErro] = useState("")
+  const [aberto, setAberto] = useState<Cliente | null>(null)
+
+  if (cliente !== aberto) {
+    setAberto(cliente)
+    setNome(cliente?.nome ?? "")
+    setSenha("")
+    setAtivo(cliente?.ativo ?? true)
+    setObs(cliente?.observacao ?? "")
+    setErro("")
+  }
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nome.trim()) return setErro("Nome obrigatório")
+    try {
+      await Api.put(`/api/clientes/${cliente!.id}`, {
+        nome: nome.trim(),
+        ativo,
+        observacao: obs.trim() || null,
+        ...(senha ? { senha } : {}),
+      })
+      avisar("Cliente atualizado")
+      aoFechar()
+      await Promise.all([recarregarClientes(), recarregarFila()])
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
+  return (
+    <Modal titulo={`Editar: ${cliente?.nome ?? ""}`} aberto={!!cliente} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="flex flex-col gap-4">
+        <Campo rotulo="Login" id="ec-login">
+          <Input id="ec-login" value={cliente?.login ?? ""} disabled />
+        </Campo>
+        <Campo rotulo="Nome" id="ec-nome">
+          <Input id="ec-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Nova senha" id="ec-senha">
+          <Input
+            id="ec-senha"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Deixe em branco para não alterar"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+          />
+        </Campo>
+        <Campo rotulo="Observação" id="ec-obs">
+          <Input id="ec-obs" autoComplete="off" placeholder="Opcional" value={obs} onChange={(e) => setObs(e.target.value)} />
+        </Campo>
+        <div className="flex items-center justify-between">
+          <label htmlFor="ec-ativo" className="text-sm text-texto-suave">Ativo</label>
+          <Interruptor id="ec-ativo" rotulo="Cliente ativo" ligado={ativo} aoMudar={setAtivo} />
+        </div>
+        <MensagemErro>{erro}</MensagemErro>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={aoFechar}>Cancelar</Button>
+          <Button type="submit" className="flex-1">Salvar</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// ─── Modal de criação de novo cliente ───────────────────────────────────────
+function ModalNovoCliente({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
+  const avisar = useAvisos()
+  const { recarregarClientes } = useDados()
+  const [login, setLogin] = useState("")
+  const [nome, setNome] = useState("")
+  const [senha, setSenha] = useState("")
+  const [obs, setObs] = useState("")
+  const [erro, setErro] = useState("")
+
+  function resetar() {
+    setLogin(""); setNome(""); setSenha(""); setObs(""); setErro("")
+  }
+
+  function fechar() { resetar(); aoFechar() }
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!login.trim()) return setErro("Login obrigatório")
+    if (!nome.trim()) return setErro("Nome obrigatório")
+    if (!senha) return setErro("Senha obrigatória")
+    try {
+      await Api.post("/api/clientes/", {
+        login: login.trim(),
+        nome: nome.trim(),
+        senha,
+        observacao: obs.trim() || null,
+      })
+      avisar("Cliente criado")
+      fechar()
+      await recarregarClientes()
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
+  return (
+    <Modal titulo="Novo cliente" aberto={aberto} aoFechar={fechar}>
+      <form onSubmit={salvar} className="flex flex-col gap-4">
+        <Campo rotulo="Login" id="nc-login">
+          <Input id="nc-login" autoComplete="off" value={login} onChange={(e) => setLogin(e.target.value)} autoFocus />
+        </Campo>
+        <Campo rotulo="Nome" id="nc-nome">
+          <Input id="nc-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Senha" id="nc-senha">
+          <Input id="nc-senha" type="password" autoComplete="new-password" value={senha} onChange={(e) => setSenha(e.target.value)} />
+        </Campo>
+        <Campo rotulo="Observação" id="nc-obs">
+          <Input id="nc-obs" autoComplete="off" placeholder="Opcional" value={obs} onChange={(e) => setObs(e.target.value)} />
+        </Campo>
+        <MensagemErro>{erro}</MensagemErro>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={fechar}>Cancelar</Button>
+          <Button type="submit" className="flex-1">Criar cliente</Button>
+        </div>
+      </form>
+    </Modal>
   )
 }

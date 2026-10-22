@@ -17,6 +17,8 @@ const SECOES = [
   { id: "grupos", rotulo: "Grupos" },
   { id: "apps", rotulo: "Apps permitidos" },
   { id: "relatorios", rotulo: "Relatórios" },
+  { id: "historico", rotulo: "Histórico de uso" },
+  { id: "conta", rotulo: "Minha conta" },
 ] as const
 type Secao = (typeof SECOES)[number]["id"]
 
@@ -50,6 +52,8 @@ export default function Configuracoes() {
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
           {secao === "relatorios" && <SecaoRelatorios />}
+          {secao === "historico" && <SecaoHistorico />}
+          {secao === "conta" && <SecaoConta />}
         </div>
       </div>
     </div>
@@ -107,6 +111,7 @@ function SecaoOperadores() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm font-medium">
                 {o.nome} <SeloAtivo ativo={o.ativo} />
+                <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${o.perfil === "admin" ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{o.perfil}</span>
               </div>
               <div className="font-mono text-xs text-texto-fraco">{o.login}</div>
             </div>
@@ -142,6 +147,7 @@ function ModalOperador({
   const [nome, setNome] = useState("")
   const [senha, setSenha] = useState("")
   const [ativo, setAtivo] = useState(true)
+  const [perfil, setPerfil] = useState("operador")
   const [erro, setErro] = useState("")
   const [aberto, setAberto] = useState<typeof operador>(null)
 
@@ -151,6 +157,7 @@ function ModalOperador({
     setNome(existente?.nome ?? "")
     setSenha("")
     setAtivo(existente?.ativo ?? true)
+    setPerfil(existente?.perfil ?? "operador")
     setErro("")
   }
 
@@ -160,10 +167,10 @@ function ModalOperador({
     if (novo && !senha) return setErro("Senha obrigatória para novo operador")
     try {
       if (existente) {
-        await Api.put(`/api/operadores/${existente.id}`, { nome: nome.trim(), ativo, ...(senha ? { senha } : {}) })
+        await Api.put(`/api/operadores/${existente.id}`, { nome: nome.trim(), ativo, perfil, ...(senha ? { senha } : {}) })
         avisar("Operador atualizado")
       } else {
-        await Api.post("/api/operadores/", { login: login.trim(), nome: nome.trim(), senha })
+        await Api.post("/api/operadores/", { login: login.trim(), nome: nome.trim(), senha, perfil })
         avisar("Operador criado")
       }
       aoFechar()
@@ -191,6 +198,17 @@ function ModalOperador({
             value={senha}
             onChange={(e) => setSenha(e.target.value)}
           />
+        </Campo>
+        <Campo rotulo="Perfil" id="op-perfil">
+          <select
+            id="op-perfil"
+            value={perfil}
+            onChange={(e) => setPerfil(e.target.value)}
+            className="w-full rounded-md border border-borda bg-fundo px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primario"
+          >
+            <option value="operador">Operador</option>
+            <option value="admin">Administrador</option>
+          </select>
         </Campo>
         {!novo && (
           <div className="flex items-center justify-between">
@@ -631,5 +649,158 @@ function SecaoRelatorios() {
         {gerando ? "Gerando..." : "Exportar CSV"}
       </Button>
     </form>
+  )
+}
+
+// ─── Seção: Histórico de uso ─────────────────────────────────────────────────
+interface SessaoHist {
+  id: number
+  cliente_nome: string
+  cliente_login: string
+  estacao_nome: string
+  iniciada_em: string
+  encerrada_em: string | null
+  tempo_consumido_segundos: number
+  motivo_encerramento: string | null
+}
+
+const MOTIVOS: Record<string, string> = {
+  tempo_esgotado: "Tempo esgotado",
+  encerrado_operador: "Operador",
+  conexao_perdida: "Queda de conexão",
+  encerrado_cliente: "Cliente encerrou",
+  saldo_zerado: "Saldo zerado",
+}
+
+function SecaoHistorico() {
+  const [sessoes, setSessoes] = useState<SessaoHist[] | null>(null)
+  const [busca, setBusca] = useState("")
+  const [carregando, setCarregando] = useState(false)
+
+  const carregar = useCallback(async () => {
+    setCarregando(true)
+    try {
+      const params = new URLSearchParams({ limit: "200" })
+      const data = await Api.get<SessaoHist[]>(`/api/sessoes/historico?${params}`)
+      setSessoes(data)
+    } finally {
+      setCarregando(false)
+    }
+  }, [])
+
+  useEffect(() => { void carregar() }, [carregar])
+
+  const lista = (sessoes ?? []).filter((s) => {
+    const q = busca.toLowerCase()
+    return !q || s.cliente_nome.toLowerCase().includes(q) || s.cliente_login.toLowerCase().includes(q) || s.estacao_nome.toLowerCase().includes(q)
+  })
+
+  return (
+    <>
+      <Titulo>Histórico de uso</Titulo>
+      <div className="mb-4 flex gap-2">
+        <input
+          type="search"
+          placeholder="Filtrar por cliente ou estação..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
+        />
+        <Button variant="outline" size="xs" onClick={carregar} disabled={carregando}>
+          {carregando ? "..." : "Atualizar"}
+        </Button>
+      </div>
+      {sessoes === null ? (
+        <Vazio>Carregando...</Vazio>
+      ) : lista.length === 0 ? (
+        <Vazio>Nenhuma sessão encontrada</Vazio>
+      ) : (
+        <div className="overflow-auto rounded-lg border border-borda">
+          <table className="w-full text-sm">
+            <thead className="bg-superficie-2 text-xs text-texto-suave">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Cliente</th>
+                <th className="px-3 py-2 text-left font-medium">Estação</th>
+                <th className="px-3 py-2 text-left font-medium">Início</th>
+                <th className="px-3 py-2 text-left font-medium">Duração</th>
+                <th className="px-3 py-2 text-left font-medium">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borda">
+              {lista.map((s) => (
+                <tr key={s.id} className="hover:bg-superficie-2">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{s.cliente_nome}</div>
+                    <div className="font-mono text-xs text-texto-fraco">{s.cliente_login}</div>
+                  </td>
+                  <td className="px-3 py-2 text-texto-suave">{s.estacao_nome}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-texto-suave">
+                    {new Date(s.iniciada_em).toLocaleString("pt-BR")}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {formatarTempo(s.tempo_consumido_segundos)}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-texto-suave">
+                    {MOTIVOS[s.motivo_encerramento ?? ""] ?? s.motivo_encerramento ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── Seção: Minha conta ───────────────────────────────────────────────────────
+function SecaoConta() {
+  const avisar = useAvisos()
+  const [senhaAtual, setSenhaAtual] = useState("")
+  const [novaSenha, setNovaSenha] = useState("")
+  const [confirmar, setConfirmar] = useState("")
+  const [erro, setErro] = useState("")
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    setErro("")
+    if (!senhaAtual) return setErro("Informe a senha atual")
+    if (novaSenha.length < 4) return setErro("Nova senha muito curta (mínimo 4 caracteres)")
+    if (novaSenha !== confirmar) return setErro("As senhas não coincidem")
+    setSalvando(true)
+    try {
+      await Api.put("/api/auth/trocar-senha", { senha_atual: senhaAtual, nova_senha: novaSenha })
+      avisar("Senha alterada com sucesso")
+      setSenhaAtual(""); setNovaSenha(""); setConfirmar("")
+    } catch (e) {
+      setErro((e as Error).message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <>
+      <Titulo>Minha conta</Titulo>
+      <div className="max-w-sm">
+        <h3 className="mb-4 text-sm font-semibold text-texto-suave uppercase tracking-wide">Alterar senha</h3>
+        <form onSubmit={salvar} className="flex flex-col gap-4">
+          <Campo rotulo="Senha atual" id="mc-atual">
+            <Input id="mc-atual" type="password" autoComplete="current-password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Nova senha" id="mc-nova">
+            <Input id="mc-nova" type="password" autoComplete="new-password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Confirmar nova senha" id="mc-confirmar">
+            <Input id="mc-confirmar" type="password" autoComplete="new-password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} />
+          </Campo>
+          <MensagemErro>{erro}</MensagemErro>
+          <Button type="submit" disabled={salvando} className="w-full">
+            {salvando ? "Salvando..." : "Salvar nova senha"}
+          </Button>
+        </form>
+      </div>
+    </>
   )
 }

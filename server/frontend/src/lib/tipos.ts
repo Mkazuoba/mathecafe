@@ -62,6 +62,7 @@ export interface Operador {
   login: string
   nome: string
   ativo: boolean
+  perfil: string
   criado_em: string | null
 }
 
