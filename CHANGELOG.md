@@ -10,6 +10,8 @@
 - **Painel — botão de editar saldo removido**: operadores não podem mais alterar o saldo diretamente pelo card; a edição vai ser centralizada numa tela de Clientes futura.
 - **Histórico de uso — filtros**: novo filtro por cliente (select com nomes), por estação (select com nomes) e por intervalo de datas (De / Até), com botão "Limpar filtros". Limite de registros aumentado de 200 para 500.
 - `.gitignore`: pasta `Arquivos VSCyber/` adicionada para evitar commits acidentais de dados legados.
+- **Correção — `/api/agente/versao` retornava `0.0.0`**: o router procurava `server/app/agente_dist` em vez de `server/agente_dist`.
+- **Correção — loop de auto-update**: o `agente.py` tinha duas declarações de `VERSAO`; agora há só a do topo, e um teste garante isso.
 
 ## 2026-09-29 — Painel em React (Ciclo 2)
 
