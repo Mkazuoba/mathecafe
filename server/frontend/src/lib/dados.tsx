@@ -24,7 +24,7 @@ const DadosContext = createContext<Dados | null>(null)
 
 export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const [estacoes, setEstacoes] = useState<Estacao[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [clientes] = useState<Cliente[]>([])
   const [fila, setFila] = useState<ItemFila[]>([])
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [grupos, setGrupos] = useState<Grupo[]>([])
@@ -35,8 +35,10 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const recarregarEstacoes = useCallback(async () => {
     setEstacoes(await Api.get<Estacao[]>("/api/estacoes/"))
   }, [])
+  // Clientes nao sao mais carregados em massa no startup.
+  // Cada componente busca via /api/clientes/?busca=... conforme necessario.
   const recarregarClientes = useCallback(async () => {
-    setClientes(await Api.get<Cliente[]>("/api/clientes/"))
+    // Mantido por compatibilidade; nao carrega mais todos os clientes.
   }, [])
   const recarregarFila = useCallback(async () => {
     setFila(await Api.get<ItemFila[]>("/api/estacoes/fila"))

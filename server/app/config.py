@@ -1,5 +1,10 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+# Resolve o .env relativo a este arquivo (server/.env),
+# independente de onde o uvicorn for iniciado.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./cybercafe.db"
@@ -11,7 +16,7 @@ class Settings(BaseSettings):
     ADMIN_SENHA: str = ""
 
     class Config:
-        env_file = ".env"
+        env_file = str(_ENV_FILE)
 
 @lru_cache()
 def get_settings():

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, time as dt_time
@@ -59,8 +59,30 @@ def serializar(u: Usuario, db: Session = None):
     }
 
 @router.get("/")
-def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
-    clientes = db.query(Usuario).filter(Usuario.perfil == "cliente").order_by(Usuario.nome).all()
+def listar(
+    busca: str = Query(default="", alias="busca"),
+    limite: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(requer_perfil("admin", "operador"))
+):
+    """Lista clientes com busca server-side. Sem busca retorna lista vazia."""
+    q = busca.strip()
+    if not q:
+        return []
+    padrao = f"%{q}%"
+    clientes = (
+        db.query(Usuario)
+        .filter(
+            Usuario.perfil == "cliente",
+            or_(
+                Usuario.nome.ilike(padrao),
+                Usuario.login.ilike(padrao),
+            )
+        )
+        .order_by(Usuario.nome)
+        .limit(limite)
+        .all()
+    )
     return [serializar(c, db) for c in clientes]
 
 @router.post("/")
