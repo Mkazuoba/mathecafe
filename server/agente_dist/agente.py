@@ -1012,12 +1012,7 @@ def verificar_update(servidor_http: str) -> bool:
         # Avisa o usuario antes de atualizar
         _aviso(
             "Atualizacao disponivel",
-            f"Nova versao encontrada: {versao_servidor}
-"
-            f"Versao atual: {VERSAO}
-
-"
-            "O agente sera atualizado e reiniciado automaticamente."
+            f"Nova versao encontrada: {versao_servidor}\nVersao atual: {VERSAO}\n\nO agente sera atualizado e reiniciado automaticamente."
         )
 
         print(f"Baixando versao {versao_servidor}...")
