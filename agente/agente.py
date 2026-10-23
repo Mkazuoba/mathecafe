@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.5.1"
+VERSAO = "1.5.2"
 
 import asyncio
 import json
@@ -223,6 +223,9 @@ class AgenteApp:
                                        font=tkfont.Font(family="Consolas", size=16, weight="bold"),
                                        fg="#22c55e", bg=bg2)
         self.lbl_countdown.pack(side="right", padx=16, pady=10)
+        tk.Button(topo_sessao, text="Encerrar sessao", font=small_font,
+                  bg="#ef4444", fg="white", relief="flat", activebackground="#dc2626",
+                  command=self._encerrar_sessao_cliente).pack(side="right", padx=8, pady=8, ipady=2)
 
         tk.Label(self.frame_sessao, text="Selecione um aplicativo para abrir",
                  font=small_font, fg=text2, bg=bg).pack(pady=(16, 8))
@@ -345,7 +348,12 @@ class AgenteApp:
         elif evento == "login_resultado":
             self._log(f"<- login_resultado: {dados}")
             if dados.get("ok"):
-                self._iniciar_sessao(dados)
+                if dados.get("manutencao"):
+                    nome = dados.get("admin_nome", "Admin")
+                    self._log(f"Login de admin/operador ({nome}): entrando em manutencao")
+                    self.root.after(0, self._modo_manutencao)
+                else:
+                    self._iniciar_sessao(dados)
             else:
                 self.lbl_login_erro.config(text=dados.get("motivo", "Erro desconhecido"))
 
@@ -515,6 +523,17 @@ class AgenteApp:
         print("[streaming] encerrado")
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
+    def _encerrar_sessao_cliente(self):
+        """Cliente encerra a propria sessao pelo botao."""
+        if not self.sessao_ativa:
+            return
+        import tkinter.messagebox as _mb
+        if _mb.askyesno("Encerrar sessao", "Deseja encerrar sua sessao agora?", parent=self.root):
+            self._log("Cliente encerrou a sessao pelo botao")
+            self._enviar({"evento": "sessao_encerrada", "sessao_id": self.sessao_id, "motivo": "cliente_encerrou"})
+            self._voltar_login()
+            self._reiniciar_se_necessario()
+
     def _fazer_login(self):
         login = self.entry_login.get().strip()
         senha = self.entry_senha.get()

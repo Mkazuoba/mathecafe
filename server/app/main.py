@@ -122,6 +122,19 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 login = dados.get("login")
                 senha = dados.get("senha")
 
+                # Admin/operador entra direto no modo manutencao
+                admin = db.query(Usuario).filter(
+                    Usuario.login == login,
+                    Usuario.perfil.in_(("admin", "operador")),
+                    Usuario.ativo == True
+                ).first()
+                if admin and verificar_senha(senha, admin.senha_hash):
+                    await ws.send_text(json.dumps({
+                        "evento": "login_resultado",
+                        "dados": {"ok": True, "manutencao": True, "admin_nome": admin.nome}
+                    }))
+                    continue
+
                 cliente = db.query(Usuario).filter(
                     Usuario.login == login,
                     Usuario.perfil == "cliente",
