@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.4.0"
+VERSAO = "1.5.0"
 
 import asyncio
 import json
@@ -119,9 +119,10 @@ class AgenteApp:
         self._aviso_5min_dado = False
 
         self.root.title(f"MatheCafe v{VERSAO} - {estacao}")
-        self.root.geometry("420x480")
         self.root.configure(bg="#0f1117")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.attributes("-fullscreen", True)
+        self.root.attributes("-topmost", True)
 
         # Impede fechar a janela durante a sessão
         self.root.protocol("WM_DELETE_WINDOW", self._tentar_fechar)
@@ -788,6 +789,8 @@ class AgenteApp:
     def _ir_para_login(self):
         """Exibe a tela de login apos o encerramento."""
         self.frame_encerramento.pack_forget()
+        self.root.attributes("-fullscreen", True)
+        self.root.attributes("-topmost", True)
         self.frame_login.pack(fill="both", expand=True)
         self.frame_log.pack(fill="both", expand=False)
 
