@@ -17,7 +17,7 @@ IMPORTANTE:
 - A estação precisa estar cadastrada no painel com o MESMO NOME de --estacao.
 - Rode como Administrador para que o bloqueio de processos funcione.
 """
-VERSAO = "1.2.0"  # era 1.1.0
+VERSAO = "1.3.0"
 
 import asyncio
 import json
@@ -58,7 +58,7 @@ def carregar_imagem_url(url, largura=160, altura=140):
 
 
 # Versao do agente — incrementar a cada publicacao de update
-VERSAO = "1.2.0"
+VERSAO = "1.3.0"
 
 # Processos essenciais do Windows — NUNCA serão encerrados.
 PROCESSOS_SEGUROS = {
@@ -160,7 +160,7 @@ class AgenteApp:
         self.c_bg3 = bg3 = "#1e2333"
         self.c_text = text = "#e2e8f0"
         self.c_text2 = text2 = "#94a3b8"
-        self.c_accent = accent = "#ef4444"
+        self.c_accent = accent = "#6366f1"
 
         title_font = tkfont.Font(family="Segoe UI", size=16, weight="bold")
         normal_font = tkfont.Font(family="Segoe UI", size=11)
@@ -199,7 +199,7 @@ class AgenteApp:
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
 
         self.btn_login = tk.Button(self.frame_login, text="Entrar", font=normal_font,
-                                    bg=accent, fg="white", relief="flat", activebackground="#dc2626",
+                                    bg=accent, fg="white", relief="flat", activebackground="#4f46e5",
                                     command=self._fazer_login, state="disabled")
         self.btn_login.pack(fill="x", padx=40, ipady=8)
 
