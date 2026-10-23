@@ -58,7 +58,7 @@ def carregar_imagem_url(url, largura=160, altura=140):
 
 
 # Versao do agente — incrementar a cada publicacao de update
-VERSAO = "1.3.0"
+VERSAO = "1.4.0"
 
 # Processos essenciais do Windows — NUNCA serão encerrados.
 PROCESSOS_SEGUROS = {
