@@ -986,17 +986,41 @@ def verificar_update(servidor_http: str) -> bool:
     Retorna True se reiniciou (processo novo no ar), False se nao havia update.
     servidor_http: URL HTTP, ex: http://192.168.0.10:8000
     """
+    import json as _json
+    import tkinter as _tk
+    import tkinter.messagebox as _mb
+
+    def _aviso(titulo, msg):
+        """Mostra caixa de dialogo sem janela principal visivel."""
+        r = _tk.Tk()
+        r.withdraw()
+        _mb.showinfo(titulo, msg, parent=r)
+        r.destroy()
+
     try:
         url_versao = f"{servidor_http}/api/agente/versao"
+        print(f"Verificando update em {url_versao}...")
         with urllib.request.urlopen(url_versao, timeout=5) as r:
-            import json as _json
             dados = _json.loads(r.read())
         versao_servidor = dados.get("versao", "0.0.0")
+        print(f"Versao local: {VERSAO} | Versao servidor: {versao_servidor}")
+
         if _versao_tuple(versao_servidor) <= _versao_tuple(VERSAO):
-            return False  # ja esta atualizado
+            print("Agente ja esta na versao mais recente.")
+            return False
 
-        print(f"Update disponivel: {VERSAO} -> {versao_servidor}. Baixando...")
+        # Avisa o usuario antes de atualizar
+        _aviso(
+            "Atualizacao disponivel",
+            f"Nova versao encontrada: {versao_servidor}
+"
+            f"Versao atual: {VERSAO}
 
+"
+            "O agente sera atualizado e reiniciado automaticamente."
+        )
+
+        print(f"Baixando versao {versao_servidor}...")
         url_download = f"{servidor_http}/api/agente/download"
         caminho_atual = os.path.abspath(__file__)
         caminho_novo = caminho_atual + ".novo"
@@ -1007,12 +1031,11 @@ def verificar_update(servidor_http: str) -> bool:
         with open(caminho_novo, "wb") as f:
             f.write(conteudo)
 
-        # Substitui o arquivo atual e reinicia
         os.replace(caminho_novo, caminho_atual)
-        print("Agente atualizado. Reiniciando...")
+        print(f"Agente atualizado para {versao_servidor}. Reiniciando...")
         import sys as _sys
         os.execv(_sys.executable, [_sys.executable] + _sys.argv)
-        return True  # nao chega aqui (execv substitui o processo)
+        return True
 
     except Exception as e:
         print(f"Aviso: falha ao verificar update: {e}")
