@@ -17,7 +17,7 @@ IMPORTANTE:
 - A estação precisa estar cadastrada no painel com o MESMO NOME de --estacao.
 - Rode como Administrador para que o bloqueio de processos funcione.
 """
-VERSAO = "1.3.0"
+VERSAO = "1.4.0"
 
 import asyncio
 import json
