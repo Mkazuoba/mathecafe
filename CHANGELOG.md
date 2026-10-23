@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-23 — Auto-update do agente + melhorias no painel (Ciclo 3)
+
+- **Auto-update do agente**: ao iniciar, o agente consulta `GET /api/agente/versao`; se a versão do servidor for maior, baixa `GET /api/agente/download`, substitui o próprio arquivo (`os.replace`) e reinicia o processo (`os.execv`). A partir da v1.2.0 as atualizações são automáticas — só a primeira instalação é manual.
+- **Versão visível**: barra de título da janela mostra `MatheCafe v1.2.0 - <estação>` e o header exibe o número de versão em cinza ao lado do nome.
+- **Diálogo de atualização**: antes de baixar, aparece uma caixa informando a versão atual e a nova — facilita diagnóstico e dá visibilidade ao operador.
+- **Novo router `/api/agente/`** (`server/app/routers/agente.py`): dois endpoints sem autenticação — `/versao` lê a constante `VERSAO` do arquivo distribuído; `/download` serve o arquivo. Para publicar uma nova versão: incremente `VERSAO` em `agente/agente.py`, copie para `server/agente_dist/agente.py` e commite ambos.
+- **Painel — aviso de saldo removido**: o texto "Sem saldo: receberá o tempo padrão" não aparece mais nos cards de cliente.
+- **Painel — botão de editar saldo removido**: operadores não podem mais alterar o saldo diretamente pelo card; a edição vai ser centralizada numa tela de Clientes futura.
+- **Histórico de uso — filtros**: novo filtro por cliente (select com nomes), por estação (select com nomes) e por intervalo de datas (De / Até), com botão "Limpar filtros". Limite de registros aumentado de 200 para 500.
+- `.gitignore`: pasta `Arquivos VSCyber/` adicionada para evitar commits acidentais de dados legados.
+
 ## 2026-09-29 — Painel em React (Ciclo 2)
 
 - Painel reescrito em React + Vite + Tailwind (`server/frontend`), com as mesmas 4 telas e o mesmo visual. O build fica em `server/app/static`, então o deploy não precisa de Node.

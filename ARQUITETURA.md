@@ -1,7 +1,7 @@
 # Arquitetura do MatheCafé
 
 > Como o sistema funciona **hoje**. O que ainda falta está no [roadmap](https://claude.ai/artifact/DzDETNJFr5jxzD6FCdKCEC).
-> Última revisão: 2026-09-29.
+> Última revisão: 2026-10-23.
 
 ## Visão geral
 
@@ -34,7 +34,8 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `security.py` | senhas (bcrypt) e tokens JWT; `requer_perfil(...)` protege as rotas |
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
-| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` |
+| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios`, `agente` (auto-update) |
+| `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
 | `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
 
@@ -97,6 +98,24 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `admin` | tudo: configurações, operadores, apps, relatórios, mapa, excluir |
 | `operador` | liberar fila, encerrar sessões, criar e editar clientes, entrar em manutenção num PC |
 | `cliente` | só entra pelo agente; o login do painel recusa |
+
+## Auto-update do agente
+
+O agente (`agente/agente.py`) verifica atualizações **antes de abrir a janela Tkinter**, na função `verificar_update(servidor_http)`:
+
+1. `GET /api/agente/versao` → retorna `{"versao": "x.y.z"}` (lido de `agente_dist/agente.py`)
+2. Se `versao_servidor > VERSAO` local: mostra diálogo informativo, baixa `GET /api/agente/download`
+3. Salva sobre si mesmo com `os.replace()` e reinicia com `os.execv()`
+
+**Para publicar uma nova versão:**
+1. Incremente `VERSAO` em `agente/agente.py`
+2. Copie o arquivo para `server/agente_dist/agente.py`
+3. Commit e push dos dois arquivos
+4. Reinicie o servidor (para o endpoint ler o novo arquivo)
+
+A primeira instalação em cada PC é manual; a partir da v1.2.0 todas as atualizações são automáticas.
+
+Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autenticação — o agente ainda não tem token quando checa a versão.
 
 ## Decisões não óbvias
 
