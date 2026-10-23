@@ -495,13 +495,20 @@ function ModalApp({
 
 // ── Grupos ──────────────────────────────────────────────────────────────────
 
+interface EditGrupo { nome: string; tempo: string; cor: string }
+
 function SecaoGrupos() {
   const avisar = useAvisos()
-  const { grupos, recarregarEstacoes } = useDados()
+  const { grupos, recarregar } = useDados()
   const [novoNome, setNovoNome] = useState("")
   const [novoTempo, setNovoTempo] = useState("02:00:00")
+  const [novaCor, setNovaCor] = useState("#6366f1")
   const [criando, setCriando] = useState(false)
-  const [editando, setEditando] = useState<Record<number, string>>({})
+  const [editando, setEditando] = useState<Record<number, Partial<EditGrupo>>>({})
+
+  function setEdit(id: number, campo: Partial<EditGrupo>) {
+    setEditando((prev) => ({ ...prev, [id]: { ...prev[id], ...campo } }))
+  }
 
   async function criarGrupo(ev: React.FormEvent) {
     ev.preventDefault()
@@ -509,11 +516,17 @@ function SecaoGrupos() {
     setCriando(true)
     try {
       const segundos = lerTempo(novoTempo)
-      await Api.post(`/api/estacoes/grupos?nome=${encodeURIComponent(novoNome.trim())}&tempo_padrao_segundos=${segundos}`, {})
+      const params = new URLSearchParams({
+        nome: novoNome.trim(),
+        tempo_padrao_segundos: String(segundos),
+        cor: novaCor,
+      })
+      await Api.post(`/api/estacoes/grupos?${params}`, {})
       avisar("Grupo criado")
       setNovoNome("")
       setNovoTempo("02:00:00")
-      await recarregarEstacoes()
+      setNovaCor("#6366f1")
+      await recarregar()
     } catch (e) {
       avisar((e as Error).message, "erro")
     } finally {
@@ -522,13 +535,17 @@ function SecaoGrupos() {
   }
 
   async function salvarGrupo(g: Grupo) {
-    const tempo = editando[g.id]
-    const segundos = lerTempo(tempo ?? formatarTempo(g.tempo_padrao_segundos))
+    const ed = editando[g.id] ?? {}
+    const segundos = lerTempo(ed.tempo ?? formatarTempo(g.tempo_padrao_segundos))
     try {
-      await Api.put(`/api/estacoes/grupos/${g.id}`, { tempo_padrao_segundos: segundos })
-      avisar("Tempo padrao atualizado")
+      await Api.put(`/api/estacoes/grupos/${g.id}`, {
+        nome: ed.nome ?? g.nome,
+        tempo_padrao_segundos: segundos,
+        cor: ed.cor ?? g.cor,
+      })
+      avisar("Grupo atualizado")
       setEditando((prev) => { const n = { ...prev }; delete n[g.id]; return n })
-      await recarregarEstacoes()
+      await recarregar()
     } catch (e) {
       avisar((e as Error).message, "erro")
     }
@@ -538,23 +555,41 @@ function SecaoGrupos() {
     <div>
       <Titulo>Grupos de estacoes</Titulo>
       <p className="mb-4 text-sm text-texto-fraco">
-        Defina um tempo padrao por grupo. Clientes sem saldo usam esse tempo ao serem liberados em estacoes do grupo.
+        Nome, cor e tempo padrao por grupo. A cor aparece nos botoes do mapa e nas abas.
       </p>
       <div className="mb-4 flex flex-col gap-2">
         {grupos.map((g) => {
-          const tempoEditado = editando[g.id]
-          const tempoAtual = tempoEditado ?? formatarTempo(g.tempo_padrao_segundos)
+          const ed = editando[g.id] ?? {}
+          const tempoAtual = ed.tempo ?? formatarTempo(g.tempo_padrao_segundos)
+          const nomeAtual = ed.nome ?? g.nome
+          const corAtual = ed.cor ?? g.cor
+          const alterado = ed.nome !== undefined || ed.tempo !== undefined || ed.cor !== undefined
           return (
             <div key={g.id} className="flex items-center gap-3 rounded-lg border border-borda bg-superficie-2 px-4 py-2.5">
-              <span className="flex-1 text-sm font-medium">{g.nome}</span>
+              {/* bolinha de cor */}
+              <input
+                type="color"
+                value={corAtual}
+                onChange={(ev) => setEdit(g.id, { cor: ev.target.value })}
+                className="size-7 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                title="Cor do grupo"
+              />
+              {/* nome */}
+              <input
+                type="text"
+                value={nomeAtual}
+                onChange={(ev) => setEdit(g.id, { nome: ev.target.value })}
+                className="min-w-0 flex-1 rounded-md border border-borda bg-superficie px-2 py-1 text-sm outline-none focus:border-destaque"
+              />
+              {/* tempo */}
               <input
                 type="text"
                 value={tempoAtual}
-                onChange={(ev) => setEditando((prev) => ({ ...prev, [g.id]: ev.target.value }))}
+                onChange={(ev) => setEdit(g.id, { tempo: ev.target.value })}
                 className="w-28 rounded-md border border-borda bg-superficie px-2 py-1 text-center font-mono text-sm outline-none focus:border-destaque"
                 placeholder="HH:MM:SS"
               />
-              {tempoEditado !== undefined && (
+              {alterado && (
                 <Button size="sm" onClick={() => salvarGrupo(g)}>Salvar</Button>
               )}
             </div>
@@ -565,9 +600,16 @@ function SecaoGrupos() {
         )}
       </div>
       <form onSubmit={criarGrupo} className="flex items-end gap-2">
+        <input
+          type="color"
+          value={novaCor}
+          onChange={(e) => setNovaCor(e.target.value)}
+          className="size-9 shrink-0 cursor-pointer rounded-md border border-borda bg-transparent p-0.5"
+          title="Cor do grupo"
+        />
         <div className="flex-1">
-          <Campo rotulo="Nome do novo grupo" id="novo-grupo-nome">
-            <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Sala VIP" />
+          <Campo rotulo="Nome" id="novo-grupo-nome">
+            <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Infantil" />
           </Campo>
         </div>
         <Campo rotulo="Tempo padrao" id="novo-grupo-tempo">

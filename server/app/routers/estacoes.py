@@ -32,6 +32,7 @@ def serial_estacao(e: Estacao):
         "nome": e.nome,
         "grupo_id": e.grupo_id,
         "grupo_nome": e.grupo.nome if e.grupo else None,
+        "grupo_cor": (e.grupo.cor or "#6366f1") if e.grupo else None,
         "status": status,
         "online": online,
         "ip": e.ip,
@@ -53,21 +54,29 @@ def serial_autorizacao(a: Autorizacao):
     }
 
 # ── Grupos ────────────────────────────────────────────────────────────────────
+def serial_grupo(g: GrupoEstacao):
+    return {
+        "id": g.id,
+        "nome": g.nome,
+        "tempo_padrao_segundos": g.tempo_padrao_segundos,
+        "cor": g.cor or "#6366f1",
+    }
+
 @router.get("/grupos")
 def listar_grupos(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
-    return [{"id": g.id, "nome": g.nome, "tempo_padrao_segundos": g.tempo_padrao_segundos}
-            for g in db.query(GrupoEstacao).filter(GrupoEstacao.ativo == True).all()]
+    return [serial_grupo(g) for g in db.query(GrupoEstacao).filter(GrupoEstacao.ativo == True).all()]
 
 @router.post("/grupos")
-def criar_grupo(nome: str, tempo_padrao_segundos: int = 7200,
+def criar_grupo(nome: str, tempo_padrao_segundos: int = 7200, cor: str = "#6366f1",
                 db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
-    g = GrupoEstacao(nome=nome, tempo_padrao_segundos=tempo_padrao_segundos)
+    g = GrupoEstacao(nome=nome, tempo_padrao_segundos=tempo_padrao_segundos, cor=cor)
     db.add(g); db.commit(); db.refresh(g)
-    return {"id": g.id, "nome": g.nome, "tempo_padrao_segundos": g.tempo_padrao_segundos}
+    return serial_grupo(g)
 
 class GrupoUpdate(BaseModel):
     nome: Optional[str] = None
     tempo_padrao_segundos: Optional[int] = None
+    cor: Optional[str] = None
 
 @router.put("/grupos/{grupo_id}")
 def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
@@ -76,8 +85,9 @@ def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
     if not g: raise HTTPException(404, "Grupo nao encontrado")
     if data.nome is not None: g.nome = data.nome
     if data.tempo_padrao_segundos is not None: g.tempo_padrao_segundos = data.tempo_padrao_segundos
+    if data.cor is not None: g.cor = data.cor
     db.commit()
-    return {"id": g.id, "nome": g.nome, "tempo_padrao_segundos": g.tempo_padrao_segundos}
+    return serial_grupo(g)
 
 # ── Estações ──────────────────────────────────────────────────────────────────
 @router.get("/")

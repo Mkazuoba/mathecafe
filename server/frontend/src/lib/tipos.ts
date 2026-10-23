@@ -5,6 +5,7 @@ export interface Estacao {
   nome: string
   grupo_id: number | null
   grupo_nome: string | null
+  grupo_cor: string | null
   status: StatusEstacao
   online: boolean
   ip: string | null
@@ -18,6 +19,7 @@ export interface Grupo {
   id: number
   nome: string
   tempo_padrao_segundos: number
+  cor: string
 }
 
 export interface Cliente {

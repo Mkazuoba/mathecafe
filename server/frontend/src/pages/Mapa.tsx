@@ -23,6 +23,7 @@ const BORDA_PINO: Record<StatusEstacao, string> = {
   manutencao: "border-b-manutencao opacity-85",
 }
 
+
 export default function Mapa() {
   const { estacoes, grupos, recarregarEstacoes } = useDados()
   const avisar = useAvisos()
@@ -34,7 +35,7 @@ export default function Mapa() {
 
   const temSemGrupo = estacoes.some((e) => e.grupo_id === null)
   const abas = useMemo(
-    () => [...grupos.map((g) => ({ id: g.id, nome: g.nome })), ...(temSemGrupo ? [{ id: SEM_GRUPO, nome: "Sem grupo" }] : [])],
+    () => [...grupos.map((g) => ({ id: g.id, nome: g.nome, cor: g.cor })), ...(temSemGrupo ? [{ id: SEM_GRUPO, nome: "Sem grupo", cor: null as string | null }] : [])],
     [grupos, temSemGrupo],
   )
   // A aba escolhida pode sumir (ex.: "Sem grupo" quando a última estação muda de grupo)
@@ -65,13 +66,20 @@ export default function Mapa() {
               role="tab"
               aria-selected={a.id === grupo}
               onClick={() => setGrupoAtivo(a.id)}
+              style={a.id === grupo && a.cor ? { backgroundColor: a.cor, borderColor: a.cor } : undefined}
               className={cn(
                 "cursor-pointer rounded-md border px-3.5 py-1.5 text-sm",
                 a.id === grupo
-                  ? "border-destaque bg-destaque text-white"
+                  ? (a.cor ? "text-white" : "border-destaque bg-destaque text-white")
                   : "border-borda bg-superficie-2 text-texto-suave hover:text-texto",
               )}
             >
+              {a.cor && (
+                <span
+                  className="mr-1.5 inline-block size-2.5 rounded-full align-middle"
+                  style={{ backgroundColor: a.cor }}
+                />
+              )}
               {a.nome}
             </button>
           ))}
@@ -106,6 +114,7 @@ export default function Mapa() {
               <Pino
                 key={e.id}
                 estacao={e}
+                corGrupo={e.grupo_cor}
                 modoConfig={modoConfig}
                 aoClicar={() => setSelecionada(e.id)}
                 aoExcluir={() => excluir(e)}
@@ -136,11 +145,13 @@ export default function Mapa() {
 
 function Pino({
   estacao: e,
+  corGrupo,
   modoConfig,
   aoClicar,
   aoExcluir,
 }: {
   estacao: Estacao
+  corGrupo: string | null
   modoConfig: boolean
   aoClicar: () => void
   aoExcluir: () => void
@@ -188,10 +199,13 @@ function Pino({
       onPointerDown={aoPressionar}
       onPointerMove={aoMover}
       onPointerUp={aoSoltar}
-      style={{ left: pos.x, top: pos.y, width: TAMANHO_PINO, height: TAMANHO_PINO }}
+      style={{
+        left: pos.x, top: pos.y, width: TAMANHO_PINO, height: TAMANHO_PINO,
+        ...(e.status === "livre" && corGrupo ? { borderBottomColor: corGrupo } : {}),
+      }}
       className={cn(
-        "absolute flex touch-none flex-col items-center justify-center rounded-[10px] border border-b-[3px] border-borda bg-superficie-2 select-none",
-        BORDA_PINO[e.status],
+        "absolute flex touch-none flex-col items-center justify-center rounded-[10px] border border-borda bg-superficie-2 select-none",
+        e.status !== "livre" || !corGrupo ? BORDA_PINO[e.status] : "border-b-[3px]",
         modoConfig ? "cursor-grab border-dashed active:cursor-grabbing" : "cursor-pointer hover:ring-2 hover:ring-borda-forte",
       )}
     >

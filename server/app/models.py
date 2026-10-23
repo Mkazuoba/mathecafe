@@ -26,6 +26,7 @@ class GrupoEstacao(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(50), nullable=False)
     tempo_padrao_segundos = Column(Integer, default=7200)
+    cor = Column(String(7), default="#6366f1")  # hex, ex: "#6366f1"
     ativo = Column(Boolean, default=True)
     estacoes = relationship("Estacao", back_populates="grupo")
 
