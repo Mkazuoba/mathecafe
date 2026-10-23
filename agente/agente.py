@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.5.0"
+VERSAO = "1.5.1"
 
 import asyncio
 import json
@@ -184,26 +184,32 @@ class AgenteApp:
 
         # ── Frame de login ──
         self.frame_login = tk.Frame(self.root, bg=bg)
-        tk.Label(self.frame_login, text="Faca login para iniciar sua sessao",
-                 font=normal_font, fg=text, bg=bg).pack(pady=(40, 20))
 
-        tk.Label(self.frame_login, text="LOGIN", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=40)
-        self.entry_login = tk.Entry(self.frame_login, font=normal_font, bg=bg3, fg=text,
+        # container centralizado de largura fixa
+        _form = tk.Frame(self.frame_login, bg=bg, width=360)
+        _form.pack(expand=True)
+        _form.pack_propagate(False)
+
+        tk.Label(_form, text="Faca login para iniciar sua sessao",
+                 font=normal_font, fg=text, bg=bg).pack(pady=(40, 24))
+
+        tk.Label(_form, text="LOGIN", font=small_font, fg=text2, bg=bg).pack(anchor="w")
+        self.entry_login = tk.Entry(_form, font=normal_font, bg=bg3, fg=text,
                                      insertbackground=text, relief="flat")
-        self.entry_login.pack(fill="x", padx=40, pady=(2, 12), ipady=6)
+        self.entry_login.pack(fill="x", pady=(2, 12), ipady=6)
 
-        tk.Label(self.frame_login, text="SENHA", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=40)
-        self.entry_senha = tk.Entry(self.frame_login, font=normal_font, bg=bg3, fg=text,
+        tk.Label(_form, text="SENHA", font=small_font, fg=text2, bg=bg).pack(anchor="w")
+        self.entry_senha = tk.Entry(_form, font=normal_font, bg=bg3, fg=text,
                                      insertbackground=text, relief="flat", show="*")
-        self.entry_senha.pack(fill="x", padx=40, pady=(2, 16), ipady=6)
+        self.entry_senha.pack(fill="x", pady=(2, 16), ipady=6)
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
 
-        self.btn_login = tk.Button(self.frame_login, text="Entrar", font=normal_font,
+        self.btn_login = tk.Button(_form, text="Entrar", font=normal_font,
                                     bg=accent, fg="white", relief="flat", activebackground="#4f46e5",
                                     command=self._fazer_login, state="disabled")
-        self.btn_login.pack(fill="x", padx=40, ipady=8)
+        self.btn_login.pack(fill="x", ipady=8)
 
-        self.lbl_login_erro = tk.Label(self.frame_login, text="", font=small_font, fg="#ef4444", bg=bg)
+        self.lbl_login_erro = tk.Label(_form, text="", font=small_font, fg="#ef4444", bg=bg)
         self.lbl_login_erro.pack(pady=8)
 
         # ── Frame de sessão (launcher) ──
