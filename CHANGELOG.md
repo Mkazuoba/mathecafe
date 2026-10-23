@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-23 — Cor e renomeação de grupos (Ciclo 5)
+
+- **Cor por grupo**: nova coluna `cor` (hex, padrão `#6366f1`) em `GrupoEstacao`. Persistida no banco via migração automática do SQLite.
+- **API de grupos atualizada**: `GET /api/estacoes/grupos` retorna `cor`; `POST` e `PUT` aceitam e persistem a cor. `serial_estacao` expõe `grupo_cor` para o Mapa.
+- **Mapa — abas coloridas**: a aba do grupo ativo usa a cor de fundo; nas abas inativas aparece um ponto colorido ao lado do nome.
+- **Mapa — Pino colorido**: quando a estação está livre, a borda inferior do card usa a cor do grupo (via `borderBottomColor` inline); outros status mantêm as cores semânticas.
+- **Configurações > Grupos**: edição inline de nome, cor (color picker nativo) e tempo padrão — botão "Salvar" aparece apenas quando há alteração.
+
 ## 2026-10-23 — Auto-update do agente + melhorias no painel (Ciclo 3)
 
 - **Auto-update do agente**: ao iniciar, o agente consulta `GET /api/agente/versao`; se a versão do servidor for maior, baixa `GET /api/agente/download`, substitui o próprio arquivo (`os.replace`) e reinicia o processo (`os.execv`). A partir da v1.2.0 as atualizações são automáticas — só a primeira instalação é manual.
