@@ -16,8 +16,8 @@ from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/agente", tags=["agente"])
 
-# Pasta onde fica o agente.py que o servidor distribui
-DIST_DIR = Path(__file__).parent.parent / "agente_dist"
+# Pasta onde fica o agente.py que o servidor distribui (server/agente_dist)
+DIST_DIR = Path(__file__).resolve().parents[2] / "agente_dist"
 DIST_FILE = DIST_DIR / "agente.py"
 
 

@@ -313,3 +313,18 @@ def test_app_exige_caminho_do_exe(c, admin):
     assert r.status_code == 200, r.text
     assert r.json()["processo"] == "chrome.exe"
     assert r.json()["caminho"] == r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+
+# ── Auto-update do agente ─────────────────────────────────────────────────────
+
+def test_versao_do_agente_vem_do_agente_dist(c):
+    # server/agente_dist/agente.py, não server/app/agente_dist
+    dist = os.path.join(os.path.dirname(__file__), "..", "agente_dist", "agente.py")
+    with open(dist, encoding="utf-8") as f:
+        linhas = [l for l in f if l.startswith("VERSAO")]
+    # Duas declaracoes divergentes fazem o agente se atualizar em loop
+    assert len(linhas) == 1, linhas
+    esperada = linhas[0].partition("=")[2].strip().strip('"')
+    r = c.get("/api/agente/versao")
+    assert r.json() == {"versao": esperada}
+    assert c.get("/api/agente/download").status_code == 200

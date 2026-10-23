@@ -17,6 +17,8 @@ IMPORTANTE:
 - A estação precisa estar cadastrada no painel com o MESMO NOME de --estacao.
 - Rode como Administrador para que o bloqueio de processos funcione.
 """
+# Versao do agente — incrementar a cada publicacao de update.
+# Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
 VERSAO = "1.4.0"
 
 import asyncio
@@ -56,9 +58,6 @@ def carregar_imagem_url(url, largura=160, altura=140):
     except Exception:
         return None
 
-
-# Versao do agente — incrementar a cada publicacao de update
-VERSAO = "1.4.0"
 
 # Processos essenciais do Windows — NUNCA serão encerrados.
 PROCESSOS_SEGUROS = {
