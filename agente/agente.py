@@ -119,7 +119,7 @@ class AgenteApp:
         self._sessao_pausada = False
         self._aviso_5min_dado = False
 
-        self.root.title(f"MatheCafe - {estacao}")
+        self.root.title(f"MatheCafe v{VERSAO} - {estacao}")
         self.root.geometry("420x480")
         self.root.configure(bg="#0f1117")
         self.root.resizable(False, False)
@@ -174,7 +174,9 @@ class AgenteApp:
         # ── Cabeçalho ──
         self.header_frame = header = tk.Frame(self.root, bg=bg2)
         header.pack(fill="x")
-        tk.Label(header, text="MatheCafe", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=14, pady=10)
+        tk.Label(header, text="MatheCafe", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=(14,4), pady=10)
+        ver_font = tkfont.Font(family="Segoe UI", size=9)
+        tk.Label(header, text=f"v{VERSAO}", font=ver_font, fg="#6b7280", bg=bg2).pack(side="left", pady=10)
         self.lbl_estacao = tk.Label(header, text=self.estacao, font=normal_font, fg=text2, bg=bg2)
         self.lbl_estacao.pack(side="left", padx=4)
         self.lbl_status = tk.Label(header, text="conectando...", font=small_font, fg="#f97316", bg=bg2)
