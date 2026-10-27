@@ -142,16 +142,15 @@ class AgenteApp:
 
     # ── Controle de janela ────────────────────────────────────────────────────
     def _tentar_fechar(self):
-        """Bloqueia fechamento durante sessão ativa fora do modo manutenção."""
-        if self.sessao_ativa and not self.modo_manutencao_ativo:
-            return  # ignora — não fecha
-        self.root.destroy()
+        """Bloqueia fechamento sempre, exceto em modo manutenção."""
+        if self.modo_manutencao_ativo:
+            self.root.destroy()
+        # fora do modo manutencao: ignora completamente
 
     def _tentar_esc(self, event=None):
-        """ESC só sai da tela cheia fora de sessão ativa ou em manutenção."""
-        if self.sessao_ativa and not self.modo_manutencao_ativo:
-            return  # bloqueado durante sessão
-        self.root.attributes("-fullscreen", False)
+        """ESC bloqueado sempre, exceto em modo manutenção."""
+        if self.modo_manutencao_ativo:
+            self.root.attributes("-fullscreen", False)
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
