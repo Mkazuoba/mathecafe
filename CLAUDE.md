@@ -49,7 +49,8 @@ Rode os testes antes de dar um ciclo por concluído e acrescente um teste para c
 - **Nada de emoji em `print`** no servidor — derruba a inicialização num console Windows (cp1252). No agente, emoji só dentro da interface Tkinter.
 - **Saldo sempre em HH:MM:SS** em todo o painel.
 - **Agente roda como o usuário `cliente`, na sessão dele** (tarefa `MatheCafe-Agente`, `LogonType Interactive`). Nunca como SYSTEM nem com senha gravada na tarefa: roda sem área de trabalho e a janela não aparece. Sem admin, o psutil só encerra processos do `cliente`, e basta.
-- **SQLite no Render zera a cada deploy** — produção vai para PostgreSQL (Supabase). A migração leve de colunas em `database.py` só funciona no SQLite.
+- **SQLite no Render zera a cada deploy** — produção vai para PostgreSQL (Supabase). A migração leve de colunas em `database.py` só funciona no SQLite; ela adiciona sozinha toda coluna nova do `models.py` (coluna esquecida já deu 500 na lista de estações).
+- **Arquivos enviados de uma cópia antiga já apagaram correções** (agente.py em 02/10, instalar.bat em 28/10). Antes de commitar algo que veio de fora, compare com o `git diff` e rode os testes: `tests/test_agente.py` acusa as regressões conhecidas do agente.
 - **Node.js é portátil nesta máquina**, em `%LOCALAPPDATA%\Programs\nodejs` (fora do PATH). No bash: `export PATH="$LOCALAPPDATA/Programs/nodejs:$PATH"` antes de `npm`.
 - **Mexeu no painel? Rode `npm run build`** em `server/frontend` e commite `server/app/static/` junto — é o que o servidor serve.
 - Painel React: dados compartilhados em `src/lib/dados.tsx` (não buscar a mesma lista em cada tela); textos sempre via JSX, nunca `dangerouslySetInnerHTML`.

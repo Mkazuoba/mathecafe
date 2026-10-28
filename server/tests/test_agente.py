@@ -51,6 +51,17 @@ def test_estacao_com_espaco_e_nao_cadastrada():
     assert "4004" in src
 
 
+def test_whitelist_confere_janelas_de_processos_antigos():
+    # Edge aberto em segundo plano antes do login abria janelas sem criar
+    # processo novo e escapava da whitelist; Explorador e o explorer.exe
+    src = _fonte()
+    verificar = src[src.index("def _verificar_processos"):src.index("def _fechar_janelas_fora_da_whitelist")]
+    assert "self._fechar_janelas_fora_da_whitelist(pid_atual)" in verificar
+    # proibidos (cmd, regedit...) caem mesmo se ja existiam antes da sessao
+    assert verificar.index("PROCESSOS_SEMPRE_BLOQUEADOS") < verificar.index("_pids_pre_sessao")
+    assert '"CabinetWClass"' in src
+
+
 class _Estado:
     modo_manutencao_ativo = False
     sessao_ativa = False

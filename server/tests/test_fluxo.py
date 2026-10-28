@@ -357,3 +357,27 @@ def test_versao_do_agente_vem_do_agente_dist(c):
     r = c.get("/api/agente/versao")
     assert r.json() == {"versao": esperada}
     assert c.get("/api/agente/download").status_code == 200
+
+
+# ── Migração do SQLite ────────────────────────────────────────────────────────
+
+def test_banco_antigo_ganha_colunas_novas(c, admin):
+    # cybercafe.db de antes do Ciclo 5 nao tinha grupos_estacao.cor: a lista de
+    # estacoes dava 500 e nenhuma estacao aparecia no painel
+    from sqlalchemy import text
+    from app.database import engine, _migrar_colunas_faltantes
+
+    r = c.post("/api/estacoes/grupos", headers=admin, params={"nome": "Sala antiga"})
+    assert r.status_code == 200, r.text
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE grupos_estacao DROP COLUMN cor"))
+        conn.commit()
+
+    _migrar_colunas_faltantes()
+
+    with engine.connect() as conn:
+        colunas = {r[1] for r in conn.execute(text("PRAGMA table_info(grupos_estacao)"))}
+    assert "cor" in colunas
+    assert c.get("/api/estacoes/", headers=admin).status_code == 200
+    grupos = c.get("/api/estacoes/grupos", headers=admin).json()
+    assert all(g["cor"] for g in grupos)  # linhas antigas recebem a cor padrao

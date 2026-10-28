@@ -31,32 +31,36 @@ def get_db():
     finally:
         db.close()
 
+def _literal_sql(valor):
+    if isinstance(valor, bool):
+        return "1" if valor else "0"
+    if isinstance(valor, (int, float)):
+        return str(valor)
+    return "'" + str(valor).replace("'", "''") + "'"
+
+
 def _migrar_colunas_faltantes():
     """Migracao leve: adiciona colunas novas sem apagar dados existentes."""
     if not _eh_sqlite:
         return
     with engine.connect() as conn:
-        cols = conn.execute(text("PRAGMA table_info(apps_permitidos)")).fetchall()
-        nomes = [c[1] for c in cols]
-        if cols and "caminho" not in nomes:
-            conn.execute(text("ALTER TABLE apps_permitidos ADD COLUMN caminho VARCHAR(500)"))
-            conn.commit()
-            print("Migracao: coluna 'caminho' adicionada em apps_permitidos")
-        if cols and "imagem_url" not in nomes:
-            conn.execute(text("ALTER TABLE apps_permitidos ADD COLUMN imagem_url VARCHAR(500)"))
-            conn.commit()
-            print("Migracao: coluna 'imagem_url' adicionada em apps_permitidos")
-
-        cols_estacoes = conn.execute(text("PRAGMA table_info(estacoes)")).fetchall()
-        nomes_estacoes = [c[1] for c in cols_estacoes]
-        if cols_estacoes and "pos_x" not in nomes_estacoes:
-            conn.execute(text("ALTER TABLE estacoes ADD COLUMN pos_x INTEGER DEFAULT 0"))
-            conn.commit()
-            print("Migracao: coluna 'pos_x' adicionada em estacoes")
-        if cols_estacoes and "pos_y" not in nomes_estacoes:
-            conn.execute(text("ALTER TABLE estacoes ADD COLUMN pos_y INTEGER DEFAULT 0"))
-            conn.commit()
-            print("Migracao: coluna 'pos_y' adicionada em estacoes")
+        # Toda coluna do models.py que o banco ainda nao tem. O create_all so
+        # cria tabelas novas; uma coluna esquecida aqui derrubava a rota inteira
+        # (grupos_estacao.cor: GET /api/estacoes/ dava 500).
+        for tabela in Base.metadata.sorted_tables:
+            existentes = {c[1] for c in conn.execute(text(f"PRAGMA table_info({tabela.name})"))}
+            if not existentes:
+                continue
+            for coluna in tabela.columns:
+                if coluna.name in existentes:
+                    continue
+                ddl = f"ALTER TABLE {tabela.name} ADD COLUMN {coluna.name} {coluna.type.compile(dialect=engine.dialect)}"
+                if coluna.default is not None and coluna.default.is_scalar:
+                    # as linhas existentes tambem recebem o padrao
+                    ddl += f" DEFAULT {_literal_sql(coluna.default.arg)}"
+                conn.exec_driver_sql(ddl)
+                conn.commit()
+                print(f"Migracao: coluna '{coluna.name}' adicionada em {tabela.name}")
 
         # Indice para busca rapida de clientes por nome/login (42k+ registros)
         indices = conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'")).fetchall()

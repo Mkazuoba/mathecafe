@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-28 — Painel sem estações e whitelist furada (agente 1.6.1)
+
+- **Nenhuma estação aparecia no painel**: `GET /api/estacoes/` dava 500 com o `cybercafe.db` existente, porque a coluna `grupos_estacao.cor` (Ciclo 5) nunca ganhou migração — o changelog do Ciclo 5 dizia que sim. A migração do SQLite agora é genérica: adiciona qualquer coluna do `models.py` que falte no banco, com o valor padrão. **Reinicie o servidor** para aplicar.
+- **Apps fora da whitelist abriam na sessão**: processos que já rodavam antes do login (Edge em segundo plano, por exemplo) nunca eram conferidos, e o Explorador de Arquivos é o `explorer.exe`, que não pode ser encerrado. Agora o agente também confere o dono de cada janela visível: fecha o programa se estiver fora da whitelist e fecha só a janela do Explorador. Terminais e afins (`cmd`, `regedit`...) caem mesmo se já existiam. A conferência passa de 3s para 1s.
+
 ## 2026-10-28 — Agente 1.6.0: conexão na rede da biblioteca e bloqueios (Ciclo 3, tarefas 3.3 e 3.4)
 
 - **Estação não aparecia no painel**: rodando como `cliente`, o agente pegava o proxy da rede e não chegava ao servidor interno. Volta a correção de 29/09 (perdida quando o `agente.py` foi reescrito em 02/10): conexão direta para IP privado ou nome sem ponto, agora também no auto-update e nas imagens.

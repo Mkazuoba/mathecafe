@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.0"
+VERSAO = "1.6.1"
 
 import asyncio
 import json
@@ -134,6 +134,52 @@ PROCESSOS_SEMPRE_BLOQUEADOS = {
 
 # Encerrados também na tela de login (fora do modo manutenção)
 PROCESSOS_BLOQUEADOS_NO_LOGIN = {"taskmgr.exe"}
+
+
+# ── Janelas abertas ──────────────────────────────────────────────────────────
+try:
+    _u32 = ctypes.WinDLL("user32", use_last_error=True)
+    _WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    _u32.EnumWindows.argtypes = [_WNDENUMPROC, ctypes.c_void_p]
+    _u32.IsWindowVisible.argtypes = [ctypes.c_void_p]
+    _u32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
+    _u32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    _u32.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+    _u32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    _dwm = ctypes.WinDLL("dwmapi")
+    _dwm.DwmGetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
+except (AttributeError, OSError):
+    _u32 = None  # fora do Windows
+
+
+def _camuflada(hwnd):
+    """Janela "visível" que o usuário não vê (app UWP suspenso, Iniciar, Widgets)."""
+    valor = ctypes.c_int(0)
+    _dwm.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(valor), ctypes.sizeof(valor))  # DWMWA_CLOAKED
+    return valor.value != 0
+
+
+def janelas_visiveis():
+    """{pid: [(hwnd, classe), ...]} das janelas de primeiro nível visíveis e com título."""
+    resultado = {}
+    if _u32 is None:
+        return resultado
+
+    def _cada(hwnd, _):
+        if _u32.IsWindowVisible(hwnd) and _u32.GetWindowTextLengthW(hwnd) > 0 and not _camuflada(hwnd):
+            pid = ctypes.c_ulong()
+            _u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            classe = ctypes.create_unicode_buffer(256)
+            _u32.GetClassNameW(hwnd, classe, 256)
+            resultado.setdefault(pid.value, []).append((hwnd, classe.value))
+        return True
+
+    _u32.EnumWindows(_WNDENUMPROC(_cada), None)
+    return resultado
+
+
+def fechar_janela(hwnd):
+    _u32.PostMessageW(hwnd, 0x0010, None, None)  # WM_CLOSE
 
 
 # ── Bloqueio de atalhos do Windows ───────────────────────────────────────────
@@ -1135,13 +1181,14 @@ class AgenteApp:
                     if pid == pid_atual or not nome:
                         continue
 
-                    # Processos que existiam antes da sessao: nunca toca
-                    if pid in self._pids_pre_sessao:
-                        continue
-
                     if nome in PROCESSOS_SEMPRE_BLOQUEADOS:
                         proc.kill()
                         self._log(f"Bloqueado (proibido): {nome}")
+                        continue
+
+                    # Processos em segundo plano de antes da sessao: nao toca
+                    # (as janelas deles sao conferidas abaixo)
+                    if pid in self._pids_pre_sessao:
                         continue
 
                     if not self.whitelist_procs:
@@ -1156,7 +1203,38 @@ class AgenteApp:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
 
-        self.root.after(3000, self._verificar_processos)
+            if self.whitelist_procs:
+                self._fechar_janelas_fora_da_whitelist(pid_atual)
+
+        self.root.after(1000, self._verificar_processos)
+
+    def _fechar_janelas_fora_da_whitelist(self, pid_atual):
+        """Um programa que já rodava antes do login (Edge em segundo plano, por
+        exemplo) abre janelas novas sem criar processo novo; o Explorador de
+        Arquivos é o próprio explorer.exe. Por isso também se confere quem é o
+        dono de cada janela visível."""
+        for pid, janelas in janelas_visiveis().items():
+            if pid == pid_atual:
+                continue
+            try:
+                nome = psutil.Process(pid).name().lower()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            if nome in self.whitelist_procs:
+                continue
+            if nome == "explorer.exe":
+                for hwnd, classe in janelas:
+                    if classe == "CabinetWClass":  # janela do Explorador, não a área de trabalho
+                        fechar_janela(hwnd)
+                        self._log("Bloqueado (fora da whitelist): Explorador de Arquivos")
+                continue
+            if nome in PROCESSOS_SEGUROS:
+                continue
+            try:
+                psutil.Process(pid).kill()
+                self._log(f"Bloqueado (fora da whitelist): {nome}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
 
 
 # ── Auto-update ──────────────────────────────────────────────────────────────
