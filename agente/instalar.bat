@@ -36,8 +36,10 @@ if not exist "%ORIGEM%agente.py" (
 
 :: ---- Descobrir Python ----
 :: O usuario "cliente" precisa conseguir ler a instalacao do Python. Uma
-:: instalacao "so para mim" fica no perfil de quem instalou e o cliente nao
-:: tem acesso; o atalho da Microsoft Store (WindowsApps) tambem e por usuario.
+:: instalacao "so para mim" (o padrao do instalador do python.org) fica no
+:: perfil de quem instalou e o cliente nao tem acesso: nesse caso o Python e
+:: copiado para %DESTINO%\python (funciona de qualquer pasta). O da Microsoft
+:: Store (WindowsApps) nao pode ser copiado.
 set PYTHON=
 where py >nul 2>&1
 if !errorlevel!==0 (
@@ -52,22 +54,19 @@ set PYBASE=
 for /f "delims=" %%i in ('!PYTHON! -c "import sys; print(sys.base_prefix)" 2^>nul') do set PYBASE=%%i
 if "!PYBASE!"=="" goto :python_ausente
 
-set PYPESSOAL=
-if not "!PYBASE:\Users\=!"=="!PYBASE!" set PYPESSOAL=1
-if not "!PYBASE:WindowsApps=!"=="!PYBASE!" set PYPESSOAL=1
-if defined PYPESSOAL (
-    echo ERRO: o Python encontrado esta instalado so para este usuario:
+if not "!PYBASE:WindowsApps=!"=="!PYBASE!" (
+    echo ERRO: o Python encontrado e o da Microsoft Store:
     echo        !PYBASE!
-    echo O usuario "cliente" nao tem acesso a essa pasta.
-    echo.
-    echo Reinstale o Python para todos os usuarios: no instalador do python.org
-    echo escolha "Customize installation" e marque "Install Python for all users"
-    echo ^(fica em C:\Program Files\Python3xx^). Ou, num terminal de administrador:
+    echo Ele nao pode ser usado pelo usuario "cliente". Instale pelo python.org
+    echo ou, num terminal de administrador:
     echo     winget install -e --id Python.Python.3.13 --scope machine
     pause
     exit /b 1
 )
+set COPIAR_PY=
+if not "!PYBASE:\Users\=!"=="!PYBASE!" set COPIAR_PY=1
 echo Python encontrado: !PYBASE!
+if defined COPIAR_PY echo   ^(instalado so para este usuario: sera copiado para %DESTINO%\python^)
 
 :: ---- Coletar dados ----
 echo.
@@ -152,6 +151,17 @@ echo       Autologin configurado.
 :: ---- 3. Copiar o agente e instalar dependencias ----
 echo [3/6] Copiando o agente para %DESTINO% e instalando dependencias...
 if not exist "%DESTINO%" mkdir "%DESTINO%"
+:: Reinstalacao: fecha o agente que esteja rodando de %DESTINO% (prende os arquivos)
+powershell -NoProfile -Command "Get-Process | Where-Object { $_.Path -like '%DESTINO%\*' } | Stop-Process -Force" >nul 2>&1
+if defined COPIAR_PY (
+    robocopy "!PYBASE!" "%DESTINO%\python" /MIR /XD "!PYBASE!\Lib\site-packages" __pycache__ /NFL /NDL /NJH /NJS /NP >nul
+    if !errorlevel! geq 8 (
+        echo ERRO: Nao foi possivel copiar o Python para %DESTINO%\python.
+        pause
+        exit /b 1
+    )
+    set PYTHON="%DESTINO%\python\python.exe"
+)
 if /i not "%ORIGEM%"=="%DESTINO%\" (
     for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 desinstalar.bat) do (
         copy /y "%ORIGEM%%%f" "%DESTINO%\" >nul

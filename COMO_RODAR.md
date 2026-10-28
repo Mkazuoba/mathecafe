@@ -69,12 +69,12 @@ O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a trans
 
 ## 4. Agente (em cada estação)
 
-Precisa do Python 3.11+ instalado **para todos os usuários** na estação: no instalador do [python.org](https://www.python.org/downloads/), "Customize installation" → "Install Python for all users" (fica em `C:\Program Files\Python3xx`), ou `winget install -e --id Python.Python.3.13 --scope machine`. Uma instalação "só para mim" fica no perfil do admin e o usuário `cliente` não consegue usá-la; o instalador recusa.
+Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/)). Se ele estiver instalado só para o admin (o padrão do python.org, no perfil dele), o instalador **copia o Python para `C:\MatheCafe\python`**, porque o `cliente` não lê o perfil do admin. O Python da Microsoft Store não serve: o instalador recusa.
 
 Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas. Ele:
 
 1. cria o usuário Windows `cliente` (sem admin, senha que não expira) e liga o autologin;
-2. copia o agente para `C:\MatheCafe`, cria o `venv` lá e instala as dependências;
+2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;
 3. grava `agente.cfg` e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e o auto-update);
 4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
 5. cadastra a estação no servidor.
