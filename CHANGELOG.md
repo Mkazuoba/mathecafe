@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-28 — Agente abre sozinho no logon (Ciclo 3, tarefa 3.3)
+
+- **Causa**: a tarefa agendada rodava como SYSTEM (sessão 0, sem área de trabalho), então a janela do agente nunca aparecia. Além disso, o `instalar.bat` deixou de criar o `venv` (o agente morria sem `websockets`/`psutil`) e usava o Python e a pasta do perfil do admin, que o `cliente` não lê.
+- **`instalar.bat`**: copia o agente para `C:\MatheCafe`, cria o `venv` lá, dá ao `cliente` escrita na pasta (cfg e auto-update) e recusa Python instalado só para um usuário. Senha do `cliente` não expira.
+- **`registrar_tarefa.ps1`** (novo): tarefa `MatheCafe-Agente` no logon do `cliente`, `LogonType Interactive`, `pythonw`, sem o limite padrão de 3 dias e reabrindo se cair. Remove a tarefa antiga `MatheCafe_Agente` (SYSTEM no boot), que abria um segundo agente invisível.
+- **`desinstalar.bat`** (novo) substitui `instalar_autostart.bat`/`desinstalar_autostart.bat`, removidos.
+- `.gitattributes`: `.bat` e `.ps1` sempre com CRLF (o `cmd` se perde em `goto`/rótulos com LF, como num zip baixado do GitHub).
+
 ## 2026-10-23 — Cor e renomeação de grupos (Ciclo 5)
 
 - **Cor por grupo**: nova coluna `cor` (hex, padrão `#6366f1`) em `GrupoEstacao`. Persistida no banco via migração automática do SQLite.

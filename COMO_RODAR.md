@@ -69,15 +69,22 @@ O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a trans
 
 ## 4. Agente (em cada estação)
 
-Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/), marcando "Add python.exe to PATH"). Copie a pasta `agente/` para o PC e:
+Precisa do Python 3.11+ instalado **para todos os usuários** na estação: no instalador do [python.org](https://www.python.org/downloads/), "Customize installation" → "Install Python for all users" (fica em `C:\Program Files\Python3xx`), ou `winget install -e --id Python.Python.3.13 --scope machine`. Uma instalação "só para mim" fica no perfil do admin e o usuário `cliente` não consegue usá-la; o instalador recusa.
 
-1. Dois cliques em **`instalar.bat`** (uma vez só): cria o ambiente e instala as dependências.
-2. Dois cliques em **`iniciar.bat`**: pergunta o endereço do servidor e o nome da estação e abre o agente como Administrador (o Windows pede confirmação).
+Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas. Ele:
 
-Ou direto, sem perguntas: `iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-01`
+1. cria o usuário Windows `cliente` (sem admin, senha que não expira) e liga o autologin;
+2. copia o agente para `C:\MatheCafe`, cria o `venv` lá e instala as dependências;
+3. grava `agente.cfg` e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e o auto-update);
+4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
+5. cadastra a estação no servidor.
 
+Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\MatheCafe\desinstalar.bat` como administrador (remove a tarefa e o autologin).
+
+- A tarefa **não pode** rodar como SYSTEM nem com senha gravada ("executar estando conectado ou não"): nos dois casos ela roda sem área de trabalho e a janela do agente nunca aparece.
+- O agente roda como `cliente`, sem admin. Ele encerra os programas do próprio `cliente`, que é o que importa; processos de outros usuários ficam de fora.
+- Para testar à mão (sem tarefa, como admin): `C:\MatheCafe\iniciar.bat ws://IP_DO_SERVIDOR:8000 PC-01`.
 - O nome da estação precisa ser exatamente o cadastrado no Mapa.
-- Rode como **Administrador** (o `iniciar.bat` já faz isso), senão o bloqueio de programas não funciona.
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online).
