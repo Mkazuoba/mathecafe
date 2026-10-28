@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-28 — Agente 1.6.0: conexão na rede da biblioteca e bloqueios (Ciclo 3, tarefas 3.3 e 3.4)
+
+- **Estação não aparecia no painel**: rodando como `cliente`, o agente pegava o proxy da rede e não chegava ao servidor interno. Volta a correção de 29/09 (perdida quando o `agente.py` foi reescrito em 02/10): conexão direta para IP privado ou nome sem ponto, agora também no auto-update e nas imagens.
+- Voltam também: nome de estação com espaço/acento, aviso de "estação não cadastrada" na tela de login, só fica online depois do `pong` e erros fatais em `agente_erro.log`.
+- **Esc e fechar a janela** só no modo manutenção.
+- **Atalhos do Windows**: hook de teclado (`BloqueioTeclado`) engole Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 na tela de login e Ctrl+Shift+Esc sempre (fora da manutenção). O `taskmgr.exe` é fechado também na tela de login.
+- **`politicas_cliente.ps1`** (novo, etapa 6 do instalador): desliga Gerenciador de Tarefas, Bloquear e Alterar senha no perfil do `cliente`, criando o perfil se preciso.
+- Removido o aviso "rodando sem privilégios de admin" (agora é o esperado).
+- `tests/test_agente.py`: 5 testes que conferem essas regras no código-fonte do agente e que o `agente_dist` é igual ao `agente.py`.
+
 ## 2026-10-28 — Agente abre sozinho no logon (Ciclo 3, tarefa 3.3)
 
 - **Causa**: a tarefa agendada rodava como SYSTEM (sessão 0, sem área de trabalho), então a janela do agente nunca aparecia. Além disso, o `instalar.bat` deixou de criar o `venv` (o agente morria sem `websockets`/`psutil`) e usava o Python e a pasta do perfil do admin, que o `cliente` não lê.

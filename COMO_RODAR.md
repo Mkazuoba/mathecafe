@@ -77,7 +77,10 @@ Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.ba
 2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;
 3. grava `agente.cfg` e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e o auto-update);
 4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
-5. cadastra a estação no servidor.
+5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha (`politicas_cliente.ps1`), que aparecem no Ctrl+Alt+Del. Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
+6. cadastra a estação no servidor.
+
+**Atualizar uma estação**: rode o `instalar.bat` de novo (com os arquivos novos). Ele substitui tudo e mantém o usuário.
 
 Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\MatheCafe\desinstalar.bat` como administrador (remove a tarefa e o autologin).
 
@@ -87,7 +90,11 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - O nome da estação precisa ser exatamente o cadastrado no Mapa.
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
-- **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online).
+- **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online). É a única saída do agente: Esc e fechar a janela só funcionam nela.
+- **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão o cliente alterna entre os apps (Alt+Tab, Win). Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
+- **Estação travada sem servidor** (não dá para entrar em manutenção): Ctrl+Alt+Del → Sair e entre com a conta de admin segurando **Shift** para o autologin não entrar de novo.
+- **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
+- Erros fatais do agente ficam em `C:\MatheCafe\agente_erro.log`.
 
 ## 5. Testes automáticos
 

@@ -118,7 +118,7 @@ echo ============================================================
 echo.
 
 :: ---- 1. Criar usuario cliente ----
-echo [1/6] Criando usuario Windows "cliente"...
+echo [1/7] Criando usuario Windows "cliente"...
 net user cliente >nul 2>&1
 if %errorlevel%==0 (
     echo       Usuario ja existe. Atualizando senha...
@@ -140,7 +140,7 @@ net localgroup Administradores cliente /delete >nul 2>&1
 net localgroup Administrators cliente /delete >nul 2>&1
 
 :: ---- 2. Configurar autologin ----
-echo [2/6] Configurando autologin...
+echo [2/7] Configurando autologin...
 set WINLOGON=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
 reg add "%WINLOGON%" /v AutoAdminLogon    /t REG_SZ /d "1"          /f >nul
 reg add "%WINLOGON%" /v DefaultUserName   /t REG_SZ /d "cliente"    /f >nul
@@ -149,7 +149,7 @@ reg add "%WINLOGON%" /v DefaultDomainName /t REG_SZ /d "."          /f >nul
 echo       Autologin configurado.
 
 :: ---- 3. Copiar o agente e instalar dependencias ----
-echo [3/6] Copiando o agente para %DESTINO% e instalando dependencias...
+echo [3/7] Copiando o agente para %DESTINO% e instalando dependencias...
 if not exist "%DESTINO%" mkdir "%DESTINO%"
 :: Reinstalacao: fecha o agente que esteja rodando de %DESTINO% (prende os arquivos)
 powershell -NoProfile -Command "Get-Process | Where-Object { $_.Path -like '%DESTINO%\*' } | Stop-Process -Force" >nul 2>&1
@@ -163,7 +163,7 @@ if defined COPIAR_PY (
     set PYTHON="%DESTINO%\python\python.exe"
 )
 if /i not "%ORIGEM%"=="%DESTINO%\" (
-    for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 desinstalar.bat) do (
+    for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 politicas_cliente.ps1 desinstalar.bat) do (
         copy /y "%ORIGEM%%%f" "%DESTINO%\" >nul
     )
 )
@@ -184,7 +184,7 @@ if !errorlevel! neq 0 (
 echo       Agente e dependencias instalados.
 
 :: ---- 4. Gravar agente.cfg e permissoes ----
-echo [4/6] Salvando configuracao do agente...
+echo [4/7] Salvando configuracao do agente...
 (
     echo # MatheCafe - configuracao da estacao ^(gerado automaticamente^)
     echo SERVIDOR=ws://!SERVIDOR!
@@ -196,7 +196,7 @@ icacls "%DESTINO%" /grant cliente:(OI)(CI)M /T /Q >nul
 echo       agente.cfg salvo em %DESTINO%
 
 :: ---- 5. Criar tarefa agendada ----
-echo [5/6] Criando tarefa agendada...
+echo [5/7] Criando tarefa agendada...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\registrar_tarefa.ps1" -Pasta "%DESTINO%"
 if !errorlevel! neq 0 (
     echo ERRO: Nao foi possivel criar a tarefa agendada.
@@ -205,8 +205,20 @@ if !errorlevel! neq 0 (
 )
 echo       O agente abre sozinho quando o "cliente" entrar no Windows.
 
-:: ---- 6. Registrar estacao no servidor ----
-echo [6/6] Registrando estacao "%ESTACAO%" no servidor...
+:: ---- 6. Politicas do cliente ----
+:: Ctrl+Alt+Del nao passa pelo agente: desliga Gerenciador de Tarefas,
+:: Bloquear e Alterar senha no perfil do "cliente"
+echo [6/7] Bloqueando o Gerenciador de Tarefas para o "cliente"...
+set MC_SENHA=!SENHA_CLIENTE!
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\politicas_cliente.ps1"
+if !errorlevel! neq 0 (
+    echo       AVISO: Nao foi possivel gravar as politicas. Rode o instalar.bat de novo
+    echo       depois que o "cliente" entrar no Windows uma vez.
+)
+set MC_SENHA=
+
+:: ---- 7. Registrar estacao no servidor ----
+echo [7/7] Registrando estacao "%ESTACAO%" no servidor...
 
 :: Obter token de admin
 set TOKEN_FILE=%TEMP%\mc_token.json

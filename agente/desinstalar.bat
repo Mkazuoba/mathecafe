@@ -1,6 +1,7 @@
 @echo off
 :: MatheCafe - Remove o inicio automatico do agente e o autologin.
 :: O usuario "cliente" e a pasta C:\MatheCafe sao mantidos (apague a mao se quiser).
+:: As politicas do cliente (sem Gerenciador de Tarefas) somem junto com o usuario.
 :: Execute como Administrador.
 
 net session >nul 2>&1

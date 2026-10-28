@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.5.3"
+VERSAO = "1.6.0"
 
 import asyncio
 import json
@@ -32,9 +32,60 @@ import subprocess
 import ctypes
 from datetime import datetime
 from io import BytesIO
+import urllib.parse
 import urllib.request
+import sys
+import traceback
 import tkinter as tk
 from tkinter import font as tkfont, scrolledtext, simpledialog
+
+# Com pythonw (tarefa agendada) não há console: qualquer erro fatal vai para
+# agente_erro.log, ao lado deste arquivo, e aparece numa janela.
+ARQUIVO_ERRO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_erro.log")
+
+
+def registrar_erro(tipo, valor, tb, mostrar=True):
+    texto = "".join(traceback.format_exception(tipo, valor, tb))
+    try:
+        with open(ARQUIVO_ERRO, "a", encoding="utf-8") as f:
+            f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n{texto}")
+    except OSError:
+        pass
+    if not mostrar:
+        return
+    try:
+        from tkinter import messagebox
+        messagebox.showerror("MatheCafe - erro no agente",
+                             f"{valor}\n\nDetalhes em:\n{ARQUIVO_ERRO}")
+    except Exception:
+        pass
+
+
+sys.excepthook = registrar_erro
+
+
+def servidor_na_rede_local(url: str) -> bool:
+    """localhost, nome sem ponto ou IP privado (10.x, 172.16-31.x, 192.168.x)."""
+    import ipaddress
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host == "localhost" or "." not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False  # nome de domínio, ex.: mathecafe.onrender.com
+    return ip.is_private or ip.is_loopback
+
+
+# O Windows aplica o proxy do usuário a tudo, inclusive a IPs internos: o
+# usuário "cliente" da rede da biblioteca nunca chegava ao servidor.
+_SEM_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def abrir_url(url, timeout):
+    if servidor_na_rede_local(url):
+        return _SEM_PROXY.open(url, timeout=timeout)
+    return urllib.request.urlopen(url, timeout=timeout)
 
 import websockets
 import psutil
@@ -50,7 +101,7 @@ def carregar_imagem_url(url, largura=160, altura=140):
     if not PIL_AVAILABLE:
         return None
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:
+        with abrir_url(url, timeout=5) as response:
             data = response.read()
         img = Image.open(BytesIO(data))
         img = img.resize((largura, altura), Image.LANCZOS)
@@ -80,6 +131,79 @@ PROCESSOS_SEMPRE_BLOQUEADOS = {
     "mshta.exe", "wscript.exe", "cscript.exe",
     "regedit.exe", "taskmgr.exe",
 }
+
+# Encerrados também na tela de login (fora do modo manutenção)
+PROCESSOS_BLOQUEADOS_NO_LOGIN = {"taskmgr.exe"}
+
+
+# ── Bloqueio de atalhos do Windows ───────────────────────────────────────────
+VK_TAB, VK_ESCAPE, VK_F4, VK_LWIN, VK_RWIN = 0x09, 0x1B, 0x73, 0x5B, 0x5C
+VK_SHIFT, VK_CONTROL = 0x10, 0x11
+
+
+class BloqueioTeclado:
+    """Hook de teclado de baixo nível (WH_KEYBOARD_LL): engole os atalhos que
+    tiram o cliente do agente (Win, Alt+Tab, Ctrl+Shift+Esc...). Não precisa de
+    admin. Ctrl+Alt+Del não passa por aqui; esse fica com as políticas do
+    usuário "cliente" gravadas pelo instalar.bat.
+
+    Roda numa thread com loop de mensagens próprio: se o callback demorar
+    (Tkinter ocupado), o Windows desliga o hook sem avisar.
+    """
+
+    def __init__(self, deve_bloquear):
+        # deve_bloquear(vk, alt, ctrl, shift) -> bool
+        self.deve_bloquear = deve_bloquear
+        self.ativo = False
+        try:
+            from ctypes import wintypes
+            self._wt = wintypes
+            self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+            self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        except (AttributeError, OSError):
+            return  # fora do Windows
+
+        class KBDLLHOOKSTRUCT(ctypes.Structure):
+            _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
+                        ("dwExtraInfo", ctypes.c_size_t)]
+        self._KBD = KBDLLHOOKSTRUCT
+
+        lresult = ctypes.c_ssize_t
+        self._HOOKPROC = ctypes.WINFUNCTYPE(lresult, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+        u = self._user32
+        u.SetWindowsHookExW.argtypes = [ctypes.c_int, self._HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+        u.SetWindowsHookExW.restype = wintypes.HHOOK
+        u.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+        u.CallNextHookEx.restype = lresult
+        u.GetAsyncKeyState.restype = ctypes.c_short
+        self._kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        # referência guardada: se o callback for coletado, o processo cai
+        self._proc = self._HOOKPROC(self._callback)
+        threading.Thread(target=self._thread, daemon=True).start()
+
+    def _callback(self, n_code, wparam, lparam):
+        if n_code == 0:
+            try:
+                k = ctypes.cast(lparam, ctypes.POINTER(self._KBD)).contents
+                alt = bool(k.flags & 0x20)  # LLKHF_ALTDOWN
+                ctrl = bool(self._user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+                shift = bool(self._user32.GetAsyncKeyState(VK_SHIFT) & 0x8000)
+                if self.deve_bloquear(k.vkCode, alt, ctrl, shift):
+                    return 1
+            except Exception:
+                pass  # nunca derrubar o teclado do PC por um erro aqui
+        return self._user32.CallNextHookEx(None, n_code, wparam, lparam)
+
+    def _thread(self):
+        hook = self._user32.SetWindowsHookExW(13, self._proc, self._kernel32.GetModuleHandleW(None), 0)
+        if not hook:
+            return
+        self.ativo = True
+        msg = self._wt.MSG()
+        while self._user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            self._user32.TranslateMessage(ctypes.byref(msg))
+            self._user32.DispatchMessageW(ctypes.byref(msg))
 
 
 class AgenteApp:
@@ -131,27 +255,40 @@ class AgenteApp:
         self._start_ws_thread()
 
         # Atalhos
+        self._teclado = BloqueioTeclado(self._tecla_bloqueada)
         self.root.bind("<Escape>", self._tentar_esc)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
 
         self.root.after(100, self._processar_fila)
-        self.root.after(500, self._verificar_privilegios)
         self.root.after(1000, self._atualizar_countdown)
         self.root.after(3000, self._verificar_processos)
 
     # ── Controle de janela ────────────────────────────────────────────────────
     def _tentar_fechar(self):
-        """Bloqueia fechamento durante sessão ativa fora do modo manutenção."""
-        if self.sessao_ativa and not self.modo_manutencao_ativo:
-            return  # ignora — não fecha
-        self.root.destroy()
+        """Fechar (X, Alt+F4) só funciona no modo manutenção."""
+        if self.modo_manutencao_ativo:
+            self.root.destroy()
 
     def _tentar_esc(self, event=None):
-        """ESC só sai da tela cheia fora de sessão ativa ou em manutenção."""
-        if self.sessao_ativa and not self.modo_manutencao_ativo:
-            return  # bloqueado durante sessão
-        self.root.attributes("-fullscreen", False)
+        """ESC só sai da tela cheia no modo manutenção."""
+        if self.modo_manutencao_ativo:
+            self.root.attributes("-fullscreen", False)
+
+    def _tecla_bloqueada(self, vk, alt, ctrl, shift):
+        """Chamado pelo hook de teclado (outra thread): True engole a tecla."""
+        if self.modo_manutencao_ativo:
+            return False
+        if vk == VK_ESCAPE and ctrl and shift:
+            return True  # Gerenciador de Tarefas
+        if self.sessao_ativa:
+            return False  # na sessão o cliente alterna entre os apps
+        # Tela de login: nada tira o cliente do agente
+        if vk in (VK_LWIN, VK_RWIN):
+            return True
+        if vk == VK_ESCAPE and ctrl:
+            return True  # Ctrl+Esc abre o Iniciar
+        return alt and vk in (VK_TAB, VK_ESCAPE, VK_F4)
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -292,15 +429,32 @@ class AgenteApp:
         self.loop.run_until_complete(self._ws_loop())
 
     async def _ws_loop(self):
-        url = f"{self.servidor}/ws/estacao/{self.estacao}"
+        # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
+        url = f"{self.servidor}/ws/estacao/{urllib.parse.quote(self.estacao)}"
+        # Servidor na rede interna: conexão direta. O websockets usa o proxy do
+        # Windows por padrão, e redes com proxy desviam até IPs internos.
+        proxy = None if servidor_na_rede_local(url) else True
+        self.incoming.put({"evento": "_info", "dados": {
+            "msg": f"Conectando a {url}" + (" (direto, sem proxy)" if proxy is None else "")}})
         while True:
             try:
-                async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                    self.ws = ws
-                    self.conectado = True
-                    self.incoming.put({"evento": "_conectado"})
+                async with websockets.connect(url, ping_interval=20, ping_timeout=20, proxy=proxy) as ws:
+                    # Só fica "online" quando o servidor responder: uma estação
+                    # não cadastrada é fechada antes do pong
+                    await ws.send(json.dumps({"evento": "ping"}))
                     async for raw in ws:
+                        if not self.conectado:
+                            self.ws = ws
+                            self.conectado = True
+                            self.incoming.put({"evento": "_conectado"})
                         self.incoming.put(json.loads(raw))
+            except websockets.exceptions.ConnectionClosed as e:
+                if e.rcvd and e.rcvd.code == 4004:
+                    self.incoming.put({"evento": "_erro", "dados": {"nao_cadastrada": True, "msg": (
+                        f"Estacao '{self.estacao}' nao esta cadastrada no servidor. "
+                        "Cadastre no painel (Mapa -> Modo configuracao) com esse nome exato.")}})
+                else:
+                    self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
             except Exception as e:
                 self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
 
@@ -343,8 +497,13 @@ class AgenteApp:
                 self._log("Conexao perdida durante sessao - retornando ao login")
                 self._voltar_login()
 
+        elif evento == "_info":
+            self._log(dados.get("msg", ""))
+
         elif evento == "_erro":
             self._log(f"Erro de conexao: {dados.get('msg')}")
+            if dados.get("nao_cadastrada"):
+                self.lbl_login_erro.config(text=dados["msg"], wraplength=340)
 
         elif evento == "login_resultado":
             self._log(f"<- login_resultado: {dados}")
@@ -821,14 +980,6 @@ class AgenteApp:
         self.frame_log.pack(fill="both", expand=False)
 
     # ── Manutenção admin ─────────────────────────────────────────────────────
-    def _verificar_privilegios(self):
-        try:
-            if not ctypes.windll.shell32.IsUserAnAdmin():
-                self._log("AVISO: rodando sem privilegios de admin.")
-                self._log("  Bloqueio de processos pode nao funcionar.")
-        except Exception:
-            pass
-
     def _abrir_prompt_admin(self, event=None):
         """Abre o prompt de manutencao. Credenciais validadas pelo servidor."""
         if self.modo_manutencao_ativo:
@@ -965,6 +1116,15 @@ class AgenteApp:
 
     # ── Whitelist de processos ────────────────────────────────────────────────
     def _verificar_processos(self):
+        if not self.sessao_ativa and not self.modo_manutencao_ativo:
+            for proc in psutil.process_iter(["name"]):
+                try:
+                    nome = (proc.info["name"] or "").lower()
+                    if nome in PROCESSOS_BLOQUEADOS_NO_LOGIN:
+                        proc.kill()
+                        self._log(f"Bloqueado (tela de login): {nome}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
         if self.sessao_ativa:
             pid_atual = os.getpid()
             for proc in psutil.process_iter(["pid", "name"]):
@@ -1028,7 +1188,7 @@ def verificar_update(servidor_http: str) -> bool:
     try:
         url_versao = f"{servidor_http}/api/agente/versao"
         print(f"Verificando update em {url_versao}...")
-        with urllib.request.urlopen(url_versao, timeout=5) as r:
+        with abrir_url(url_versao, timeout=5) as r:
             dados = _json.loads(r.read())
         versao_servidor = dados.get("versao", "0.0.0")
         print(f"Versao local: {VERSAO} | Versao servidor: {versao_servidor}")
@@ -1048,7 +1208,7 @@ def verificar_update(servidor_http: str) -> bool:
         caminho_atual = os.path.abspath(__file__)
         caminho_novo = caminho_atual + ".novo"
 
-        with urllib.request.urlopen(url_download, timeout=30) as r:
+        with abrir_url(url_download, timeout=30) as r:
             conteudo = r.read()
 
         with open(caminho_novo, "wb") as f:
@@ -1142,6 +1302,8 @@ def main():
     verificar_update(servidor_http)  # reinicia automaticamente se houver update
 
     root = tk.Tk()
+    # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
+    root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
     app = AgenteApp(root, servidor, estacao)
     root.mainloop()
 
