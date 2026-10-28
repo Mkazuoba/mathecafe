@@ -27,3 +27,66 @@ Também vale conferir
 Painel: a estação aparece online no painel.
 Bloqueio: o bloqueio fecha os programas que não estão na lista de permitidos.
 Auto-update: depois de uma atualização, o agente reabre normalmente. Isso confirma que o cliente consegue gravar em C:\MatheCafe.
+
+
+
+============================================================
+  MatheCafe - Instalador do Agente
+============================================================
+
+Este instalador vai:
+  1. Criar o usuario Windows "cliente" (autologin)
+  2. Copiar o agente para C:\MatheCafe e instalar as dependencias
+  3. Configurar o agente para abrir sozinho no login do "cliente"
+  4. Registrar esta estacao no servidor
+
+Rode como Administrador. Se ainda nao fez isso, feche e
+clique com botao direito -> Executar como administrador.
+
+ERRO: o Python encontrado esta instalado so para este usuario:
+       C:\Users\MatheusKazuo\AppData\Local\Python\pythoncore-3.14-64
+O usuario "cliente" nao tem acesso a essa pasta.
+
+Reinstale o Python para todos os usuarios: no instalador do python.org
+escolha "Customize installation" e marque "Install Python for all users"
+(fica em C:\Program Files\Python3xx). Ou, num terminal de administrador:
+    winget install -e --id Python.Python.3.13 --scope machine
+Pressione qualquer tecla para continuar. . .
+
+
+Pasta: \
+Nome do host:                                            BSP-TI-03
+Nome da tarefa:                                          \MatheCafe-Agente
+Hora da próxima execução:                                N/A
+Status:                                                  Pronto
+Modo de Logon:                                           Interativo/segundo plano
+Horário da última execução:                              30/11/1999 00:00:00
+Último resultado:                                        267011
+Autor:                                                   AzureAD\MatheusKazuo
+Tarefa a ser executada:                                  "python.exe" "C:\Users\MatheusKazuo\Documents\GitHub\mathecafe\agente\agente.py"
+Iniciar em:                                              N/A
+Comentário:                                              N/A
+Estado de tarefa agendada:                               Habilitado
+Tempo Ocioso:                                            Desativado
+Gerenciamento de Energia:                                Parar se estiver usando baterias, Não iniciar se estiver usando baterias
+Executar como Usuário:                                   cliente
+Excluir tarefa se não for reagendada:                    Desativado
+Interromper tarefa se for executada X horas e X minutos: 72:00:00
+Agendar:                                                 O agendamento de dados não está disponível neste formato.
+Tipo de Agendamento:                                     No logon
+Hora de início:                                          N/A
+Data de início:                                          N/A
+Data de término:                                         N/A
+Dias:                                                    N/A
+Meses:                                                   N/A
+Repetir: a cada:                                         N/A
+Repetir: até: horário:                                   N/A
+Repetir: até: duração:                                   N/A
+Repetir: parar se ainda estiver em execução:             N/A
+
+C:\Users\MatheusKazuo>
+
+C:\Users\MatheusKazuo>C:\MatheCafe\venv\Scripts\python.exe C:\MatheCafe\agente.py
+O sistema não pode encontrar o caminho especificado.
+
+C:\Users\MatheusKazuo>
