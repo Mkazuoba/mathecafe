@@ -29,64 +29,36 @@ Bloqueio: o bloqueio fecha os programas que não estão na lista de permitidos.
 Auto-update: depois de uma atualização, o agente reabre normalmente. Isso confirma que o cliente consegue gravar em C:\MatheCafe.
 
 
+1. Instalação (como administrador)
+Baixe a pasta agente/ atualizada (git pull ou zip novo).
+Clique com o botão direito no instalar.bat → Executar como administrador.
+Deve aparecer: “Python encontrado” e “será copiado para C:\MatheCafe\python”.
+Deve terminar: as etapas [1/6] a [6/6] sem nenhum “ERRO” e com “Instalacao concluida!”.
+Confira: a pasta C:\MatheCafe existe e tem agente.py, agente.cfg, python\ e venv\.
+2. Início automático (o objetivo principal)
+Reinicie o PC.
+Deve acontecer: o Windows entra sozinho como cliente, sem pedir senha.
+Deve acontecer: uns 5 segundos depois, o agente abre em tela cheia.
+No painel: a estação aparece online no Mapa.
+3. Uso normal
+Libere um cliente no painel e faça login com ele na estação.
+Deve acontecer: a sessão começa e o tempo começa a contar.
+Abra um app permitido: ele abre.
+Abra algo que não está na lista (o Bloco de Notas, por exemplo): ele é fechado sozinho.
+Encerre a sessão pelo painel: a estação volta para a tela de login.
+4. Recuperação
+Agente fechado à força: abra o Gerenciador de Tarefas, encerre o pythonw.exe e espere cerca de 1 minuto. O agente deve reabrir sozinho.
+Queda da rede: desligue o servidor e ligue de novo. O agente deve reconectar e a estação volta a ficar online.
+5. Auto-update (pode ficar para depois)
+Esse teste só faz sentido quando houver uma versão nova do agente publicada no servidor.
+Deve acontecer: o agente baixa a versão nova e reabre sozinho. Isso confirma que o cliente consegue gravar em C:\MatheCafe.
+Se algo falhar
 
-============================================================
-  MatheCafe - Instalador do Agente
-============================================================
+Entre como administrador (para sair do autologin, segure Shift ao reiniciar ou use o modo manutenção) e me mande o resultado destes dois comandos:
 
-Este instalador vai:
-  1. Criar o usuario Windows "cliente" (autologin)
-  2. Copiar o agente para C:\MatheCafe e instalar as dependencias
-  3. Configurar o agente para abrir sozinho no login do "cliente"
-  4. Registrar esta estacao no servidor
+schtasks /query /tn MatheCafe-Agente /v /fo list
+C:\MatheCafe\venv\Scripts\python.exe C:\MatheCafe\agente.py
 
-Rode como Administrador. Se ainda nao fez isso, feche e
-clique com botao direito -> Executar como administrador.
+O primeiro mostra se a tarefa rodou e qual erro deu. O segundo abre o agente com o console aberto, para aparecer o erro.
 
-ERRO: o Python encontrado esta instalado so para este usuario:
-       C:\Users\MatheusKazuo\AppData\Local\Python\pythoncore-3.14-64
-O usuario "cliente" nao tem acesso a essa pasta.
-
-Reinstale o Python para todos os usuarios: no instalador do python.org
-escolha "Customize installation" e marque "Install Python for all users"
-(fica em C:\Program Files\Python3xx). Ou, num terminal de administrador:
-    winget install -e --id Python.Python.3.13 --scope machine
-Pressione qualquer tecla para continuar. . .
-
-
-Pasta: \
-Nome do host:                                            BSP-TI-03
-Nome da tarefa:                                          \MatheCafe-Agente
-Hora da próxima execução:                                N/A
-Status:                                                  Pronto
-Modo de Logon:                                           Interativo/segundo plano
-Horário da última execução:                              30/11/1999 00:00:00
-Último resultado:                                        267011
-Autor:                                                   AzureAD\MatheusKazuo
-Tarefa a ser executada:                                  "python.exe" "C:\Users\MatheusKazuo\Documents\GitHub\mathecafe\agente\agente.py"
-Iniciar em:                                              N/A
-Comentário:                                              N/A
-Estado de tarefa agendada:                               Habilitado
-Tempo Ocioso:                                            Desativado
-Gerenciamento de Energia:                                Parar se estiver usando baterias, Não iniciar se estiver usando baterias
-Executar como Usuário:                                   cliente
-Excluir tarefa se não for reagendada:                    Desativado
-Interromper tarefa se for executada X horas e X minutos: 72:00:00
-Agendar:                                                 O agendamento de dados não está disponível neste formato.
-Tipo de Agendamento:                                     No logon
-Hora de início:                                          N/A
-Data de início:                                          N/A
-Data de término:                                         N/A
-Dias:                                                    N/A
-Meses:                                                   N/A
-Repetir: a cada:                                         N/A
-Repetir: até: horário:                                   N/A
-Repetir: até: duração:                                   N/A
-Repetir: parar se ainda estiver em execução:             N/A
-
-C:\Users\MatheusKazuo>
-
-C:\Users\MatheusKazuo>C:\MatheCafe\venv\Scripts\python.exe C:\MatheCafe\agente.py
-O sistema não pode encontrar o caminho especificado.
-
-C:\Users\MatheusKazuo>
+Os passos 1 e 2 são os que validam a correção de hoje. Os outros confirmam que o agente funciona rodando como cliente, sem admin, o que também é novidade.
