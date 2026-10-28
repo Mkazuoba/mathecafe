@@ -1,0 +1,29 @@
+iz o push: o commit eda6b67 já está no GitHub e o main local está igual ao origin/main. Pode testar.
+
+Antes de instalar
+
+Na estação, o Python precisa estar instalado para todos os usuários. Se não estiver, rode num terminal de administrador:
+winget install -e --id Python.Python.3.13 --scope machine
+Baixe o projeto pelo git pull ou pelo zip e copie a pasta agente/ para a estação.
+
+Instalação
+
+Clique com o botão direito no instalar.bat → Executar como administrador.
+As 6 etapas devem terminar com “Instalacao concluida!”.
+Reinicie o PC. Ele deve entrar sozinho como cliente e, uns 5 segundos depois, o agente abre em tela cheia.
+
+Se o agente não abrir, entre como admin e me mande o resultado destes comandos:
+
+schtasks /query /tn MatheCafe-Agente /v /fo list
+
+O “Último resultado” indica se a tarefa rodou. 0x41303 quer dizer que nunca rodou; um código de erro quer dizer que o Python falhou.
+
+C:\MatheCafe\venv\Scripts\python.exe C:\MatheCafe\agente.py
+
+Esse roda o agente com o console aberto, para aparecer o erro.
+
+Também vale conferir
+
+Painel: a estação aparece online no painel.
+Bloqueio: o bloqueio fecha os programas que não estão na lista de permitidos.
+Auto-update: depois de uma atualização, o agente reabre normalmente. Isso confirma que o cliente consegue gravar em C:\MatheCafe.
