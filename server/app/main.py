@@ -243,6 +243,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
             elif evento == "sessao_encerrada":
                 sessao_id = dados.get("sessao_id")
                 motivo = dados.get("motivo", "cliente")
+                if motivo == "cliente_encerrou":  # botao do agente 1.5.2
+                    motivo = "cliente"
                 consumido = dados.get("tempo_consumido_segundos", 0)
 
                 sessao = db.query(Sessao).filter(

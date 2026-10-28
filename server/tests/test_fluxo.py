@@ -15,12 +15,14 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/teste.db"
 os.environ["ADMIN_LOGIN"] = "admin.teste"
 os.environ["ADMIN_SENHA"] = "senha-admin-teste"
 
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database import SessionLocal
-from app.models import Usuario
+from app.models import Usuario, Sessao
 from app.security import hash_senha
 from app.websocket_manager import manager
 
@@ -70,9 +72,15 @@ def _logar_no_pc(ws, cliente):
     return ws.receive_json()["dados"]
 
 
-def _encerrar_pelo_pc(ws, sessao_id, consumido):
+def _encerrar_pelo_pc(ws, sessao_id, consumido, motivo="cliente"):
+    # O servidor calcula o consumo pelo proprio relogio: recua o inicio da sessao
+    db = SessionLocal()
+    sessao = db.get(Sessao, sessao_id)
+    sessao.iniciada_em = datetime.utcnow() - timedelta(seconds=consumido)
+    db.commit()
+    db.close()
     ws.send_json({"evento": "sessao_encerrada", "sessao_id": sessao_id,
-                  "motivo": "cliente", "tempo_consumido_segundos": consumido})
+                  "motivo": motivo, "tempo_consumido_segundos": consumido})
     ws.send_json({"evento": "ping"})
     assert ws.receive_json()["evento"] == "pong"
 
@@ -238,7 +246,7 @@ def test_estacao_nao_aparece_desligada_logo_apos_cair(c, admin, cenario):
 def test_manutencao_aceita_operador_e_recusa_cliente(c, operador, cenario):
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
         ws.send_json({"evento": "validar_manutencao", "login": "operador.teste", "senha": "senha-operador"})
-        assert ws.receive_json() == {"evento": "manutencao_resultado", "dados": {"ok": True}}
+        assert ws.receive_json() == {"evento": "validar_manutencao_resultado", "dados": {"ok": True}}
 
         ws.send_json({"evento": "validar_manutencao", "login": cenario["cliente"]["login"],
                       "senha": cenario["cliente"]["senha"]})
@@ -246,6 +254,27 @@ def test_manutencao_aceita_operador_e_recusa_cliente(c, operador, cenario):
 
         ws.send_json({"evento": "validar_manutencao", "login": "operador.teste", "senha": "errada"})
         assert ws.receive_json()["dados"]["ok"] is False
+
+
+def test_login_de_operador_no_pc_entra_em_manutencao(c, operador, cenario):
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        dados = _logar_no_pc(ws, {"login": "operador.teste", "senha": "senha-operador"})
+        assert dados == {"ok": True, "manutencao": True, "admin_nome": "Operador"}
+
+        dados = _logar_no_pc(ws, {"login": "operador.teste", "senha": "errada"})
+        assert dados["ok"] is False
+
+
+def test_cliente_encerra_pelo_botao_e_mantem_saldo(c, admin, cenario):
+    # Agente 1.5.2 manda motivo "cliente_encerrou"; o saldo nao pode zerar
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 600, motivo="cliente_encerrou")
+
+    saldo = c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - (dados["tempo_segundos"] - 600)) <= 1
 
 
 # ── Painel web ────────────────────────────────────────────────────────────────

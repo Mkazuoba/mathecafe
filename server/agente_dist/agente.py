@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.5.2"
+VERSAO = "1.5.3"
 
 import asyncio
 import json
@@ -186,9 +186,10 @@ class AgenteApp:
         self.frame_login = tk.Frame(self.root, bg=bg)
 
         # container centralizado de largura fixa
-        _form = tk.Frame(self.frame_login, bg=bg, width=360)
+        _form = tk.Frame(self.frame_login, bg=bg)
         _form.pack(expand=True)
-        _form.pack_propagate(False)
+        # espacador fixa a largura; pack_propagate(False) sem height colapsava o form em 1px
+        tk.Frame(_form, bg=bg, width=360, height=0).pack()
 
         tk.Label(_form, text="Faca login para iniciar sua sessao",
                  font=normal_font, fg=text, bg=bg).pack(pady=(40, 24))
@@ -530,7 +531,7 @@ class AgenteApp:
         import tkinter.messagebox as _mb
         if _mb.askyesno("Encerrar sessao", "Deseja encerrar sua sessao agora?", parent=self.root):
             self._log("Cliente encerrou a sessao pelo botao")
-            self._enviar({"evento": "sessao_encerrada", "sessao_id": self.sessao_id, "motivo": "cliente_encerrou"})
+            self._enviar({"evento": "sessao_encerrada", "sessao_id": self.sessao_id, "motivo": "cliente"})
             self._voltar_login()
             self._reiniciar_se_necessario()
 

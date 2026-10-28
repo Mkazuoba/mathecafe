@@ -144,7 +144,8 @@ schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
 
 schtasks /create /tn "%TASK_NAME%" ^
     /tr "\"%PYTHON%\" \"%AGENTE_PY%\"" ^
-    /sc onlogon /ru "cliente" /rp "!SENHA_CLIENTE!" ^
+    /sc onlogon /ru SYSTEM ^
+    /rl HIGHEST ^
     /delay 0000:05 ^
     /f >nul
 

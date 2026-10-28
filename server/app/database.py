@@ -7,16 +7,19 @@ from app.security import hash_senha
 
 settings = get_settings()
 
-# Resolve o caminho do banco sempre relativo a server/, independente de onde
+# Usa DATABASE_URL (PostgreSQL em producao, banco temporario nos testes).
+# SQLite com caminho relativo resolve a partir de server/, independente de onde
 # o uvicorn for iniciado. Usa forward slashes para compatibilidade no Windows.
 _base_server = Path(__file__).resolve().parent.parent  # server/
-_db_path = (_base_server / "cybercafe.db").resolve()
-_db_url = f"sqlite:///{_db_path.as_posix()}"
-print(f"Database: {_db_path}")
+_db_url = settings.DATABASE_URL
+_eh_sqlite = _db_url.startswith("sqlite")
+if _eh_sqlite and _db_url.startswith("sqlite:///") and not Path(_db_url[len("sqlite:///"):]).is_absolute():
+    _db_url = f"sqlite:///{(_base_server / _db_url[len('sqlite:///'):]).resolve().as_posix()}"
+print(f"Database: {_db_url if _eh_sqlite else _db_url.split('@')[-1]}")
 
 engine = create_engine(
     _db_url,
-    connect_args={"check_same_thread": False}
+    connect_args={"check_same_thread": False} if _eh_sqlite else {}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -30,6 +33,8 @@ def get_db():
 
 def _migrar_colunas_faltantes():
     """Migracao leve: adiciona colunas novas sem apagar dados existentes."""
+    if not _eh_sqlite:
+        return
     with engine.connect() as conn:
         cols = conn.execute(text("PRAGMA table_info(apps_permitidos)")).fetchall()
         nomes = [c[1] for c in cols]

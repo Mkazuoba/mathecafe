@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.5.2"
+VERSAO = "1.5.3"
 
 import asyncio
 import json
@@ -142,15 +142,16 @@ class AgenteApp:
 
     # ── Controle de janela ────────────────────────────────────────────────────
     def _tentar_fechar(self):
-        """Bloqueia fechamento sempre, exceto em modo manutenção."""
-        if self.modo_manutencao_ativo:
-            self.root.destroy()
-        # fora do modo manutencao: ignora completamente
+        """Bloqueia fechamento durante sessão ativa fora do modo manutenção."""
+        if self.sessao_ativa and not self.modo_manutencao_ativo:
+            return  # ignora — não fecha
+        self.root.destroy()
 
     def _tentar_esc(self, event=None):
-        """ESC bloqueado sempre, exceto em modo manutenção."""
-        if self.modo_manutencao_ativo:
-            self.root.attributes("-fullscreen", False)
+        """ESC só sai da tela cheia fora de sessão ativa ou em manutenção."""
+        if self.sessao_ativa and not self.modo_manutencao_ativo:
+            return  # bloqueado durante sessão
+        self.root.attributes("-fullscreen", False)
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -185,9 +186,10 @@ class AgenteApp:
         self.frame_login = tk.Frame(self.root, bg=bg)
 
         # container centralizado de largura fixa
-        _form = tk.Frame(self.frame_login, bg=bg, width=360)
+        _form = tk.Frame(self.frame_login, bg=bg)
         _form.pack(expand=True)
-        _form.pack_propagate(False)
+        # espacador fixa a largura; pack_propagate(False) sem height colapsava o form em 1px
+        tk.Frame(_form, bg=bg, width=360, height=0).pack()
 
         tk.Label(_form, text="Faca login para iniciar sua sessao",
                  font=normal_font, fg=text, bg=bg).pack(pady=(40, 24))
@@ -529,7 +531,7 @@ class AgenteApp:
         import tkinter.messagebox as _mb
         if _mb.askyesno("Encerrar sessao", "Deseja encerrar sua sessao agora?", parent=self.root):
             self._log("Cliente encerrou a sessao pelo botao")
-            self._enviar({"evento": "sessao_encerrada", "sessao_id": self.sessao_id, "motivo": "cliente_encerrou"})
+            self._enviar({"evento": "sessao_encerrada", "sessao_id": self.sessao_id, "motivo": "cliente"})
             self._voltar_login()
             self._reiniciar_se_necessario()
 
