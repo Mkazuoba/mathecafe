@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { IconAlertTriangle, IconCamera, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
@@ -998,6 +999,9 @@ function AbaHistorico({ estacao }: { estacao: string }) {
         </table>
         {!sessoes.length && <div className="px-3 py-6 text-center text-sm text-texto-fraco">Nenhuma sessao registrada</div>}
       </div>
+      <Link to={`/historicos?aba=estacao&estacao=${encodeURIComponent(estacao)}`} className="self-start text-sm text-destaque hover:underline">
+        Ver quais clientes já passaram por aqui →
+      </Link>
       {sessoes.length > 0 && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-texto-fraco">{sessoes.length} sessão(ões)</span>

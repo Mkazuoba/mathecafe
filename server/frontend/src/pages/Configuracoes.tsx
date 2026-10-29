@@ -4,12 +4,12 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, lerTempo } from "@/lib/tempo"
-import type { AppPermitido, Cliente, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
+import type { AppPermitido, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
-import { SeletorCliente } from "@/components/SeletorCliente"
+import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
 const SECOES = [
@@ -642,7 +642,7 @@ function SecaoRelatorios() {
   const { estacoes } = useDados()
   const [inicio, setInicio] = useState("")
   const [fim, setFim] = useState("")
-  const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [cliente, setCliente] = useState<ClienteResumo | null>(null)
   const [estacao, setEstacao] = useState("")
   const [gerando, setGerando] = useState(false)
 

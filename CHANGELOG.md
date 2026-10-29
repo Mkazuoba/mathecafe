@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-29 — Históricos por cliente e por estação (Ciclo 5)
+
+- **Nova tela Históricos** (menu lateral, admin e operador), com duas abas:
+  - **Por cliente**: quais estações ele já usou — quantas vezes, tempo total, primeira e última vez.
+  - **Por estação**: quais clientes já passaram por ela, com os mesmos números e quantos clientes diferentes.
+- Período (De/Até, em dias de Brasília), ordenação por coluna e exportação em CSV (ponto e vírgula, abre direto no Excel). Clicar numa linha abre o outro lado: do cliente para a estação e vice-versa. O endereço guarda a escolha, então dá para mandar o link.
+- Atalhos: "Ver quais estações ele já usou" no histórico do cliente (aba Clientes) e "Ver quais clientes já passaram por aqui" no histórico da estação (Painel).
+- API: `GET /api/relatorios/cliente/{id}` e `GET /api/relatorios/estacao/{nome}`, com `de` e `ate`.
+
 ## 2026-10-29 — Revisão: filtro de cliente do Relatório CSV (Ciclo 6, tarefa 6.1)
 
 - **O filtro de cliente do Relatório CSV estava sempre vazio**: usava a lista de clientes do contexto, que não é mais carregada. Agora é uma busca (`components/SeletorCliente.tsx`): digita, escolhe, e o "x" tira o filtro.

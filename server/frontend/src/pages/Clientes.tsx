@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { IconChevronDown, IconChevronUp, IconHistory, IconMessageCircle, IconPencil, IconSelector } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
@@ -400,6 +400,9 @@ function ModalHistoricoCliente({ cliente, aoFechar }: { cliente: Cliente; aoFech
               </table>
               {!sessoes.length && <Vazio>Nenhuma sessao registrada</Vazio>}
             </div>
+            <Link to={`/historicos?aba=cliente&cliente=${cliente.id}`} className="self-start text-sm text-destaque hover:underline">
+              Ver quais estações ele já usou →
+            </Link>
 
             {sessoes.length > 0 && (
               <div className="flex items-center justify-between border-t border-borda pt-3 text-sm">

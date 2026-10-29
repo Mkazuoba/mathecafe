@@ -35,7 +35,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `tempo_diario.py` | tempo de uso por dia de cada cliente: cota, reset à meia-noite de Brasília, reservar o tempo da sessão |
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
-| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios`, `agente` (auto-update) |
+| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `agente` (auto-update) |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
 | `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
@@ -48,7 +48,7 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 
 | Arquivo | Papel |
 |---|---|
-| `src/App.tsx` | rotas: `/login`, `/` (Painel), `/clientes`, `/mapa`, `/configuracoes` (só admin) |
+| `src/App.tsx` | rotas: `/login`, `/` (Painel), `/clientes`, `/mapa`, `/historicos`, `/configuracoes` (só admin) |
 | `src/lib/api.ts` | chamadas à API com o token; 401 leva de volta ao login |
 | `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens |
 | `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`) e os filtros, os mesmos no Painel e na aba Clientes |

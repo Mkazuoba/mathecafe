@@ -8,6 +8,7 @@ import Painel from "@/pages/Painel"
 import Clientes from "@/pages/Clientes"
 import Mapa from "@/pages/Mapa"
 import Configuracoes from "@/pages/Configuracoes"
+import Historicos from "@/pages/Historicos"
 
 function AreaLogada() {
   if (!Api.token()) return <Navigate to="/login" replace />
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/" element={<Painel />} />
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/mapa" element={<Mapa />} />
+            <Route path="/historicos" element={<Historicos />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

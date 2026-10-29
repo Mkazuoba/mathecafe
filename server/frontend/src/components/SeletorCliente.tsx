@@ -4,11 +4,13 @@ import { useBuscaClientes } from "@/lib/buscaClientes"
 import type { Cliente } from "@/lib/tipos"
 import { Input } from "@/components/ui/campos"
 
+export type ClienteResumo = Pick<Cliente, "id" | "login" | "nome">
+
 /** Escolher um cliente buscando no servidor (são ~43k, não cabem num select). */
 export function SeletorCliente({ id, valor, aoMudar, placeholder = "Todos — digite para buscar" }: {
   id?: string
-  valor: Cliente | null
-  aoMudar: (c: Cliente | null) => void
+  valor: ClienteResumo | null
+  aoMudar: (c: ClienteResumo | null) => void
   placeholder?: string
 }) {
   const [busca, setBusca] = useState("")

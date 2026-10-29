@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom"
 import {
   IconChevronsLeft,
   IconChevronsRight,
+  IconHistory,
   IconLayoutDashboard,
   IconMap,
   IconSettings,
@@ -17,6 +18,7 @@ const ITENS = [
   { para: "/", rotulo: "Painel", Icone: IconLayoutDashboard, soAdmin: false },
   { para: "/clientes", rotulo: "Clientes", Icone: IconUsers, soAdmin: false },
   { para: "/mapa", rotulo: "Mapa", Icone: IconMap, soAdmin: false },
+  { para: "/historicos", rotulo: "Históricos", Icone: IconHistory, soAdmin: false },
   { para: "/configuracoes", rotulo: "Configurações", Icone: IconSettings, soAdmin: true },
 ]
 

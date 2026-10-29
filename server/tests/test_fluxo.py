@@ -508,3 +508,54 @@ def test_manutencao_devolve_o_tempo(c, admin, cenario):
         dados = _logar_no_pc(ws, cenario["cliente"])
         _encerrar_pelo_pc(ws, dados["sessao_id"], 600, motivo="manutencao")
     assert c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"] == dados["tempo_segundos"] - 600
+
+
+# ── Historicos: maquinas de um cliente e clientes de uma maquina ─────────────
+
+def test_historico_por_cliente_e_por_estacao(c, admin, operador):
+    from app.models import Estacao
+    sufixo = next(_contador)
+    nomes = [f"HX-{sufixo}-A", f"HX-{sufixo}-B"]
+    for n in nomes:
+        assert c.post(f"/api/estacoes/?nome={n}", headers=admin).status_code == 200
+    ids = []
+    for i in (1, 2):
+        r = c.post("/api/clientes/", headers=admin,
+                   json={"login": f"hx{sufixo}{i}", "nome": f"Hist {i}", "senha": "x12345"})
+        ids.append(r.json()["id"])
+    db = SessionLocal()
+    est = {e.nome: e.id for e in db.query(Estacao).filter(Estacao.nome.in_(nomes))}
+    base = datetime(2026, 10, 20, 15, 0)  # 12:00 em Brasilia
+    for cliente, estacao, dia, minutos in [
+        (ids[0], nomes[0], 0, 30), (ids[0], nomes[0], 1, 60), (ids[0], nomes[1], 2, 10),
+        (ids[1], nomes[0], 2, 20),
+    ]:
+        inicio = base + timedelta(days=dia)
+        db.add(Sessao(cliente_id=cliente, estacao_id=est[estacao], tempo_total_segundos=7200,
+                      iniciada_em=inicio, encerrada_em=inicio + timedelta(minutes=minutos),
+                      tempo_consumido_segundos=minutos * 60, motivo_encerramento="cliente"))
+    db.commit()
+    db.close()
+
+    # Quais maquinas o cliente ja usou (operador tambem ve)
+    r = c.get(f"/api/relatorios/cliente/{ids[0]}", headers=operador)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["cliente"]["login"] == f"hx{sufixo}1"
+    assert d["sessoes"] == 3 and d["tempo_segundos"] == 100 * 60
+    assert [(e["estacao"], e["sessoes"], e["tempo_segundos"]) for e in d["itens"]] == [
+        (nomes[1], 1, 600), (nomes[0], 2, 5400)]  # mais recente primeiro
+    assert d["itens"][0]["ultima_vez"].startswith("2026-10-22")
+
+    # Quais clientes ja passaram pela maquina
+    d = c.get(f"/api/relatorios/estacao/{nomes[0]}", headers=operador).json()
+    assert d["sessoes"] == 3 and d["clientes"] == 2
+    assert [(x["login"], x["sessoes"]) for x in d["itens"]] == [(f"hx{sufixo}2", 1), (f"hx{sufixo}1", 2)]
+
+    # Periodo em dias de Brasilia: 21/10 a 21/10 pega so a sessao do meio
+    d = c.get(f"/api/relatorios/cliente/{ids[0]}", headers=admin,
+              params={"de": "2026-10-21", "ate": "2026-10-21"}).json()
+    assert d["sessoes"] == 1 and d["itens"][0]["tempo_segundos"] == 3600
+
+    assert c.get("/api/relatorios/cliente/999999", headers=admin).status_code == 404
+    assert c.get("/api/relatorios/estacao/nao-existe", headers=admin).status_code == 404
