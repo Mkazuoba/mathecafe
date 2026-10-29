@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { IconAlertTriangle, IconCamera, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCamera, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
-import type { Cliente, Estacao, Grupo } from "@/lib/tipos"
+import type { Cliente, Estacao, Grupo, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
-import { Campo, Input, Interruptor, MensagemErro } from "@/components/ui/campos"
+import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 
 import { Button } from "@/components/ui/button"
-import { COR_BORDA_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
+import { ROTULO_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
 
 interface SessaoHistorico {
   id: number
@@ -55,14 +55,8 @@ export default function Painel() {
         <Contador cor="bg-desligada" valor={contagem.desligada} rotulo="desligadas" />
         {contagem.manutencao > 0 && <Contador cor="bg-manutencao" valor={contagem.manutencao} rotulo="em manutenção" />}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[1fr_1.2fr_0.8fr] lg:overflow-hidden">
-        <Coluna titulo="Estações" total={estacoes.length}>
-          {estacoes.length ? (
-            estacoes.map((e) => <CartaoEstacao key={e.id} estacao={e} />)
-          ) : (
-            <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
-          )}
-        </Coluna>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[1.4fr_1fr_0.8fr] lg:overflow-hidden">
+        <ColunaEstacoes />
         <ColunaClientes aoEditarCliente={setEditandoCliente} aoNovoCliente={() => setNovoCliente(true)} />
         <ColunaFila total={fila.length} aoSoltarCliente={liberar} />
       </div>
@@ -112,78 +106,276 @@ function lerClienteArrastado(ev: React.DragEvent): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// Cartao da estacao (compacto) — clique abre a modal completa
+// Controle de sessões: tabela das estações, como no VSCyber — filtro por grupo,
+// ordenação por coluna e contagem por status. Clique abre a modal da estação.
 // ---------------------------------------------------------------------------
-function CartaoEstacao({ estacao: e }: { estacao: Estacao }) {
-  const { sessaoDaEstacao, agora } = useDados()
-  const { liberarDireto } = useAcoes()
-  const [alvo, setAlvo] = useState(false)
-  const [modalAberta, setModalAberta] = useState(false)
-  const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
-  const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
-  const aceitaCliente = e.status === "livre"
+type ColunaOrdem = "status" | "estacao" | "login" | "tempo"
+interface Ordem { coluna: ColunaOrdem; desc: boolean }
+interface LinhaTabela { estacao: Estacao; sessao: Sessao | undefined; restante: number }
+
+const SEM_GRUPO = "sem"
+const ORDEM_PADRAO: Ordem = { coluna: "status", desc: false }
+const ORDEM_STATUS: Record<StatusEstacao, number> = { desligada: 0, livre: 1, ocupada: 2, manutencao: 3 }
+const COR_TEXTO_STATUS: Record<StatusEstacao, string> = {
+  livre: "text-livre",
+  ocupada: "text-ocupada",
+  desligada: "text-desligada",
+  manutencao: "text-manutencao",
+}
+const ROTULO_PLURAL: Record<StatusEstacao, string> = {
+  desligada: "Desligadas",
+  livre: "Livres",
+  ocupada: "Ocupadas",
+  manutencao: "Em manutenção",
+}
+
+// Preferências do operador neste navegador (o storage pode estar bloqueado)
+function lerPreferencia(chave: string): string | null {
+  try {
+    return localStorage.getItem(chave)
+  } catch {
+    return null
+  }
+}
+function gravarPreferencia(chave: string, valor: string) {
+  try {
+    localStorage.setItem(chave, valor)
+  } catch {
+    /* sem storage: vale só até recarregar */
+  }
+}
+function lerOrdem(): Ordem {
+  try {
+    const o = JSON.parse(lerPreferencia("painel.ordem") ?? "")
+    if (["status", "estacao", "login", "tempo"].includes(o?.coluna)) return { coluna: o.coluna, desc: !!o.desc }
+  } catch {
+    /* padrão */
+  }
+  return ORDEM_PADRAO
+}
+
+// AD-2 antes de AD-10
+const compararNome = (a: string, b: string) => a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" })
+
+function compararLinhas(a: LinhaTabela, b: LinhaTabela, coluna: ColunaOrdem): number {
+  switch (coluna) {
+    case "status":
+      return ORDEM_STATUS[a.estacao.status] - ORDEM_STATUS[b.estacao.status]
+    case "estacao":
+      return 0
+    case "login": {
+      const la = a.sessao?.cliente_login ?? ""
+      const lb = b.sessao?.cliente_login ?? ""
+      if (!la || !lb) return la ? -1 : lb ? 1 : 0
+      return compararNome(la, lb)
+    }
+    case "tempo":
+      return a.restante - b.restante
+  }
+}
+
+function ColunaEstacoes() {
+  const { estacoes, grupos, sessaoDaEstacao, agora, carregado } = useDados()
+  const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
+  const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
+  const [abertaId, setAbertaId] = useState<number | null>(null)
+
+  // grupo apagado depois de escolhido: volta para "Todos"
+  const grupoEfetivo = grupo === SEM_GRUPO || grupos.some((g) => String(g.id) === grupo) ? grupo : ""
+
+  const linhas = useMemo(() => {
+    const filtradas = estacoes.filter((e) =>
+      grupoEfetivo === "" ? true : grupoEfetivo === SEM_GRUPO ? e.grupo_id == null : String(e.grupo_id) === grupoEfetivo,
+    )
+    const resultado: LinhaTabela[] = filtradas.map((e) => {
+      const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+      const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
+      return { estacao: e, sessao, restante }
+    })
+    const sinal = ordem.desc ? -1 : 1
+    return resultado.sort(
+      (a, b) => sinal * compararLinhas(a, b, ordem.coluna) || sinal * compararNome(a.estacao.nome, b.estacao.nome),
+    )
+  }, [estacoes, grupoEfetivo, ordem, sessaoDaEstacao, agora])
+
+  const contagem = useMemo(() => {
+    const c: Record<StatusEstacao, number> = { desligada: 0, livre: 0, ocupada: 0, manutencao: 0 }
+    for (const l of linhas) c[l.estacao.status]++
+    return c
+  }, [linhas])
+
+  function escolherGrupo(valor: string) {
+    setGrupo(valor)
+    gravarPreferencia("painel.grupo", valor)
+  }
+  function ordenar(coluna: ColunaOrdem) {
+    const nova = { coluna, desc: ordem.coluna === coluna ? !ordem.desc : false }
+    setOrdem(nova)
+    gravarPreferencia("painel.ordem", JSON.stringify(nova))
+  }
+
+  const aberta = abertaId != null ? estacoes.find((e) => e.id === abertaId) : undefined
+  const temSemGrupo = estacoes.some((e) => e.grupo_id == null)
 
   return (
-    <>
-      <div
-        role="button"
-        tabIndex={0}
-        title="Abrir painel da estação"
-        onClick={() => setModalAberta(true)}
-        onKeyDown={(ev) => ev.key === "Enter" && setModalAberta(true)}
-        className={cn(
-          "cursor-pointer rounded-lg border border-l-[3px] border-borda bg-superficie-2 px-3 py-2.5 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destaque",
-          COR_BORDA_STATUS[e.status],
-          alvo && "ring-2 ring-destaque",
-        )}
-        onDragOver={(ev) => {
-          if (aceitaCliente && ev.dataTransfer.types.includes(TIPO_ARRASTO)) {
-            ev.preventDefault()
-            setAlvo(true)
-          }
-        }}
-        onDragLeave={() => setAlvo(false)}
-        onDrop={(ev) => {
-          ev.preventDefault()
-          setAlvo(false)
-          const id = lerClienteArrastado(ev)
-          if (id && aceitaCliente) liberarDireto(e.nome, id)
-        }}
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-[0.9rem] font-semibold">{e.nome}</span>
-          <div className="flex items-center gap-1.5">
-            {e.online
-              ? <IconWifi size={13} className="text-livre" />
-              : <IconWifiOff size={13} className="text-texto-fraco" />}
-            <SeloStatus status={e.status} />
-          </div>
-        </div>
-        {sessao ? (
-          <div>
-            <div className="mb-0.5 flex items-center gap-1.5">
-              <span className="truncate text-sm text-texto-suave">{sessao.cliente_nome}</span>
-              {sessao.pausada && (
-                <span className="shrink-0 rounded bg-manutencao/20 px-1 py-0.5 text-[10px] font-bold uppercase text-manutencao">
-                  Pausada
-                </span>
-              )}
-            </div>
-            <div className={cn("text-lg font-bold tracking-wide tabular-nums", restante < 300 ? "text-perigo" : "text-ocupada")}>
-              {formatarTempo(restante)}
-            </div>
-          </div>
+    <section className="flex min-h-0 flex-col overflow-hidden border-r border-borda">
+      <div className="flex shrink-0 items-center gap-2 border-b border-borda bg-superficie-2 px-3.5 py-1.5">
+        <h2 className="text-xs font-semibold tracking-wider whitespace-nowrap text-texto-suave uppercase">Controle de sessões</h2>
+        <span className="rounded-full bg-destaque px-2 text-xs font-semibold text-white">{linhas.length}</span>
+        <Select
+          aria-label="Grupo de estações"
+          className="ml-auto h-8 w-auto max-w-[45%] py-0 text-sm"
+          value={grupoEfetivo}
+          onChange={(ev) => escolherGrupo(ev.target.value)}
+        >
+          <option value="">Todos os grupos</option>
+          {grupos.map((g) => (
+            <option key={g.id} value={String(g.id)}>
+              {g.nome}
+            </option>
+          ))}
+          {temSemGrupo && <option value={SEM_GRUPO}>Sem grupo</option>}
+        </Select>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {!carregado ? null : estacoes.length === 0 ? (
+          <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
+        ) : linhas.length === 0 ? (
+          <Vazio>Nenhuma estação neste grupo.</Vazio>
         ) : (
-          <div className="text-sm text-texto-fraco">
-            {e.status === "livre" ? "Disponivel" : e.status === "manutencao" ? "Em manutencao" : "Offline"}
-          </div>
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0 z-10 bg-superficie">
+              <tr className="border-b border-borda text-left text-xs text-texto-suave">
+                <Cabecalho coluna="status" ordem={ordem} aoOrdenar={ordenar}>Status</Cabecalho>
+                <Cabecalho coluna="estacao" ordem={ordem} aoOrdenar={ordenar}>Estação</Cabecalho>
+                <Cabecalho coluna="login" ordem={ordem} aoOrdenar={ordenar}>Login</Cabecalho>
+                <Cabecalho coluna="tempo" ordem={ordem} aoOrdenar={ordenar} className="text-right">
+                  Tempo restante
+                </Cabecalho>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((l) => (
+                <LinhaEstacao key={l.estacao.id} linha={l} aoAbrir={() => setAbertaId(l.estacao.id)} />
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {modalAberta && (
-        <ModalEstacao estacao={e} aoFechar={() => setModalAberta(false)} />
+      <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-0.5 border-t border-borda bg-superficie-2 px-3.5 py-1.5 text-xs text-texto-suave">
+        {(Object.keys(ROTULO_PLURAL) as StatusEstacao[])
+          .filter((s) => s !== "manutencao" || contagem.manutencao > 0)
+          .map((s) => (
+            <span key={s}>
+              {ROTULO_PLURAL[s]}: <strong className={COR_TEXTO_STATUS[s]}>{contagem[s]}</strong>
+            </span>
+          ))}
+      </div>
+
+      {aberta && <ModalEstacao estacao={aberta} aoFechar={() => setAbertaId(null)} />}
+    </section>
+  )
+}
+
+function Cabecalho({ coluna, ordem, aoOrdenar, className, children }: {
+  coluna: ColunaOrdem
+  ordem: Ordem
+  aoOrdenar: (c: ColunaOrdem) => void
+  className?: string
+  children: React.ReactNode
+}) {
+  const ativa = ordem.coluna === coluna
+  return (
+    <th
+      scope="col"
+      aria-sort={ativa ? (ordem.desc ? "descending" : "ascending") : "none"}
+      className={cn("px-2 py-1.5 font-semibold", className)}
+    >
+      <button
+        type="button"
+        onClick={() => aoOrdenar(coluna)}
+        title="Ordenar"
+        className={cn(
+          "inline-flex items-center gap-0.5 whitespace-nowrap hover:text-texto focus-visible:underline focus-visible:outline-none",
+          ativa && "text-texto",
+        )}
+      >
+        {children}
+        {ativa ? (
+          ordem.desc ? <IconChevronDown size={13} /> : <IconChevronUp size={13} />
+        ) : (
+          <IconSelector size={13} className="opacity-40" />
+        )}
+      </button>
+    </th>
+  )
+}
+
+function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir }: { linha: LinhaTabela; aoAbrir: () => void }) {
+  const { liberarDireto } = useAcoes()
+  const [alvo, setAlvo] = useState(false)
+  const aceitaCliente = e.status === "livre"
+  const cliente = sessao ? `${sessao.cliente_login} - ${sessao.cliente_nome}` : ""
+
+  return (
+    <tr
+      tabIndex={0}
+      title="Abrir painel da estação"
+      onClick={aoAbrir}
+      onKeyDown={(ev) => ev.key === "Enter" && aoAbrir()}
+      className={cn(
+        "cursor-pointer border-b border-borda/60 hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none",
+        e.status === "desligada" && "text-texto-suave",
+        alvo && "bg-destaque/15",
       )}
-    </>
+      onDragOver={(ev) => {
+        if (aceitaCliente && ev.dataTransfer.types.includes(TIPO_ARRASTO)) {
+          ev.preventDefault()
+          setAlvo(true)
+        }
+      }}
+      onDragLeave={() => setAlvo(false)}
+      onDrop={(ev) => {
+        ev.preventDefault()
+        setAlvo(false)
+        const id = lerClienteArrastado(ev)
+        if (id && aceitaCliente) liberarDireto(e.nome, id)
+      }}
+    >
+      <td className={cn("px-2 py-1.5 font-semibold whitespace-nowrap capitalize", COR_TEXTO_STATUS[e.status])}>
+        {ROTULO_STATUS[e.status]}
+      </td>
+      <td className="px-2 py-1.5 whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5">
+          {e.nome}
+          {!e.online && e.status !== "desligada" && (
+            <IconWifiOff size={13} className="text-texto-fraco" aria-label="sem conexão" />
+          )}
+        </span>
+      </td>
+      <td className="w-full max-w-0 truncate px-2 py-1.5" title={cliente || undefined}>
+        {sessao && (
+          <>
+            {cliente}
+            {sessao.pausada && (
+              <span className="ml-1.5 rounded bg-manutencao/20 px-1 py-0.5 text-[10px] font-bold text-manutencao uppercase">
+                Pausada
+              </span>
+            )}
+          </>
+        )}
+      </td>
+      <td
+        className={cn(
+          "px-2 py-1.5 text-right whitespace-nowrap tabular-nums",
+          !sessao ? "text-texto-fraco" : restante < 300 ? "font-semibold text-perigo" : "text-texto",
+        )}
+      >
+        {formatarTempo(restante)}
+      </td>
+    </tr>
   )
 }
 

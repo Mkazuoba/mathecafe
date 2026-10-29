@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-29 — Controle de sessões no Painel (Ciclo 5)
+
+- A coluna de estações do Painel virou a tabela **Controle de sessões**, como no VSCyber: Status, Estação, Login (login - nome) e Tempo restante, com ordenação ao clicar no cabeçalho (clique de novo inverte), filtro por grupo e contagem por status no rodapé. Ordem natural nos nomes (AD-2 antes de AD-10).
+- O grupo e a ordenação escolhidos ficam guardados no navegador.
+- Clicar na linha abre a estação; arrastar um cliente para uma linha livre continua liberando.
+
+## 2026-10-29 — Agente não minimiza na sessão (agente 1.6.3)
+
+- O botão de minimizar some da barra de título na sessão; se a janela for minimizada de outro jeito (clique no ícone da barra de tarefas), volta sozinha. No modo manutenção minimiza normalmente.
+
 ## 2026-10-29 — Bloqueios continuam na sessão (agente 1.6.2)
 
 - **Depois do login os atalhos voltavam**: o hook de teclado liberava tudo na sessão. Agora Win (Iniciar, Win+R, Win+E, Win+D...), Ctrl+Esc e Ctrl+Shift+Esc ficam bloqueados também na sessão; só Alt+Tab e Alt+F4 continuam, para alternar e fechar os apps liberados. O Esc sozinho segue funcionando dentro dos apps.
