@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-29 — Bloqueios continuam na sessão (agente 1.6.2)
+
+- **Depois do login os atalhos voltavam**: o hook de teclado liberava tudo na sessão. Agora Win (Iniciar, Win+R, Win+E, Win+D...), Ctrl+Esc e Ctrl+Shift+Esc ficam bloqueados também na sessão; só Alt+Tab e Alt+F4 continuam, para alternar e fechar os apps liberados. O Esc sozinho segue funcionando dentro dos apps.
+- **Configurações, Calculadora e apps da Loja escapavam da whitelist**: abrem dentro do `ApplicationFrameHost.exe`, que é processo seguro. A janela (`ApplicationFrameWindow`) agora é fechada, como já acontecia com o Explorador.
+
 ## 2026-10-28 — Painel sem estações e whitelist furada (agente 1.6.1)
 
 - **Nenhuma estação aparecia no painel**: `GET /api/estacoes/` dava 500 com o `cybercafe.db` existente, porque a coluna `grupos_estacao.cor` (Ciclo 5) nunca ganhou migração — o changelog do Ciclo 5 dizia que sim. A migração do SQLite agora é genérica: adiciona qualquer coluna do `models.py` que falte no banco, com o valor padrão. **Reinicie o servidor** para aplicar.

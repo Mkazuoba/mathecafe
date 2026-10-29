@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.1"
+VERSAO = "1.6.2"
 
 import asyncio
 import json
@@ -134,6 +134,14 @@ PROCESSOS_SEMPRE_BLOQUEADOS = {
 
 # Encerrados também na tela de login (fora do modo manutenção)
 PROCESSOS_BLOQUEADOS_NO_LOGIN = {"taskmgr.exe"}
+
+# Processos seguros que hospedam janelas de apps: fecha-se a janela, não o
+# processo (explorer.exe é a área de trabalho; o ApplicationFrameHost é a
+# moldura de Configurações, Calculadora e dos apps da Loja)
+JANELAS_DE_PROCESSOS_SEGUROS = {
+    "explorer.exe": ("CabinetWClass", "Explorador de Arquivos"),
+    "applicationframehost.exe": ("ApplicationFrameWindow", "app do Windows"),
+}
 
 
 # ── Janelas abertas ──────────────────────────────────────────────────────────
@@ -327,13 +335,13 @@ class AgenteApp:
             return False
         if vk == VK_ESCAPE and ctrl and shift:
             return True  # Gerenciador de Tarefas
-        if self.sessao_ativa:
-            return False  # na sessão o cliente alterna entre os apps
-        # Tela de login: nada tira o cliente do agente
         if vk in (VK_LWIN, VK_RWIN):
-            return True
+            return True  # Iniciar, Win+R, Win+E, Win+D...
         if vk == VK_ESCAPE and ctrl:
             return True  # Ctrl+Esc abre o Iniciar
+        if self.sessao_ativa:
+            return False  # Alt+Tab e Alt+F4 entre os apps liberados
+        # Tela de login: nada tira o cliente do agente
         return alt and vk in (VK_TAB, VK_ESCAPE, VK_F4)
 
     # ── UI ──────────────────────────────────────────────────────────────────
@@ -1222,11 +1230,12 @@ class AgenteApp:
                 continue
             if nome in self.whitelist_procs:
                 continue
-            if nome == "explorer.exe":
+            if nome in JANELAS_DE_PROCESSOS_SEGUROS:
+                classe_app, descricao = JANELAS_DE_PROCESSOS_SEGUROS[nome]
                 for hwnd, classe in janelas:
-                    if classe == "CabinetWClass":  # janela do Explorador, não a área de trabalho
+                    if classe == classe_app:
                         fechar_janela(hwnd)
-                        self._log("Bloqueado (fora da whitelist): Explorador de Arquivos")
+                        self._log(f"Bloqueado (fora da whitelist): {descricao}")
                 continue
             if nome in PROCESSOS_SEGUROS:
                 continue

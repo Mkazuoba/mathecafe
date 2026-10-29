@@ -60,6 +60,10 @@ def test_whitelist_confere_janelas_de_processos_antigos():
     # proibidos (cmd, regedit...) caem mesmo se ja existiam antes da sessao
     assert verificar.index("PROCESSOS_SEMPRE_BLOQUEADOS") < verificar.index("_pids_pre_sessao")
     assert '"CabinetWClass"' in src
+    # Configurações, Calculadora e apps da Loja moram no ApplicationFrameHost
+    # (processo seguro): a janela precisa ser fechada
+    assert "JANELAS_DE_PROCESSOS_SEGUROS" in src[src.index("def _fechar_janelas_fora_da_whitelist"):]
+    assert '"ApplicationFrameWindow"' in src[src.index("JANELAS_DE_PROCESSOS_SEGUROS = {"):src.index("# ── Janelas abertas")]
 
 
 class _Estado:
@@ -81,11 +85,16 @@ def test_atalhos_bloqueados_fora_da_manutencao():
     assert bloq(e, esc, False, True, True)
     assert not bloq(e, 0x41, False, False, False)  # digitar o login
 
-    # Sessão: alterna entre apps, mas sem Gerenciador de Tarefas
+    # Sessão: alterna entre os apps (Alt+Tab, Alt+F4), mas sem Iniciar,
+    # Win+R/Win+E nem Gerenciador de Tarefas (na 1.6.1 tudo isso abria)
     e.sessao_ativa = True
     assert not bloq(e, tab, True, False, False)
-    assert not bloq(e, win, False, False, False)
+    assert not bloq(e, f4, True, False, False)
+    assert bloq(e, win, False, False, False)
+    assert bloq(e, ns["VK_RWIN"], False, False, False)
+    assert bloq(e, esc, False, True, False)
     assert bloq(e, esc, False, True, True)
+    assert not bloq(e, esc, False, False, False)  # Esc dentro dos apps
 
     # Manutenção: tudo liberado
     e.modo_manutencao_ativo = True
