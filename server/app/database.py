@@ -1,5 +1,6 @@
+import unicodedata
 from pathlib import Path
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.models import Base, Usuario, GrupoEstacao, ConfiguracaoSistema
@@ -21,6 +22,21 @@ engine = create_engine(
     _db_url,
     connect_args={"check_same_thread": False} if _eh_sqlite else {}
 )
+
+
+def sem_acento(texto):
+    """'José Conceição' -> 'jose conceicao' (busca de clientes)."""
+    if texto is None:
+        return None
+    decomposto = unicodedata.normalize("NFKD", str(texto))
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).lower()
+
+
+if _eh_sqlite:
+    # O ILIKE do SQLite nao ignora acentos: "jose" nao achava "José"
+    @event.listens_for(engine, "connect")
+    def _registrar_funcoes(conexao, _):
+        conexao.create_function("sem_acento", 1, sem_acento, deterministic=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

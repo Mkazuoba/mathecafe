@@ -381,3 +381,46 @@ def test_banco_antigo_ganha_colunas_novas(c, admin):
     assert c.get("/api/estacoes/", headers=admin).status_code == 200
     grupos = c.get("/api/estacoes/grupos", headers=admin).json()
     assert all(g["cor"] for g in grupos)  # linhas antigas recebem a cor padrao
+
+
+def test_busca_refinada_de_clientes(c, admin):
+    criados = {}
+    for login, nome, saldo, ativo in [
+        ("bz100200", "Maria Jose da Silva", 0, True),
+        ("bz100201", "Joao Silva", 600, True),
+        ("xz300", "Silvana Prado", 0, True),
+        ("bz100299", "Pedro Inativo", 0, False),
+        ("bz100300", "Joana Conceição", 0, True),
+    ]:
+        r = c.post("/api/clientes/", headers=admin, json={"login": login, "nome": nome, "senha": "x12345"})
+        assert r.status_code == 200, r.text
+        criados[login] = r.json()["id"]
+        if saldo or not ativo:
+            r = c.put(f"/api/clientes/{criados[login]}", headers=admin, json={"saldo_segundos": saldo, "ativo": ativo})
+            assert r.status_code == 200, r.text
+
+    def logins(**params):
+        r = c.get("/api/clientes/", headers=admin, params=params)
+        assert r.status_code == 200, r.text
+        return [x["login"] for x in r.json()]
+
+    # palavras em qualquer ordem e posicao (antes "maria silva" nao achava nada)
+    assert logins(busca="maria silva") == ["bz100200"]
+    # sem acento acha com acento, e vice-versa (no SQLite o ILIKE nao ignora acentos)
+    assert logins(busca="conceicao") == ["bz100300"]
+    assert logins(busca="CONCEIÇÃO", campo="nome") == ["bz100300"]
+    assert logins(busca="joana conce", modo="comeca") == ["bz100300"]
+    assert logins(busca="silva", campo="login") == []
+    assert set(logins(busca="silva", campo="nome")) >= {"bz100200", "bz100201", "xz300"}
+    assert sorted(logins(busca="bz1002", campo="login", modo="comeca")) == ["bz100200", "bz100201", "bz100299"]
+    assert logins(busca="1002", campo="login", modo="comeca") == []
+    assert logins(busca="BZ100201", modo="exato") == ["bz100201"]
+    assert sorted(logins(busca="bz1002", status="ativos")) == ["bz100200", "bz100201"]
+    assert logins(busca="bz1002", status="inativos") == ["bz100299"]
+    assert logins(busca="bz1002", saldo="com") == ["bz100201"]
+
+    # sem termo: vazio no Painel, lista ordenada na aba Clientes
+    assert logins() == []
+    todos = c.get("/api/clientes/", headers=admin, params={"tudo": True, "ordem": "saldo", "desc": True}).json()
+    assert todos[0]["saldo_segundos"] >= 600
+    assert logins(busca="bz1002", ordem="login", desc=True) == ["bz100299", "bz100201", "bz100200"]

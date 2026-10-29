@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime, time as dt_time
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo
-from app.database import get_db
+from app.database import _eh_sqlite, get_db, sem_acento
 from app.models import Usuario, Sessao
 from app.security import hash_senha, requer_perfil
 
@@ -58,32 +58,57 @@ def serializar(u: Usuario, db: Session = None):
         "uso_hoje_segundos": _uso_hoje(db, u.id) if db is not None else 0,
     }
 
+ORDENS = {"nome": Usuario.nome, "login": Usuario.login, "saldo": Usuario.saldo_segundos, "criado": Usuario.criado_em}
+
+
+def _filtro_texto(q: str, campo: str, modo: str):
+    colunas = {"nome": [Usuario.nome], "login": [Usuario.login]}.get(campo, [Usuario.nome, Usuario.login])
+    # sem acento e em minusculas dos dois lados: "jose" acha "José"
+    if _eh_sqlite:
+        colunas = [func.sem_acento(col) for col in colunas]
+        q = sem_acento(q)
+    else:
+        colunas = [func.lower(col) for col in colunas]
+        q = q.lower()
+    if modo == "exato":
+        return or_(*[col == q for col in colunas])
+    if modo == "comeca":
+        return or_(*[col.like(f"{q}%") for col in colunas])
+    # contem: cada palavra em qualquer lugar ("maria silva" acha "Maria Jose da Silva")
+    return and_(*[or_(*[col.like(f"%{p}%") for col in colunas]) for p in q.split()])
+
+
 @router.get("/")
 def listar(
     busca: str = Query(default="", alias="busca"),
+    campo: Literal["tudo", "nome", "login"] = "tudo",
+    modo: Literal["contem", "comeca", "exato"] = "contem",
+    status: Literal["todos", "ativos", "inativos"] = "todos",
+    saldo: Literal["todos", "com", "sem"] = "todos",
+    ordem: Literal["nome", "login", "saldo", "criado"] = "nome",
+    desc: bool = False,
+    tudo: bool = False,
     limite: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     _=Depends(requer_perfil("admin", "operador"))
 ):
-    """Lista clientes com busca server-side. Sem busca retorna lista vazia."""
+    """Busca server-side (são ~43k clientes). Sem termo devolve lista vazia,
+    a não ser com tudo=true (aba Clientes, que lista pela ordem escolhida)."""
     q = busca.strip()
-    if not q:
+    if not q and not tudo:
         return []
-    padrao = f"%{q}%"
-    clientes = (
-        db.query(Usuario)
-        .filter(
-            Usuario.perfil == "cliente",
-            or_(
-                Usuario.nome.ilike(padrao),
-                Usuario.login.ilike(padrao),
-            )
-        )
-        .order_by(Usuario.nome)
-        .limit(limite)
-        .all()
-    )
-    return [serializar(c, db) for c in clientes]
+    consulta = db.query(Usuario).filter(Usuario.perfil == "cliente")
+    if q:
+        consulta = consulta.filter(_filtro_texto(q, campo, modo))
+    if status != "todos":
+        consulta = consulta.filter(Usuario.ativo == (status == "ativos"))
+    if saldo == "com":
+        consulta = consulta.filter(Usuario.saldo_segundos > 0)
+    elif saldo == "sem":
+        consulta = consulta.filter(or_(Usuario.saldo_segundos == 0, Usuario.saldo_segundos == None))
+    coluna = ORDENS[ordem]
+    consulta = consulta.order_by(coluna.desc() if desc else coluna, Usuario.nome)
+    return [serializar(c, db) for c in consulta.limit(limite).all()]
 
 @router.post("/")
 def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
