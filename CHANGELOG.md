@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-29 — Ficha do cliente com foto (Ciclo 5)
+
+- **Ficha do cliente** (`components/FichaCliente.tsx`) no lugar dos botões Histórico, Editar e Excluir: abre clicando na linha da aba Clientes, no botão "Ficha" ou na engrenagem do cliente no Painel. Três abas:
+  - **Geral**: foto, nome, login, documento (CPF/RG), data de nascimento (com a idade), observações, tempo de hoje (com tempo extra) e data de cadastro.
+  - **Histórico**: as últimas 50 sessões, com o motivo de encerramento em português (antes aparecia o código, como `tempo_esgotado`), e o atalho para a tela Históricos.
+  - **Segurança**: trocar a senha (digitada duas vezes), ativar/desativar e excluir (admin).
+- **Foto**: enviada por arquivo (JPG, PNG ou WebP). O painel reduz a imagem para 480px antes de enviar; o servidor confere que é imagem de verdade e guarda até 2 MB na tabela `fotos_clientes`, separada para a lista de clientes não carregar fotos. A foto sai junto quando o cliente é excluído.
+- **Novo cliente** com documento e data de nascimento, igual na aba Clientes e no Painel (`components/ModalNovoCliente.tsx`); ao criar, a ficha já abre para pôr a foto.
+- Novas colunas `usuarios.documento`, `data_nascimento` e `foto_em` (migração automática). API: `PUT`/`GET`/`DELETE /api/clientes/{id}/foto`.
+
 ## 2026-10-29 — Revisão: pausa não conta como uso (Ciclo 6, tarefa 6.2)
 
 - **Encerrar uma sessão pausada cobrava a pausa**: a pausa só era descontada ao retomar. Exemplo: entra às 14:00, pausa às 14:30, o operador encerra às 15:30 — o cliente perdia 1h30 em vez de 30 min. Agora todo encerramento (operador, PC, queda de conexão) usa a mesma conta, `fechar_tempo_da_sessao` em `tempo_diario.py`, que desconta as pausas retomadas e a que está em andamento.

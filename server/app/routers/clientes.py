@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import base64
+import binascii
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
 from pydantic import BaseModel
@@ -10,7 +13,7 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 from app.database import _eh_sqlite, get_db, sem_acento
 from app.tempo_diario import cota_diaria, hoje_br, saldo_do_dia, saldo_do_dia_sql
-from app.models import Usuario, Sessao
+from app.models import FotoCliente, Usuario, Sessao
 from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
@@ -20,6 +23,8 @@ class ClienteCreate(BaseModel):
     nome: str
     senha: str
     observacao: Optional[str] = None
+    documento: Optional[str] = None
+    data_nascimento: Optional[date] = None
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -27,6 +32,24 @@ class ClienteUpdate(BaseModel):
     ativo: Optional[bool] = None
     observacao: Optional[str] = None
     saldo_segundos: Optional[int] = None
+    # documento e nascimento: o que vier (mesmo vazio/null) substitui; o que nao vier fica
+    documento: Optional[str] = None
+    data_nascimento: Optional[date] = None
+
+class FotoBody(BaseModel):
+    imagem: str  # data URL (o painel reduz a imagem antes de enviar)
+
+FOTO_MAX_BYTES = 2_000_000
+# assinatura no inicio do arquivo -> tipo (nao confia no que o navegador diz)
+_ASSINATURAS = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG\r\n\x1a\n": "image/png"}
+
+def _tipo_da_imagem(dados: bytes) -> Optional[str]:
+    for assinatura, tipo in _ASSINATURAS.items():
+        if dados.startswith(assinatura):
+            return tipo
+    if dados[:4] == b"RIFF" and dados[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 def _uso_hoje(db: Session, cliente_id: int) -> int:
     """Retorna segundos consumidos hoje (fuso Brasil UTC-3) em sessoes encerradas."""
@@ -54,6 +77,10 @@ def serializar(u: Usuario, db: Session = None, cota: Optional[int] = None):
         "ativo": u.ativo,
         "saldo_segundos": saldo_do_dia(u, cota),  # tempo que ainda pode usar hoje
         "observacao": u.observacao,
+        "documento": u.documento,
+        "data_nascimento": u.data_nascimento.isoformat() if u.data_nascimento else None,
+        "tem_foto": u.foto_em is not None,
+        "foto_em": u.foto_em.isoformat() if u.foto_em else None,
         "criado_em": u.criado_em.isoformat() if u.criado_em else None,
         "na_fila": u.autorizacao is not None and not u.autorizacao.usado,
         "uso_hoje_segundos": _uso_hoje(db, u.id) if db is not None else 0,
@@ -120,7 +147,8 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
     cliente = Usuario(
         login=data.login, nome=data.nome,
         senha_hash=hash_senha(data.senha),
-        perfil="cliente", observacao=data.observacao
+        perfil="cliente", observacao=data.observacao,
+        documento=(data.documento or "").strip() or None, data_nascimento=data.data_nascimento,
     )
     db.add(cliente)
     db.commit()
@@ -136,6 +164,8 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Dep
     if data.senha: cliente.senha_hash = hash_senha(data.senha)
     if data.ativo is not None: cliente.ativo = data.ativo
     if data.observacao is not None: cliente.observacao = data.observacao
+    if "documento" in data.model_fields_set: cliente.documento = (data.documento or "").strip() or None
+    if "data_nascimento" in data.model_fields_set: cliente.data_nascimento = data.data_nascimento
     if data.saldo_segundos is not None:
         # vale para hoje: e assim que o operador da tempo extra
         cliente.saldo_segundos = data.saldo_segundos
@@ -154,6 +184,7 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
                             detail="Cliente tem histórico de uso. Desative-o em vez de excluir.")
     if cliente.autorizacao:
         db.delete(cliente.autorizacao)
+    db.query(FotoCliente).filter(FotoCliente.cliente_id == id).delete()
     db.delete(cliente)
     db.commit()
     return {"ok": True}
@@ -163,4 +194,47 @@ def obter(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return serializar(cliente, db)
+
+
+# ── Foto ──────────────────────────────────────────────────────────────────────
+
+def _cliente_ou_404(db: Session, id: int) -> Usuario:
+    cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return cliente
+
+@router.get("/{id}/foto")
+def obter_foto(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    foto = db.get(FotoCliente, id)
+    if not foto:
+        raise HTTPException(status_code=404, detail="Cliente sem foto")
+    return Response(content=foto.conteudo, media_type=foto.tipo, headers={"Cache-Control": "private, max-age=86400"})
+
+@router.put("/{id}/foto")
+def salvar_foto(id: int, body: FotoBody, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    cliente = _cliente_ou_404(db, id)
+    try:
+        dados = base64.b64decode(body.imagem.split(",", 1)[-1], validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Imagem inválida")
+    if len(dados) > FOTO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Foto grande demais (máximo 2 MB)")
+    tipo = _tipo_da_imagem(dados)
+    if not tipo:
+        raise HTTPException(status_code=400, detail="Envie uma imagem JPG, PNG ou WebP")
+    foto = db.get(FotoCliente, id) or FotoCliente(cliente_id=id)
+    foto.tipo, foto.conteudo = tipo, dados
+    db.add(foto)
+    cliente.foto_em = datetime.utcnow()
+    db.commit()
+    return serializar(cliente, db)
+
+@router.delete("/{id}/foto")
+def remover_foto(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    cliente = _cliente_ou_404(db, id)
+    db.query(FotoCliente).filter(FotoCliente.cliente_id == id).delete()
+    cliente.foto_em = None
+    db.commit()
     return serializar(cliente, db)

@@ -9,10 +9,11 @@ import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
 import type { Cliente, Estacao, Grupo, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
-import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
-import { Modal } from "@/components/ui/modal"
+import { Select } from "@/components/ui/campos"
 import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
+import { FichaCliente } from "@/components/FichaCliente"
 import { FiltrosBusca } from "@/components/FiltrosBusca"
+import { ModalNovoCliente } from "@/components/ModalNovoCliente"
 
 import { Button } from "@/components/ui/button"
 import { ROTULO_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
@@ -44,7 +45,7 @@ const LAYOUT_PADRAO: LayoutColunas<IdColuna> = {
 export default function Painel() {
   const { estacoes, fila } = useDados()
   const { liberar } = useAcoes()
-  const [editandoCliente, setEditandoCliente] = useState<Cliente | null>(null)
+  const [ficha, setFicha] = useState<number | null>(null)
   const [novoCliente, setNovoCliente] = useState(false)
   const { layout, setLayout, mover, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
 
@@ -76,12 +77,19 @@ export default function Painel() {
           const controles = <BotoesMover posicao={posicao} total={layout.ordem.length} aoMover={(d) => mover(id, d)} />
           if (id === "estacoes") return <ColunaEstacoes controles={controles} />
           if (id === "clientes")
-            return <ColunaClientes controles={controles} aoEditarCliente={setEditandoCliente} aoNovoCliente={() => setNovoCliente(true)} />
+            return <ColunaClientes controles={controles} aoEditarCliente={(c) => setFicha(c.id)} aoNovoCliente={() => setNovoCliente(true)} />
           return <ColunaFila controles={controles} total={fila.length} aoSoltarCliente={liberar} />
         }}
       </ColunasAjustaveis>
-      <ModalEditarCliente cliente={editandoCliente} aoFechar={() => setEditandoCliente(null)} />
-      <ModalNovoCliente aberto={novoCliente} aoFechar={() => setNovoCliente(false)} />
+      <FichaCliente clienteId={ficha} aoFechar={() => setFicha(null)} />
+      <ModalNovoCliente
+        aberto={novoCliente}
+        aoFechar={() => setNovoCliente(false)}
+        aoCriar={(c) => {
+          setNovoCliente(false)
+          setFicha(c.id)
+        }}
+      />
     </>
   )
 }
@@ -1112,7 +1120,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
                   ) : null}
                 </div>
               </div>
-              <button type="button" onClick={() => aoEditarCliente(c)} title="Editar cliente" className="shrink-0 rounded p-1 text-texto-fraco opacity-0 group-hover:opacity-100 hover:text-texto focus-visible:opacity-100"><IconSettings size={15} /></button>
+              <button type="button" onClick={() => aoEditarCliente(c)} title="Ficha do cliente" className="shrink-0 rounded p-1 text-texto-fraco opacity-0 group-hover:opacity-100 hover:text-texto focus-visible:opacity-100"><IconSettings size={15} /></button>
               <Button size="xs" disabled={naFila || !!emUso || liberando === c.id} onClick={() => aoLiberar(c.id)}>
                 {naFila ? "Na fila" : emUso ? "Em uso" : liberando === c.id ? "..." : "Liberar"}
               </Button>
@@ -1178,140 +1186,5 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
         <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
       )}
     </Coluna>
-  )
-}
-
-// ─── Modal de edição completa do cliente ────────────────────────────────────
-function ModalEditarCliente({ cliente, aoFechar }: { cliente: Cliente | null; aoFechar: () => void }) {
-  const avisar = useAvisos()
-  const { recarregarClientes, recarregarFila } = useDados()
-  const [nome, setNome] = useState("")
-  const [senha, setSenha] = useState("")
-  const [ativo, setAtivo] = useState(true)
-  const [obs, setObs] = useState("")
-  const [erro, setErro] = useState("")
-  const [aberto, setAberto] = useState<Cliente | null>(null)
-
-  if (cliente !== aberto) {
-    setAberto(cliente)
-    setNome(cliente?.nome ?? "")
-    setSenha("")
-    setAtivo(cliente?.ativo ?? true)
-    setObs(cliente?.observacao ?? "")
-    setErro("")
-  }
-
-  async function salvar(ev: React.FormEvent) {
-    ev.preventDefault()
-    if (!nome.trim()) return setErro("Nome obrigatório")
-    try {
-      await Api.put(`/api/clientes/${cliente!.id}`, {
-        nome: nome.trim(),
-        ativo,
-        observacao: obs.trim() || null,
-        ...(senha ? { senha } : {}),
-      })
-      avisar("Cliente atualizado")
-      aoFechar()
-      await Promise.all([recarregarClientes(), recarregarFila()])
-    } catch (e) {
-      setErro((e as Error).message)
-    }
-  }
-
-  return (
-    <Modal titulo={`Editar: ${cliente?.nome ?? ""}`} aberto={!!cliente} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="flex flex-col gap-4">
-        <Campo rotulo="Login" id="ec-login">
-          <Input id="ec-login" value={cliente?.login ?? ""} disabled />
-        </Campo>
-        <Campo rotulo="Nome" id="ec-nome">
-          <Input id="ec-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Nova senha" id="ec-senha">
-          <Input
-            id="ec-senha"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Deixe em branco para não alterar"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-          />
-        </Campo>
-        <Campo rotulo="Observação" id="ec-obs">
-          <Input id="ec-obs" autoComplete="off" placeholder="Opcional" value={obs} onChange={(e) => setObs(e.target.value)} />
-        </Campo>
-        <div className="flex items-center justify-between">
-          <label htmlFor="ec-ativo" className="text-sm text-texto-suave">Ativo</label>
-          <Interruptor id="ec-ativo" rotulo="Cliente ativo" ligado={ativo} aoMudar={setAtivo} />
-        </div>
-        <MensagemErro>{erro}</MensagemErro>
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={aoFechar}>Cancelar</Button>
-          <Button type="submit" className="flex-1">Salvar</Button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-// ─── Modal de criação de novo cliente ───────────────────────────────────────
-function ModalNovoCliente({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
-  const avisar = useAvisos()
-  const { recarregarClientes } = useDados()
-  const [login, setLogin] = useState("")
-  const [nome, setNome] = useState("")
-  const [senha, setSenha] = useState("")
-  const [obs, setObs] = useState("")
-  const [erro, setErro] = useState("")
-
-  function resetar() {
-    setLogin(""); setNome(""); setSenha(""); setObs(""); setErro("")
-  }
-
-  function fechar() { resetar(); aoFechar() }
-
-  async function salvar(ev: React.FormEvent) {
-    ev.preventDefault()
-    if (!login.trim()) return setErro("Login obrigatório")
-    if (!nome.trim()) return setErro("Nome obrigatório")
-    if (!senha) return setErro("Senha obrigatória")
-    try {
-      await Api.post("/api/clientes/", {
-        login: login.trim(),
-        nome: nome.trim(),
-        senha,
-        observacao: obs.trim() || null,
-      })
-      avisar("Cliente criado")
-      fechar()
-      await recarregarClientes()
-    } catch (e) {
-      setErro((e as Error).message)
-    }
-  }
-
-  return (
-    <Modal titulo="Novo cliente" aberto={aberto} aoFechar={fechar}>
-      <form onSubmit={salvar} className="flex flex-col gap-4">
-        <Campo rotulo="Login" id="nc-login">
-          <Input id="nc-login" autoComplete="off" value={login} onChange={(e) => setLogin(e.target.value)} autoFocus />
-        </Campo>
-        <Campo rotulo="Nome" id="nc-nome">
-          <Input id="nc-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Senha" id="nc-senha">
-          <Input id="nc-senha" type="password" autoComplete="new-password" value={senha} onChange={(e) => setSenha(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Observação" id="nc-obs">
-          <Input id="nc-obs" autoComplete="off" placeholder="Opcional" value={obs} onChange={(e) => setObs(e.target.value)} />
-        </Campo>
-        <MensagemErro>{erro}</MensagemErro>
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={fechar}>Cancelar</Button>
-          <Button type="submit" className="flex-1">Criar cliente</Button>
-        </div>
-      </form>
-    </Modal>
   )
 }

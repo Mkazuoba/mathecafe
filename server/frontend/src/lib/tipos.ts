@@ -29,6 +29,12 @@ export interface Cliente {
   ativo: boolean
   saldo_segundos: number
   observacao: string | null
+  documento: string | null
+  /** AAAA-MM-DD */
+  data_nascimento: string | null
+  tem_foto: boolean
+  /** Quando a foto mudou (vai na URL da foto para o navegador não usar a antiga). */
+  foto_em: string | null
   criado_em: string | null
   na_fila: boolean
   uso_hoje_segundos: number

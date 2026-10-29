@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, LargeBinary, Text
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 
@@ -16,6 +16,9 @@ class Usuario(Base):
     saldo_segundos = Column(Integer, default=0)
     saldo_dia = Column(Date, nullable=True)  # dia (Brasília) do saldo; outro dia = cota cheia (tempo_diario.py)
     observacao = Column(Text, nullable=True)
+    documento = Column(String(30), nullable=True)
+    data_nascimento = Column(Date, nullable=True)
+    foto_em = Column(DateTime, nullable=True)  # quando a foto mudou; None = sem foto (fotos_clientes)
 
     sessoes = relationship("Sessao", back_populates="cliente", foreign_keys="Sessao.cliente_id")
     autorizacao = relationship("Autorizacao", back_populates="cliente", uselist=False,
@@ -92,3 +95,11 @@ class ConfiguracaoSistema(Base):
     __tablename__ = "configuracoes"
     chave = Column(String(100), primary_key=True)
     valor = Column(String(500), nullable=False)
+
+
+class FotoCliente(Base):
+    """Foto do cliente, à parte para a lista de clientes não carregar imagens."""
+    __tablename__ = "fotos_clientes"
+    cliente_id = Column(Integer, ForeignKey("usuarios.id"), primary_key=True)
+    tipo = Column(String(20), nullable=False)  # image/jpeg | image/png | image/webp
+    conteudo = Column(LargeBinary, nullable=False)

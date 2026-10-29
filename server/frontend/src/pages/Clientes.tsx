@@ -1,30 +1,18 @@
-import { useEffect, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { IconChevronDown, IconChevronUp, IconHistory, IconMessageCircle, IconPencil, IconSelector } from "@tabler/icons-react"
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { IconChevronDown, IconChevronUp, IconId, IconMessageCircle, IconPencil, IconSelector } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
-import { useAvisos } from "@/lib/avisos"
 import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
-import { useDados } from "@/lib/dados"
-import { dataDoServidor, formatarTempo, lerTempo } from "@/lib/tempo"
+import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { CabecalhoTela } from "@/components/Layout"
+import { FichaCliente } from "@/components/FichaCliente"
 import { FiltrosBusca } from "@/components/FiltrosBusca"
+import { ModalNovoCliente } from "@/components/ModalNovoCliente"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
-import { Modal } from "@/components/ui/modal"
+import { Input, Select } from "@/components/ui/campos"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
-
-
-interface SessaoHistorico {
-  id: number
-  estacao_nome: string
-  iniciada_em: string
-  encerrada_em: string | null
-  tempo_total_segundos: number
-  tempo_consumido_segundos: number
-  motivo_encerramento: string | null
-}
 
 // Até quantos clientes a tabela mostra (são ~43k): passou disso, refinar a busca
 const LIMITE = 200
@@ -34,19 +22,17 @@ const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
   { titulo: "Tempo de hoje", ordem: "saldo" },
   { titulo: "Status" },
   { titulo: "Criado em", ordem: "criado" },
-  { titulo: "Ações" },
+  { titulo: "" },
 ]
 
 export default function Clientes() {
-  const { recarregarClientes } = useDados()
-  const avisar = useAvisos()
   const navigate = useNavigate()
   const admin = Api.ehAdmin()
   const [busca, setBusca] = useState("")
   const [filtros, setFiltros] = useState(() => lerFiltros("clientes.busca", FILTROS_PADRAO))
-  const [editando, setEditando] = useState<Cliente | "novo" | null>(null)
+  const [novo, setNovo] = useState(false)
+  const [ficha, setFicha] = useState<number | null>(null)
   const [editandoSaldo, setEditandoSaldo] = useState<Cliente | null>(null)
-  const [verHistorico, setVerHistorico] = useState<Cliente | null>(null)
 
   const { clientes: lista, carregando } = useBuscaClientes(busca, filtros, { tudo: true, limite: LIMITE })
 
@@ -58,17 +44,6 @@ export default function Clientes() {
     mudarFiltros({ ...filtros, ordem, desc: filtros.ordem === ordem ? !filtros.desc : false })
   }
   const dica = filtros.campo === "login" ? "Buscar por login..." : filtros.campo === "nome" ? "Buscar por nome..." : "Buscar por nome ou login..."
-
-  async function excluir(c: Cliente) {
-    if (!window.confirm(`Excluir o cliente ${c.nome}? Esta ação não pode ser desfeita.`)) return
-    try {
-      await Api.del(`/api/clientes/${c.id}`)
-      avisar("Cliente excluído")
-      await recarregarClientes()
-    } catch (e) {
-      avisar((e as Error).message, "erro")
-    }
-  }
 
   return (
     <>
@@ -104,7 +79,7 @@ export default function Clientes() {
             Exportar CSV
           </Button>
         )}
-        <Button size="sm" onClick={() => setEditando("novo")}>
+        <Button size="sm" onClick={() => setNovo(true)}>
           + Novo cliente
         </Button>
       </CabecalhoTela>
@@ -117,7 +92,7 @@ export default function Clientes() {
                 const ativa = ordem && filtros.ordem === ordem
                 return (
                   <th
-                    key={titulo}
+                    key={titulo || "ficha"}
                     aria-sort={ativa ? (filtros.desc ? "descending" : "ascending") : undefined}
                     className="border-b border-borda px-2.5 py-2 font-medium"
                   >
@@ -145,7 +120,14 @@ export default function Clientes() {
           </thead>
           <tbody>
             {lista.map((c) => (
-              <tr key={c.id} className="hover:bg-superficie-2">
+              <tr
+                key={c.id}
+                tabIndex={0}
+                title="Abrir a ficha do cliente"
+                onClick={() => setFicha(c.id)}
+                onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && setFicha(c.id)}
+                className="cursor-pointer hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none"
+              >
                 <td className="border-b border-borda px-2.5 py-2.5">{c.login}</td>
                 <td className="border-b border-borda px-2.5 py-2.5">
                   <div>{c.nome}</div>
@@ -158,8 +140,11 @@ export default function Clientes() {
                 <td className="border-b border-borda px-2.5 py-2.5">
                   <button
                     type="button"
-                    onClick={() => setEditandoSaldo(c)}
-                    title="Editar saldo"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditandoSaldo(c)
+                    }}
+                    title="Dar tempo extra"
                     className={
                       "inline-flex cursor-pointer items-center gap-1.5 tabular-nums " +
                       (c.saldo_segundos > 0 ? "font-semibold text-livre" : "text-texto-fraco")
@@ -175,20 +160,18 @@ export default function Clientes() {
                 <td className="border-b border-borda px-2.5 py-2.5 text-texto-suave">
                   {c.criado_em ? dataDoServidor(c.criado_em).toLocaleDateString("pt-BR") : "—"}
                 </td>
-                <td className="border-b border-borda px-2.5 py-2.5">
-                  <div className="flex gap-1.5">
-                    <Button variant="outline" size="xs" onClick={() => setVerHistorico(c)} title="Histórico">
-                      <IconHistory size={13} />
-                    </Button>
-                    <Button variant="outline" size="xs" onClick={() => setEditando(c)}>
-                      Editar
-                    </Button>
-                    {admin && (
-                      <Button variant="perigo" size="xs" onClick={() => excluir(c)}>
-                        Excluir
-                      </Button>
-                    )}
-                  </div>
+                <td className="border-b border-borda px-2.5 py-2.5 text-right">
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="gap-1"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setFicha(c.id)
+                    }}
+                  >
+                    <IconId size={14} /> Ficha
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -205,223 +188,16 @@ export default function Clientes() {
         )}
       </div>
 
-      <ModalCliente cliente={editando} aoFechar={() => setEditando(null)} />
+      <ModalNovoCliente
+        aberto={novo}
+        aoFechar={() => setNovo(false)}
+        aoCriar={(c) => {
+          setNovo(false)
+          setFicha(c.id) // já abre a ficha para pôr a foto
+        }}
+      />
+      <FichaCliente clienteId={ficha} aoFechar={() => setFicha(null)} />
       <ModalSaldo cliente={editandoSaldo} aoFechar={() => setEditandoSaldo(null)} />
-      {verHistorico && <ModalHistoricoCliente cliente={verHistorico} aoFechar={() => setVerHistorico(null)} />}
     </>
-  )
-}
-
-function ModalCliente({ cliente, aoFechar }: { cliente: Cliente | "novo" | null; aoFechar: () => void }) {
-  const avisar = useAvisos()
-  const { recarregarClientes } = useDados()
-  const novo = cliente === "novo"
-  const existente = cliente && cliente !== "novo" ? cliente : null
-
-  const [login, setLogin] = useState("")
-  const [nome, setNome] = useState("")
-  const [senha, setSenha] = useState("")
-  const [saldo, setSaldo] = useState("00:00:00")
-  const [obs, setObs] = useState("")
-  const [ativo, setAtivo] = useState(true)
-  const [erro, setErro] = useState("")
-  const [aberto, setAberto] = useState<typeof cliente>(null)
-
-  // Preenche o formulário ao abrir
-  if (cliente !== aberto) {
-    setAberto(cliente)
-    setLogin(existente?.login ?? "")
-    setNome(existente?.nome ?? "")
-    setSenha("")
-    setSaldo(formatarTempo(existente?.saldo_segundos ?? 0))
-    setObs(existente?.observacao ?? "")
-    setAtivo(existente?.ativo ?? true)
-    setErro("")
-  }
-
-  async function salvar(ev: React.FormEvent) {
-    ev.preventDefault()
-    setErro("")
-    if (!login.trim() || !nome.trim()) return setErro("Preencha login e nome")
-    if (novo && !senha) return setErro("Senha obrigatória para novo cliente")
-    const saldoSegundos = lerTempo(saldo)
-    if (saldoSegundos === null) return setErro("Saldo no formato HH:MM:SS")
-
-    try {
-      if (existente) {
-        await Api.put(`/api/clientes/${existente.id}`, {
-          nome: nome.trim(),
-          ativo,
-          observacao: obs.trim() || null,
-          saldo_segundos: saldoSegundos,
-          ...(senha ? { senha } : {}),
-        })
-        avisar("Cliente atualizado")
-      } else {
-        const criado = await Api.post<Cliente>("/api/clientes/", {
-          login: login.trim(),
-          nome: nome.trim(),
-          senha,
-          observacao: obs.trim() || null,
-        })
-        if (saldoSegundos > 0) await Api.put(`/api/clientes/${criado.id}`, { saldo_segundos: saldoSegundos })
-        avisar("Cliente criado")
-      }
-      aoFechar()
-      await recarregarClientes()
-    } catch (e) {
-      setErro((e as Error).message)
-    }
-  }
-
-  return (
-    <Modal titulo={novo ? "Novo cliente" : "Editar cliente"} aberto={!!cliente} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="flex flex-col gap-4">
-        <Campo rotulo="Login" id="cli-login">
-          <Input id="cli-login" autoComplete="off" value={login} disabled={!novo} onChange={(e) => setLogin(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Nome" id="cli-nome">
-          <Input id="cli-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Senha" id="cli-senha">
-          <Input
-            id="cli-senha"
-            type="password"
-            autoComplete="new-password"
-            placeholder={novo ? "" : "Deixe em branco para não alterar"}
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-          />
-        </Campo>
-        <Campo rotulo="Saldo de tempo (HH:MM:SS)" id="cli-saldo">
-          <Input id="cli-saldo" value={saldo} onChange={(e) => setSaldo(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Observações" id="cli-obs">
-          <Textarea id="cli-obs" rows={2} value={obs} onChange={(e) => setObs(e.target.value)} />
-        </Campo>
-        {!novo && (
-          <div className="flex items-center justify-between">
-            <label htmlFor="cli-ativo" className="text-sm text-texto-suave">
-              Ativo
-            </label>
-            <Interruptor id="cli-ativo" rotulo="Cliente ativo" ligado={ativo} aoMudar={setAtivo} />
-          </div>
-        )}
-        <MensagemErro>{erro}</MensagemErro>
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={aoFechar}>
-            Cancelar
-          </Button>
-          <Button type="submit" className="flex-1">
-            Salvar
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Modal: Historico do cliente
-// ---------------------------------------------------------------------------
-function ModalHistoricoCliente({ cliente, aoFechar }: { cliente: Cliente; aoFechar: () => void }) {
-  const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState("")
-
-  useEffect(() => {
-    setCarregando(true)
-    setErro("")
-    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?cliente_id=${cliente.id}`)
-      .then((r) => setSessoes(r ?? []))
-      .catch((e) => setErro((e as Error).message))
-      .finally(() => setCarregando(false))
-  }, [cliente.id])
-
-  function motivoLabel(motivo: string | null) {
-    if (!motivo) return "—"
-    const mapa: Record<string, string> = {
-      saldo_zerado: "Saldo zerado",
-      encerrado_operador: "Operador",
-      desconexao: "Desconexao",
-      reinicio: "Reinicio",
-      manual: "Manual",
-    }
-    return mapa[motivo] ?? motivo
-  }
-
-  const totalUsado = sessoes.reduce((s, x) => s + (x.tempo_consumido_segundos ?? 0), 0)
-
-  return (
-    <Modal titulo={`Historico — ${cliente.nome}`} aberto aoFechar={aoFechar}>
-      <div className="flex flex-col gap-4" style={{ minWidth: 560 }}>
-        {cliente.observacao && (
-          <div className="flex items-start gap-2 rounded-md bg-superficie-2 px-3 py-2 text-sm text-texto-suave">
-            <IconMessageCircle size={15} className="mt-0.5 shrink-0" />
-            <span>{cliente.observacao}</span>
-          </div>
-        )}
-
-        {carregando && <p className="py-6 text-center text-sm text-texto-fraco">Carregando...</p>}
-        {erro && <p className="text-sm text-vermelho">{erro}</p>}
-
-        {!carregando && !erro && (
-          <>
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="sticky top-0 bg-superficie text-left text-xs tracking-wide text-texto-fraco uppercase">
-                    {["Data", "Estacao", "Duracao", "Consumido", "Encerramento"].map((h) => (
-                      <th key={h} className="border-b border-borda px-2.5 py-2 font-medium">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessoes.map((s) => (
-                    <tr key={s.id} className="hover:bg-superficie-2">
-                      <td className="border-b border-borda px-2.5 py-2 text-texto-suave">
-                        {s.iniciada_em ? dataDoServidor(s.iniciada_em).toLocaleDateString("pt-BR") : "—"}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 font-medium">{s.estacao_nome}</td>
-                      <td className="border-b border-borda px-2.5 py-2 tabular-nums">
-                        {formatarTempo(s.tempo_total_segundos ?? 0)}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 tabular-nums text-texto-suave">
-                        {formatarTempo(s.tempo_consumido_segundos ?? 0)}
-                      </td>
-                      <td className="border-b border-borda px-2.5 py-2 text-texto-fraco">
-                        {motivoLabel(s.motivo_encerramento)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!sessoes.length && <Vazio>Nenhuma sessao registrada</Vazio>}
-            </div>
-            <Link to={`/historicos?aba=cliente&cliente=${cliente.id}`} className="self-start text-sm text-destaque hover:underline">
-              Ver quais estações ele já usou →
-            </Link>
-
-            {sessoes.length > 0 && (
-              <div className="flex items-center justify-between border-t border-borda pt-3 text-sm">
-                <span className="text-texto-fraco">{sessoes.length} sessao(oes)</span>
-                <span className="text-texto-suave">
-                  Total consumido:{" "}
-                  <span className="font-semibold tabular-nums text-texto">{formatarTempo(totalUsado)}</span>
-                </span>
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="flex justify-end">
-          <Button variant="outline" onClick={aoFechar}>
-            Fechar
-          </Button>
-        </div>
-      </div>
-    </Modal>
   )
 }

@@ -54,7 +54,7 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 | `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
-| `src/components/` | `Layout` (menu lateral e cabeçalho), `ModalSaldo`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente`, `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
 | `src/pages/` | uma tela por arquivo |
 
 O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.
@@ -63,7 +63,8 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Tabela | Guarda |
 |---|---|
-| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo` |
+| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou) |
+| `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
 | `grupos_estacao` | grupos de PCs (abas do Mapa), com cor (o `tempo_padrao_segundos` do grupo não é mais usado) |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
@@ -136,6 +137,7 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **`agente.py` já foi reescrito a partir de uma cópia antiga** e perdeu correções (proxy, nome com espaço, estação não cadastrada). `tests/test_agente.py` confere essas regras no código-fonte.
 - **Exclusões preservam o histórico**: cliente com sessões e operador que já liberou alguém não podem ser excluídos (409, "desative"); o painel tem o botão "Ativo" para isso. Estação com sessões é desativada em vez de excluída (some do painel); cadastrar de novo o mesmo nome a reativa.
 - **Clientes nunca são carregados em massa** (~43k): toda tela busca no servidor (`GET /api/clientes/?busca=...`, até 200). A lista `clientes` do `dados.tsx` fica vazia; `recarregarClientes` só incrementa `versaoClientes`, e as buscas abertas refazem a consulta. A busca divide o termo em palavras e ignora acentos (função `sem_acento` registrada no SQLite em `database.py`).
+- **Foto do cliente**: o painel reduz a imagem (480px, JPEG) antes de enviar em data URL; o servidor confere a assinatura do arquivo (não o tipo que o navegador diz) e limita a 2 MB. Como `<img src>` não manda o token, o painel busca a foto com `fetch` e mostra um blob local; `foto_em` vai na URL para não usar a foto antiga.
 - **Preferências do operador ficam no navegador** (`localStorage`: `painel.layout`, `painel.ordem`, `painel.grupo`, `painel.busca`, `clientes.busca`), sempre com `try/catch`; sem storage, valem até recarregar.
 - **WebSocket do painel exige login**: `/ws/painel?token=...` só aceita admin ou operador (os eventos trazem nomes de clientes).
 - **Mapa mostra estações sem grupo** numa aba "Sem grupo"; no painel lateral o admin troca o grupo da estação.

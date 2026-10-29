@@ -635,3 +635,59 @@ def test_painel_recebe_inicio_da_pausa(c, admin, cenario):
         ativa = next(s for s in c.get("/api/sessoes/ativas", headers=admin).json() if s["id"] == sid)
         assert ativa["pausada"] and ativa["pausada_em"]
         c.post(f"/api/sessoes/encerrar/{sid}", headers=admin)
+
+
+# ── Ficha do cliente: documento, nascimento e foto ───────────────────────────
+
+# JPEG minimo valido (1x1)
+_JPEG = bytes.fromhex(
+    "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c"
+    "20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100"
+    "000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114"
+    "328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465"
+    "666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9ca"
+    "d2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda0008010100003f00fbd3ffd9")
+
+
+def test_ficha_documento_e_nascimento(c, admin, operador):
+    r = c.post("/api/clientes/", headers=operador, json={
+        "login": "ficha1", "nome": "Ficha Um", "senha": "x12345",
+        "documento": "123.456.789-00", "data_nascimento": "2010-05-20"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["documento"] == "123.456.789-00" and d["data_nascimento"] == "2010-05-20"
+    assert d["tem_foto"] is False
+    cid = d["id"]
+    # editar mantem o que nao veio e limpa o que veio vazio
+    d = c.put(f"/api/clientes/{cid}", headers=operador, json={"nome": "Ficha 1"}).json()
+    assert d["documento"] == "123.456.789-00"
+    d = c.put(f"/api/clientes/{cid}", headers=operador, json={"documento": "", "data_nascimento": None}).json()
+    assert d["documento"] is None and d["data_nascimento"] is None
+    assert c.put(f"/api/clientes/{cid}", headers=operador, json={"data_nascimento": "20/05/2010"}).status_code == 422
+
+
+def test_foto_do_cliente(c, admin, operador):
+    import base64
+    cid = c.post("/api/clientes/", headers=admin,
+                 json={"login": "foto1", "nome": "Foto Um", "senha": "x12345"}).json()["id"]
+    assert c.get(f"/api/clientes/{cid}/foto", headers=operador).status_code == 404
+
+    url = "data:image/jpeg;base64," + base64.b64encode(_JPEG).decode()
+    r = c.put(f"/api/clientes/{cid}/foto", headers=operador, json={"imagem": url})
+    assert r.status_code == 200, r.text
+    assert r.json()["tem_foto"] and r.json()["foto_em"]
+    r = c.get(f"/api/clientes/{cid}/foto", headers=operador)
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg" and r.content == _JPEG
+    assert c.get(f"/api/clientes/{cid}/foto").status_code in (401, 403)  # exige login
+
+    # so imagem de verdade, e nao gigante
+    falsa = "data:image/jpeg;base64," + base64.b64encode(b"<script>alert(1)</script>").decode()
+    assert c.put(f"/api/clientes/{cid}/foto", headers=operador, json={"imagem": falsa}).status_code == 400
+    grande = "data:image/jpeg;base64," + base64.b64encode(_JPEG + b"0" * 3_000_000).decode()
+    assert c.put(f"/api/clientes/{cid}/foto", headers=operador, json={"imagem": grande}).status_code == 400
+
+    assert c.delete(f"/api/clientes/{cid}/foto", headers=operador).status_code == 200
+    assert c.get(f"/api/clientes/{cid}", headers=operador).json()["tem_foto"] is False
+    # excluir o cliente leva a foto junto
+    c.put(f"/api/clientes/{cid}/foto", headers=operador, json={"imagem": url})
+    assert c.delete(f"/api/clientes/{cid}", headers=admin).status_code == 200
