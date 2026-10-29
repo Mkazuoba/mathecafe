@@ -49,10 +49,11 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 |---|---|
 | `src/App.tsx` | rotas: `/login`, `/` (Painel), `/clientes`, `/mapa`, `/configuracoes` (só admin) |
 | `src/lib/api.ts` | chamadas à API com o token; 401 leva de volta ao login |
-| `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, clientes, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens |
+| `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens |
+| `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
-| `src/components/` | `Layout` (menu lateral e cabeçalho), `ModalSaldo`, e `ui/` (botão, campos, modal, selos de status) |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `ModalSaldo`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
 | `src/pages/` | uma tela por arquivo |
 
 O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.
@@ -131,6 +132,8 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **Migração do SQLite é genérica** (`_migrar_colunas_faltantes`): toda coluna do `models.py` que falte no banco é adicionada com o padrão. Uma coluna sem migração já derrubou `GET /api/estacoes/` (500) e o painel ficou sem estações.
 - **`agente.py` já foi reescrito a partir de uma cópia antiga** e perdeu correções (proxy, nome com espaço, estação não cadastrada). `tests/test_agente.py` confere essas regras no código-fonte.
 - **Exclusões preservam o histórico**: cliente com sessões e operador que já liberou alguém não podem ser excluídos (409, "desative"); o painel tem o botão "Ativo" para isso. Estação com sessões é desativada em vez de excluída (some do painel); cadastrar de novo o mesmo nome a reativa.
+- **Clientes nunca são carregados em massa** (~43k): toda tela busca no servidor (`GET /api/clientes/?busca=...`, até 200). A lista `clientes` do `dados.tsx` fica vazia; `recarregarClientes` só incrementa `versaoClientes`, e as buscas abertas refazem a consulta. A busca divide o termo em palavras e ignora acentos (função `sem_acento` registrada no SQLite em `database.py`).
+- **Preferências do operador ficam no navegador** (`localStorage`: `painel.layout`, `painel.ordem`, `painel.grupo`, `painel.busca`, `clientes.busca`), sempre com `try/catch`; sem storage, valem até recarregar.
 - **WebSocket do painel exige login**: `/ws/painel?token=...` só aceita admin ou operador (os eventos trazem nomes de clientes).
 - **Mapa mostra estações sem grupo** numa aba "Sem grupo"; no painel lateral o admin troca o grupo da estação.
 - **Admin sem senha fixa**: criado por `python -m app.cli` ou pelas variáveis `ADMIN_LOGIN`/`ADMIN_SENHA`.

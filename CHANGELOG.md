@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-29 — Aba Clientes de volta, busca refinada e colunas ajustáveis (Ciclo 5)
+
+- **A aba Clientes sempre dizia "Nenhum cliente encontrado"**: ela filtrava a lista que o painel deixou de carregar quando a busca passou para o servidor (são ~43k clientes). Agora busca no servidor, lista até 200 pela ordem escolhida e avisa quando é preciso refinar.
+- **Busca refinada, igual no Painel e na aba Clientes** (`lib/buscaClientes.ts`, `components/FiltrosBusca.tsx`): buscar em nome e login, só nome ou só login; "contém as palavras", "começa com" ou "exatamente igual"; com ou sem saldo. Na aba Clientes também status e ordenação, inclusive clicando no cabeçalho da tabela. Os filtros ficam guardados no navegador.
+- **Palavras em qualquer ordem e sem acento**: "jose silva" acha "Maria José da Silva" (antes não achava nada). No SQLite a comparação usa a função `sem_acento`, registrada em `database.py`.
+- `GET /api/clientes/` aceita `campo`, `modo`, `status`, `saldo`, `ordem`, `desc` e `tudo` (lista sem termo de busca).
+- **Colunas do Painel ajustáveis** (`components/ColunasAjustaveis.tsx`): arrastar a divisa muda a largura (clique duplo volta ao padrão), as setas no cabeçalho trocam as colunas de lugar e "Restaurar layout" desfaz tudo. Guardado no navegador.
+- As buscas de clientes abertas se atualizam sozinhas quando um cliente é editado ou uma sessão termina (`versaoClientes` em `lib/dados.tsx`).
+
 ## 2026-10-29 — Controle de sessões no Painel (Ciclo 5)
 
 - A coluna de estações do Painel virou a tabela **Controle de sessões**, como no VSCyber: Status, Estação, Login (login - nome) e Tempo restante, com ordenação ao clicar no cabeçalho (clique de novo inverte), filtro por grupo e contagem por status no rodapé. Ordem natural nos nomes (AD-2 antes de AD-10).

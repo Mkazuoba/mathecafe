@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { IconAlertTriangle, IconCamera, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
+import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
 import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
 import type { Cliente, Estacao, Grupo, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
+import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
+import { FiltrosBusca } from "@/components/FiltrosBusca"
 
 import { Button } from "@/components/ui/button"
 import { ROTULO_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
@@ -31,11 +34,18 @@ type AbaEstacao = "geral" | "comandos" | "historico"
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
 
+type IdColuna = "estacoes" | "clientes" | "fila"
+const LAYOUT_PADRAO: LayoutColunas<IdColuna> = {
+  ordem: ["estacoes", "clientes", "fila"],
+  larguras: { estacoes: 44, clientes: 31, fila: 25 },
+}
+
 export default function Painel() {
   const { estacoes, fila } = useDados()
   const { liberar } = useAcoes()
   const [editandoCliente, setEditandoCliente] = useState<Cliente | null>(null)
   const [novoCliente, setNovoCliente] = useState(false)
+  const { layout, setLayout, mover, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
 
   const contagem = useMemo(
     () => ({
@@ -54,12 +64,21 @@ export default function Painel() {
         <Contador cor="bg-ocupada" valor={contagem.ocupada} rotulo="ocupadas" />
         <Contador cor="bg-desligada" valor={contagem.desligada} rotulo="desligadas" />
         {contagem.manutencao > 0 && <Contador cor="bg-manutencao" valor={contagem.manutencao} rotulo="em manutenção" />}
+        {alterado && (
+          <button type="button" onClick={restaurar} className="ml-auto hidden text-xs text-texto-fraco hover:text-destaque lg:block">
+            Restaurar layout
+          </button>
+        )}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[1.4fr_1fr_0.8fr] lg:overflow-hidden">
-        <ColunaEstacoes />
-        <ColunaClientes aoEditarCliente={setEditandoCliente} aoNovoCliente={() => setNovoCliente(true)} />
-        <ColunaFila total={fila.length} aoSoltarCliente={liberar} />
-      </div>
+      <ColunasAjustaveis layout={layout} padrao={LAYOUT_PADRAO} aoMudar={setLayout}>
+        {(id, posicao) => {
+          const controles = <BotoesMover posicao={posicao} total={layout.ordem.length} aoMover={(d) => mover(id, d)} />
+          if (id === "estacoes") return <ColunaEstacoes controles={controles} />
+          if (id === "clientes")
+            return <ColunaClientes controles={controles} aoEditarCliente={setEditandoCliente} aoNovoCliente={() => setNovoCliente(true)} />
+          return <ColunaFila controles={controles} total={fila.length} aoSoltarCliente={liberar} />
+        }}
+      </ColunasAjustaveis>
       <ModalEditarCliente cliente={editandoCliente} aoFechar={() => setEditandoCliente(null)} />
       <ModalNovoCliente aberto={novoCliente} aoFechar={() => setNovoCliente(false)} />
     </>
@@ -81,18 +100,21 @@ function Coluna({
   total,
   children,
   topo,
+  controles,
   ...props
 }: {
   titulo: string
   total: number
   children: React.ReactNode
   topo?: React.ReactNode
+  controles?: React.ReactNode
 } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden border-r border-borda last:border-r-0" {...props}>
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" {...props}>
       <div className="flex shrink-0 items-center gap-2 border-b border-borda bg-superficie-2 px-3.5 py-2">
-        <h2 className="text-xs font-semibold tracking-wider text-texto-suave uppercase">{titulo}</h2>
+        <h2 className="truncate text-xs font-semibold tracking-wider text-texto-suave uppercase">{titulo}</h2>
         <span className="rounded-full bg-destaque px-2 text-xs font-semibold text-white">{total}</span>
+        {controles && <span className="ml-auto">{controles}</span>}
       </div>
       {topo}
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">{children}</div>
@@ -174,7 +196,7 @@ function compararLinhas(a: LinhaTabela, b: LinhaTabela, coluna: ColunaOrdem): nu
   }
 }
 
-function ColunaEstacoes() {
+function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   const { estacoes, grupos, sessaoDaEstacao, agora, carregado } = useDados()
   const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
   const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
@@ -218,7 +240,7 @@ function ColunaEstacoes() {
   const temSemGrupo = estacoes.some((e) => e.grupo_id == null)
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden border-r border-borda">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-borda bg-superficie-2 px-3.5 py-1.5">
         <h2 className="text-xs font-semibold tracking-wider whitespace-nowrap text-texto-suave uppercase">Controle de sessões</h2>
         <span className="rounded-full bg-destaque px-2 text-xs font-semibold text-white">{linhas.length}</span>
@@ -236,6 +258,7 @@ function ColunaEstacoes() {
           ))}
           {temSemGrupo && <option value={SEM_GRUPO}>Sem grupo</option>}
         </Select>
+        {controles}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -699,28 +722,6 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 // ---------------------------------------------------------------------------
 // Aba: Comandos
 // ---------------------------------------------------------------------------
-function useBuscaClientes(busca: string) {
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [carregando, setCarregando] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    const q = busca.trim()
-    if (!q) { setClientes([]); return }
-    timerRef.current = setTimeout(async () => {
-      setCarregando(true)
-      try {
-        const res = await Api.get<Cliente[]>(`/api/clientes/?busca=${encodeURIComponent(q)}`)
-        setClientes(res)
-      } catch { setClientes([]) }
-      finally { setCarregando(false) }
-    }, 300)
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [busca])
-
-  return { clientes, carregando }
-}
 
 function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela, streaming, frameUrl, toggleStreaming }: {
   estacao: Estacao
@@ -1012,16 +1013,29 @@ function AbaHistorico({ estacao }: { estacao: string }) {
 // ---------------------------------------------------------------------------
 // Coluna: Clientes
 // ---------------------------------------------------------------------------
-function ColunaClientes({ aoEditarCliente, aoNovoCliente }: { aoEditarCliente: (c: Cliente) => void; aoNovoCliente: () => void }) {
+function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
+  aoEditarCliente: (c: Cliente) => void
+  aoNovoCliente: () => void
+  controles?: React.ReactNode
+}) {
   const { fila, sessoes } = useDados()
   const { liberar } = useAcoes()
   const [busca, setBusca] = useState("")
+  const [filtros, setFiltros] = useState(() => lerFiltros("painel.busca", FILTROS_PADRAO))
   const [liberando, setLiberando] = useState<number | null>(null)
   const idsNaFila = useMemo(() => new Set(fila.map((f) => f.cliente_id)), [fila])
   const estacaoEmUso = useMemo(() => new Map(sessoes.map((s) => [s.cliente_id, s.estacao_nome])), [sessoes])
 
-  const { clientes, carregando } = useBuscaClientes(busca)
-  const lista = useMemo(() => clientes.filter((c) => c.ativo), [clientes])
+  // inativos nunca aparecem aqui: não podem ser liberados
+  const { clientes: lista, carregando } = useBuscaClientes(busca, {
+    campo: filtros.campo, modo: filtros.modo, saldo: filtros.saldo, status: "ativos",
+  })
+
+  function mudarFiltros(f: FiltrosClientes) {
+    setFiltros(f)
+    gravarFiltros("painel.busca", f)
+  }
+  const dica = filtros.campo === "login" ? "Buscar por login..." : filtros.campo === "nome" ? "Buscar por nome..." : "Buscar por nome ou login..."
 
   async function aoLiberar(id: number) {
     setLiberando(id)
@@ -1033,17 +1047,21 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente }: { aoEditarCliente: (
     <Coluna
       titulo="Clientes"
       total={lista.length}
+      controles={controles}
       topo={
         <div className="shrink-0 border-b border-borda p-2 flex flex-col gap-2">
           <Button size="xs" variant="outline" className="w-full gap-1 justify-center" onClick={aoNovoCliente}><IconUserPlus size={14} /> Novo cliente</Button>
-          <input
-            type="search"
-            aria-label="Buscar cliente"
-            placeholder="Buscar por nome ou login..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="w-full rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
-          />
+          <div className="flex gap-1.5">
+            <input
+              type="search"
+              aria-label="Buscar cliente"
+              placeholder={dica}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
+            />
+            <FiltrosBusca valor={filtros} padrao={FILTROS_PADRAO} campos={["campo", "modo", "saldo"]} aoMudar={mudarFiltros} />
+          </div>
         </div>
       }
     >
@@ -1111,7 +1129,11 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente }: { aoEditarCliente: (
 // ---------------------------------------------------------------------------
 // Coluna: Fila
 // ---------------------------------------------------------------------------
-function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente: (id: number) => void }) {
+function ColunaFila({ total, aoSoltarCliente, controles }: {
+  total: number
+  aoSoltarCliente: (id: number) => void
+  controles?: React.ReactNode
+}) {
   const { fila, agora } = useDados()
   const { removerDaFila } = useAcoes()
 
@@ -1119,6 +1141,7 @@ function ColunaFila({ total, aoSoltarCliente }: { total: number; aoSoltarCliente
     <Coluna
       titulo="Fila de espera"
       total={total}
+      controles={controles}
       onDragOver={(ev) => ev.dataTransfer.types.includes(TIPO_ARRASTO) && ev.preventDefault()}
       onDrop={(ev) => {
         ev.preventDefault()

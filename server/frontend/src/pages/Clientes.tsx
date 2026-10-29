@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { IconPencil, IconHistory, IconMessageCircle } from "@tabler/icons-react"
+import { IconChevronDown, IconChevronUp, IconHistory, IconMessageCircle, IconPencil, IconSelector } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
+import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
 import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, lerTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { CabecalhoTela } from "@/components/Layout"
+import { FiltrosBusca } from "@/components/FiltrosBusca"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
@@ -24,27 +26,38 @@ interface SessaoHistorico {
   motivo_encerramento: string | null
 }
 
-type Filtro = "todos" | "ativos" | "inativos"
+// Até quantos clientes a tabela mostra (são ~43k): passou disso, refinar a busca
+const LIMITE = 200
+const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
+  { titulo: "Login", ordem: "login" },
+  { titulo: "Nome", ordem: "nome" },
+  { titulo: "Saldo de tempo", ordem: "saldo" },
+  { titulo: "Status" },
+  { titulo: "Criado em", ordem: "criado" },
+  { titulo: "Ações" },
+]
 
 export default function Clientes() {
-  const { clientes, recarregarClientes } = useDados()
+  const { recarregarClientes } = useDados()
   const avisar = useAvisos()
   const navigate = useNavigate()
   const admin = Api.ehAdmin()
   const [busca, setBusca] = useState("")
-  const [filtro, setFiltro] = useState<Filtro>("todos")
+  const [filtros, setFiltros] = useState(() => lerFiltros("clientes.busca", FILTROS_PADRAO))
   const [editando, setEditando] = useState<Cliente | "novo" | null>(null)
   const [editandoSaldo, setEditandoSaldo] = useState<Cliente | null>(null)
   const [verHistorico, setVerHistorico] = useState<Cliente | null>(null)
 
-  const lista = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    return clientes.filter(
-      (c) =>
-        (!q || c.nome.toLowerCase().includes(q) || c.login.toLowerCase().includes(q)) &&
-        (filtro === "todos" || (filtro === "ativos") === c.ativo),
-    )
-  }, [busca, filtro, clientes])
+  const { clientes: lista, carregando } = useBuscaClientes(busca, filtros, { tudo: true, limite: LIMITE })
+
+  function mudarFiltros(f: FiltrosClientes) {
+    setFiltros(f)
+    gravarFiltros("clientes.busca", f)
+  }
+  function ordenar(ordem: FiltrosClientes["ordem"]) {
+    mudarFiltros({ ...filtros, ordem, desc: filtros.ordem === ordem ? !filtros.desc : false })
+  }
+  const dica = filtros.campo === "login" ? "Buscar por login..." : filtros.campo === "nome" ? "Buscar por nome..." : "Buscar por nome ou login..."
 
   async function excluir(c: Cliente) {
     if (!window.confirm(`Excluir o cliente ${c.nome}? Esta ação não pode ser desfeita.`)) return
@@ -63,16 +76,28 @@ export default function Clientes() {
         <Input
           type="search"
           aria-label="Buscar cliente"
-          placeholder="Buscar por nome ou login..."
+          placeholder={dica}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           className="h-9 w-64"
         />
-        <Select aria-label="Filtrar por status" value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)} className="h-9 w-32">
+        <Select
+          aria-label="Filtrar por status"
+          value={filtros.status}
+          onChange={(e) => mudarFiltros({ ...filtros, status: e.target.value as FiltrosClientes["status"] })}
+          className="h-9 w-32"
+        >
           <option value="todos">Todos</option>
           <option value="ativos">Ativos</option>
           <option value="inativos">Inativos</option>
         </Select>
+        <FiltrosBusca
+          className="h-9"
+          valor={filtros}
+          padrao={FILTROS_PADRAO}
+          campos={["campo", "modo", "saldo", "ordem"]}
+          aoMudar={mudarFiltros}
+        />
         <div className="flex-1" />
         {admin && (
           <Button variant="outline" size="sm" onClick={() => navigate("/configuracoes?secao=relatorios")}>
@@ -88,11 +113,34 @@ export default function Clientes() {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="text-left text-xs tracking-wide text-texto-fraco uppercase">
-              {["Login", "Nome", "Saldo de tempo", "Status", "Criado em", "Ações"].map((t) => (
-                <th key={t} className="border-b border-borda px-2.5 py-2 font-medium">
-                  {t}
-                </th>
-              ))}
+              {COLUNAS.map(({ titulo, ordem }) => {
+                const ativa = ordem && filtros.ordem === ordem
+                return (
+                  <th
+                    key={titulo}
+                    aria-sort={ativa ? (filtros.desc ? "descending" : "ascending") : undefined}
+                    className="border-b border-borda px-2.5 py-2 font-medium"
+                  >
+                    {ordem ? (
+                      <button
+                        type="button"
+                        title="Ordenar"
+                        onClick={() => ordenar(ordem)}
+                        className={"inline-flex items-center gap-0.5 uppercase hover:text-texto " + (ativa ? "text-texto" : "")}
+                      >
+                        {titulo}
+                        {ativa ? (
+                          filtros.desc ? <IconChevronDown size={13} /> : <IconChevronUp size={13} />
+                        ) : (
+                          <IconSelector size={13} className="opacity-40" />
+                        )}
+                      </button>
+                    ) : (
+                      titulo
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -146,7 +194,15 @@ export default function Clientes() {
             ))}
           </tbody>
         </table>
-        {!lista.length && <Vazio>Nenhum cliente encontrado</Vazio>}
+        {!lista.length ? (
+          <Vazio>{carregando ? "Buscando..." : "Nenhum cliente encontrado"}</Vazio>
+        ) : (
+          <div className="py-3 text-center text-xs text-texto-fraco">
+            {lista.length >= LIMITE
+              ? `Mostrando os primeiros ${LIMITE} clientes. Refine a busca ou os filtros para achar os outros.`
+              : `${lista.length} cliente${lista.length > 1 ? "s" : ""}`}
+          </div>
+        )}
       </div>
 
       <ModalCliente cliente={editando} aoFechar={() => setEditando(null)} />

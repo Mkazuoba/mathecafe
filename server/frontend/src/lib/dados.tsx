@@ -11,6 +11,8 @@ interface Dados {
   grupos: Grupo[]
   carregado: boolean
   tempoReal: boolean
+  /** Muda a cada recarregarClientes: as buscas de clientes abertas refazem a consulta. */
+  versaoClientes: number
   /** Relógio compartilhado (ms), atualizado a cada segundo para as contagens. */
   agora: number
   recarregar: () => Promise<void>
@@ -25,6 +27,7 @@ const DadosContext = createContext<Dados | null>(null)
 export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const [estacoes, setEstacoes] = useState<Estacao[]>([])
   const [clientes] = useState<Cliente[]>([])
+  const [versaoClientes, setVersaoClientes] = useState(0)
   const [fila, setFila] = useState<ItemFila[]>([])
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [grupos, setGrupos] = useState<Grupo[]>([])
@@ -36,9 +39,9 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     setEstacoes(await Api.get<Estacao[]>("/api/estacoes/"))
   }, [])
   // Clientes nao sao mais carregados em massa no startup.
-  // Cada componente busca via /api/clientes/?busca=... conforme necessario.
+  // Cada tela busca via useBuscaClientes (lib/buscaClientes.ts).
   const recarregarClientes = useCallback(async () => {
-    // Mantido por compatibilidade; nao carrega mais todos os clientes.
+    setVersaoClientes((v) => v + 1)
   }, [])
   const recarregarFila = useCallback(async () => {
     setFila(await Api.get<ItemFila[]>("/api/estacoes/fila"))
@@ -131,6 +134,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     () => ({
       estacoes,
       clientes,
+      versaoClientes,
       fila,
       sessoes,
       grupos,
@@ -143,7 +147,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarEstacoes,
       sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
     }),
-    [estacoes, clientes, fila, sessoes, grupos, carregado, tempoReal, agora, recarregar,
+    [estacoes, clientes, versaoClientes, fila, sessoes, grupos, carregado, tempoReal, agora, recarregar,
      recarregarClientes, recarregarFila, recarregarEstacoes],
   )
 
