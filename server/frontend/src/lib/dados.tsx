@@ -1,11 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { Api } from "@/lib/api"
-import type { Cliente, Estacao, Grupo, ItemFila, Sessao } from "@/lib/tipos"
+import type { Estacao, Grupo, ItemFila, Sessao } from "@/lib/tipos"
 import { restanteDaSessao } from "@/lib/tempo"
 
 interface Dados {
   estacoes: Estacao[]
-  clientes: Cliente[]
   fila: ItemFila[]
   sessoes: Sessao[]
   grupos: Grupo[]
@@ -26,7 +25,6 @@ const DadosContext = createContext<Dados | null>(null)
 
 export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const [estacoes, setEstacoes] = useState<Estacao[]>([])
-  const [clientes] = useState<Cliente[]>([])
   const [versaoClientes, setVersaoClientes] = useState(0)
   const [fila, setFila] = useState<ItemFila[]>([])
   const [sessoes, setSessoes] = useState<Sessao[]>([])
@@ -38,8 +36,8 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const recarregarEstacoes = useCallback(async () => {
     setEstacoes(await Api.get<Estacao[]>("/api/estacoes/"))
   }, [])
-  // Clientes nao sao mais carregados em massa no startup.
-  // Cada tela busca via useBuscaClientes (lib/buscaClientes.ts).
+  // Clientes (~43k) nunca sao carregados em massa: cada tela busca no
+  // servidor com useBuscaClientes (lib/buscaClientes.ts).
   const recarregarClientes = useCallback(async () => {
     setVersaoClientes((v) => v + 1)
   }, [])
@@ -133,7 +131,6 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const valor = useMemo<Dados>(
     () => ({
       estacoes,
-      clientes,
       versaoClientes,
       fila,
       sessoes,
@@ -147,7 +144,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarEstacoes,
       sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
     }),
-    [estacoes, clientes, versaoClientes, fila, sessoes, grupos, carregado, tempoReal, agora, recarregar,
+    [estacoes, versaoClientes, fila, sessoes, grupos, carregado, tempoReal, agora, recarregar,
      recarregarClientes, recarregarFila, recarregarEstacoes],
   )
 

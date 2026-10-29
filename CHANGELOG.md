@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-29 — Revisão: filtro de cliente do Relatório CSV (Ciclo 6, tarefa 6.1)
+
+- **O filtro de cliente do Relatório CSV estava sempre vazio**: usava a lista de clientes do contexto, que não é mais carregada. Agora é uma busca (`components/SeletorCliente.tsx`): digita, escolhe, e o "x" tira o filtro.
+- A lista `clientes` saiu do `lib/dados.tsx`, para nenhuma tela voltar a usá-la; `tests/test_painel.py` confere isso no código-fonte.
+
 ## 2026-10-29 — Tempo de uso por dia (Ciclo 5)
 
 - **Não havia limite diário de verdade**: quando o tempo acabava, o saldo 0 significava "dar o tempo padrão de novo", e o cliente podia ser liberado outra vez no mesmo dia. O painel até mostrava "Limite diário atingido", mas o servidor ignorava. O "reset" que existia usava a data em UTC (o dia virava às 21h) e só valia no login pelo PC.

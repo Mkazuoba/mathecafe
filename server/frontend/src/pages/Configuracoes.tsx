@@ -4,11 +4,12 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, lerTempo } from "@/lib/tempo"
-import type { AppPermitido, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
+import type { AppPermitido, Cliente, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
+import { SeletorCliente } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
 const SECOES = [
@@ -638,10 +639,10 @@ function SecaoGrupos() {
 
 function SecaoRelatorios() {
   const avisar = useAvisos()
-  const { clientes, estacoes } = useDados()
+  const { estacoes } = useDados()
   const [inicio, setInicio] = useState("")
   const [fim, setFim] = useState("")
-  const [cliente, setCliente] = useState("")
+  const [cliente, setCliente] = useState<Cliente | null>(null)
   const [estacao, setEstacao] = useState("")
   const [gerando, setGerando] = useState(false)
 
@@ -650,7 +651,7 @@ function SecaoRelatorios() {
     const params = new URLSearchParams()
     if (inicio) params.append("data_inicio", inicio)
     if (fim) params.append("data_fim", fim)
-    if (cliente) params.append("cliente_id", cliente)
+    if (cliente) params.append("cliente_id", String(cliente.id))
     if (estacao) params.append("estacao_nome", estacao)
     setGerando(true)
     try {
@@ -679,14 +680,7 @@ function SecaoRelatorios() {
         </div>
       </div>
       <Campo rotulo="Cliente" id="rel-cliente">
-        <Select id="rel-cliente" value={cliente} onChange={(e) => setCliente(e.target.value)}>
-          <option value="">Todos</option>
-          {clientes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nome} ({c.login})
-            </option>
-          ))}
-        </Select>
+        <SeletorCliente id="rel-cliente" valor={cliente} aoMudar={setCliente} />
       </Campo>
       <Campo rotulo="Estação" id="rel-estacao">
         <Select id="rel-estacao" value={estacao} onChange={(e) => setEstacao(e.target.value)}>
