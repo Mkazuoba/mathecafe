@@ -212,7 +212,7 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
     )
     const resultado: LinhaTabela[] = filtradas.map((e) => {
       const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
-      const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
+      const restante = sessao ? restanteDaSessao(sessao, agora) : 0
       return { estacao: e, sessao, restante }
     })
     const sinal = ordem.desc ? -1 : 1
@@ -485,7 +485,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
   const [editandoNome, setEditandoNome] = useState(false)
   const [screenshot, setScreenshot] = useState<string | null>(null)
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
-  const restante = sessao ? restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora) : 0
+  const restante = sessao ? restanteDaSessao(sessao, agora) : 0
 
   const [streaming, setStreaming] = useState(false)
   const [frameUrl, setFrameUrl] = useState<string | null>(null)

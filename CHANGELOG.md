@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-29 — Revisão: pausa não conta como uso (Ciclo 6, tarefa 6.2)
+
+- **Encerrar uma sessão pausada cobrava a pausa**: a pausa só era descontada ao retomar. Exemplo: entra às 14:00, pausa às 14:30, o operador encerra às 15:30 — o cliente perdia 1h30 em vez de 30 min. Agora todo encerramento (operador, PC, queda de conexão) usa a mesma conta, `fechar_tempo_da_sessao` em `tempo_diario.py`, que desconta as pausas retomadas e a que está em andamento.
+- O tempo consumido gravado não inclui mais as pausas (antes inflava o "uso de hoje" e os Históricos), e `tempo_total_segundos` passa a guardar o tempo concedido, sem a pausa somada.
+- **A contagem do painel não para mais de descer durante a pausa**: `GET /api/sessoes/ativas` informa `pausada_em` e a contagem (Painel e Mapa) fica parada nesse momento.
+- O agente não muda: continua somando a pausa ao total ao retomar.
+
 ## 2026-10-29 — Históricos por cliente e por estação (Ciclo 5)
 
 - **Nova tela Históricos** (menu lateral, admin e operador), com duas abas:

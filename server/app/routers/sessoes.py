@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import Sessao, Estacao
 from app.security import requer_perfil
 from app.websocket_manager import manager
+from app.tempo_diario import fechar_tempo_da_sessao
 
 router = APIRouter(prefix="/sessoes", tags=["sessoes"])
 
@@ -22,7 +23,9 @@ def serial_sessao(s: Sessao):
         "tempo_consumido_segundos": s.tempo_consumido_segundos,
         "motivo_encerramento": s.motivo_encerramento,
         "ativa": s.encerrada_em is None,
-        "pausada": bool(s.pausada)
+        "pausada": bool(s.pausada),
+        # o painel para a contagem a partir daqui enquanto a sessao esta pausada
+        "pausada_em": s.pausada_em.isoformat() if s.pausada and s.pausada_em else None
     }
 
 @router.get("/ativas")
@@ -53,11 +56,9 @@ async def encerrar_operador(sessao_id: int, db: Session = Depends(get_db),
         raise HTTPException(404, "Sessão ativa não encontrada")
 
     agora = datetime.utcnow()
-    consumido = int((agora - sessao.iniciada_em).total_seconds())
-    restante = max(0, sessao.tempo_total_segundos - consumido)
+    _, restante = fechar_tempo_da_sessao(sessao, agora)
 
     sessao.encerrada_em = agora
-    sessao.tempo_consumido_segundos = consumido
     sessao.motivo_encerramento = "operador"
     sessao.cliente.saldo_segundos = restante
     sessao.estacao.status = "livre"

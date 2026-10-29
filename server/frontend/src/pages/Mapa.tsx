@@ -214,7 +214,7 @@ function Pino({
         <>
           <span className="max-w-[70px] truncate text-[0.62rem] text-texto-suave">{sessao.cliente_nome}</span>
           <span className="text-[0.62rem] font-semibold text-ocupada tabular-nums">
-            {formatarTempo(restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora))}
+            {formatarTempo(restanteDaSessao(sessao, agora))}
           </span>
         </>
       )}
@@ -284,7 +284,7 @@ function PainelDetalhe({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: (
           <Linha rotulo="Tempo total">{formatarTempo(sessao.tempo_total_segundos)}</Linha>
           <Linha rotulo="Tempo restante">
             <span className="tabular-nums">
-              {formatarTempo(restanteDaSessao(sessao.iniciada_em, sessao.tempo_total_segundos, agora))}
+              {formatarTempo(restanteDaSessao(sessao, agora))}
             </span>
           </Linha>
           <Button

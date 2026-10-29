@@ -22,9 +22,15 @@ export function dataDoServidor(iso: string): Date {
   return new Date(iso.endsWith("Z") ? iso : iso + "Z")
 }
 
-export function restanteDaSessao(iniciadaEm: string, totalSegundos: number, agora: number): number {
-  const decorrido = (agora - dataDoServidor(iniciadaEm).getTime()) / 1000
-  return Math.max(0, totalSegundos - decorrido)
+/** Tempo que falta na sessão. Pausada, o relógio para no início da pausa
+ * (ao retomar, o servidor soma a pausa ao tempo total). */
+export function restanteDaSessao(
+  sessao: { iniciada_em: string; tempo_total_segundos: number; pausada_em?: string | null },
+  agora: number,
+): number {
+  const fim = sessao.pausada_em ? dataDoServidor(sessao.pausada_em).getTime() : agora
+  const decorrido = (fim - dataDoServidor(sessao.iniciada_em).getTime()) / 1000
+  return Math.max(0, sessao.tempo_total_segundos - decorrido)
 }
 
 export function haQuantoTempo(iso: string, agora: number): string {

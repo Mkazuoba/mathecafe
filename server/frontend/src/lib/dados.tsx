@@ -121,7 +121,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const zerouRef = useRef(new Set<number>())
   useEffect(() => {
     for (const s of sessoes) {
-      if (restanteDaSessao(s.iniciada_em, s.tempo_total_segundos, agora) <= 0 && !zerouRef.current.has(s.id)) {
+      if (restanteDaSessao(s, agora) <= 0 && !zerouRef.current.has(s.id)) {
         zerouRef.current.add(s.id)
         recarregar()
       }

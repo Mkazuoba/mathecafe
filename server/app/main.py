@@ -10,7 +10,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
-from app.tempo_diario import ESGOTADO_CLIENTE, reservar_tempo
+from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, agente as agente_router
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
@@ -68,11 +68,8 @@ async def _encerrar_sessao_orfa(db: Session, estacao: Estacao, fim: datetime):
         Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
     if not sessao:
         return
-    total = sessao.tempo_total_segundos or 0
-    consumido = min(total, max(0, int((fim - sessao.iniciada_em).total_seconds())))
-    restante = total - consumido
+    _, restante = fechar_tempo_da_sessao(sessao, fim)
     sessao.encerrada_em = fim
-    sessao.tempo_consumido_segundos = consumido
     sessao.motivo_encerramento = "conexao_perdida"
     sessao.cliente.saldo_segundos = restante
     db.commit()
@@ -242,13 +239,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 if sessao:
                     agora = datetime.utcnow()
                     # Calculo pelo servidor — nao confia no valor do agente
-                    consumido = min(
-                        sessao.tempo_total_segundos,
-                        max(0, int((agora - sessao.iniciada_em).total_seconds()))
-                    )
-                    restante = max(0, sessao.tempo_total_segundos - consumido)
+                    _, restante = fechar_tempo_da_sessao(sessao, agora)
                     sessao.encerrada_em = agora
-                    sessao.tempo_consumido_segundos = consumido
                     sessao.motivo_encerramento = motivo
                     # tempo esgotado zera; manutencao devolve o resto (senao o
                     # cliente ficaria sem tempo o resto do dia)

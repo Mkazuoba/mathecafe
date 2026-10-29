@@ -559,3 +559,79 @@ def test_historico_por_cliente_e_por_estacao(c, admin, operador):
 
     assert c.get("/api/relatorios/cliente/999999", headers=admin).status_code == 404
     assert c.get("/api/relatorios/estacao/nao-existe", headers=admin).status_code == 404
+
+
+# ── 6.2 Pausa nao conta como uso ─────────────────────────────────────────────
+
+def _recuar(sessao_id, inicio_min, pausa_min=None):
+    """Simula o relogio: a sessao comecou ha inicio_min e a pausa ha pausa_min."""
+    db = SessionLocal()
+    s = db.get(Sessao, sessao_id)
+    agora = datetime.utcnow()
+    s.iniciada_em = agora - timedelta(minutes=inicio_min)
+    if pausa_min is not None:
+        s.pausada_em = agora - timedelta(minutes=pausa_min)
+    db.commit()
+    db.close()
+
+
+def _sessao(sessao_id):
+    db = SessionLocal()
+    s = db.get(Sessao, sessao_id)
+    db.expunge(s)
+    db.close()
+    return s
+
+
+def test_encerrar_sessao_pausada_nao_cobra_a_pausa(c, admin, cenario):
+    # 14:00 entra, 14:30 pausa, 15:30 o operador encerra: usou 30 min, nao 1h30
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        sid, total = dados["sessao_id"], dados["tempo_segundos"]
+        assert c.post(f"/api/sessoes/pausar/{sid}", headers=admin).status_code == 200
+        assert ws.receive_json()["evento"] == "pausar_sessao"
+        _recuar(sid, inicio_min=90, pausa_min=60)
+
+        r = c.post(f"/api/sessoes/encerrar/{sid}", headers=admin)
+        assert r.status_code == 200
+        assert abs(r.json()["saldo_restante"] - (total - 1800)) <= 2, r.json()
+    s = _sessao(sid)
+    assert abs(s.tempo_consumido_segundos - 1800) <= 2
+    assert not s.pausada
+
+
+def test_pausa_retomada_nao_conta_no_uso(c, admin, cenario):
+    # usou 60 min de 100 na parede, com 40 min de pausa retomada; o PC encerra
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        sid, total = dados["sessao_id"], dados["tempo_segundos"]
+        c.post(f"/api/sessoes/pausar/{sid}", headers=admin)
+        assert ws.receive_json()["evento"] == "pausar_sessao"
+        _recuar(sid, inicio_min=100, pausa_min=40)
+        assert c.post(f"/api/sessoes/retomar/{sid}", headers=admin).status_code == 200
+        assert ws.receive_json()["evento"] == "retomar_sessao"
+
+        ws.send_json({"evento": "sessao_encerrada", "sessao_id": sid, "motivo": "cliente",
+                      "tempo_consumido_segundos": 0})
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"
+    s = _sessao(sid)
+    assert abs(s.tempo_consumido_segundos - 3600) <= 2, s.tempo_consumido_segundos  # antes: 6000
+    assert s.tempo_total_segundos == total  # o tempo concedido, sem a pausa somada
+    saldo = c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - (total - 3600)) <= 2
+
+
+def test_painel_recebe_inicio_da_pausa(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+        c.post(f"/api/sessoes/pausar/{sid}", headers=admin)
+        ativa = next(s for s in c.get("/api/sessoes/ativas", headers=admin).json() if s["id"] == sid)
+        assert ativa["pausada"] and ativa["pausada_em"]
+        c.post(f"/api/sessoes/encerrar/{sid}", headers=admin)

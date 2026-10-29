@@ -76,3 +76,25 @@ def zerar_tempo_de_hoje(db: Session) -> int:
           .update({Usuario.saldo_dia: None}, synchronize_session=False)
     db.commit()
     return n
+
+
+def fechar_tempo_da_sessao(sessao, agora: datetime) -> tuple[int, int]:
+    """(consumido, restante) de uma sessao que esta terminando, sem contar pausas.
+
+    Retomar soma a pausa ao tempo_total (o agente conta pelo relogio de parede),
+    entao o tempo concedido e tempo_total - pausas ja retomadas. Uma pausa ainda
+    em andamento (encerrada sem retomar) tambem nao conta como uso.
+    Grava na sessao o tempo concedido e o consumido de verdade.
+    """
+    pausas = sessao.tempo_pausado_segundos or 0
+    concedido = max(0, (sessao.tempo_total_segundos or 0) - pausas)
+    if sessao.pausada and sessao.pausada_em:
+        pausas += max(0, int((agora - sessao.pausada_em).total_seconds()))
+    uso = int((agora - sessao.iniciada_em).total_seconds()) - pausas
+    consumido = min(concedido, max(0, uso))
+    sessao.tempo_total_segundos = concedido
+    sessao.tempo_consumido_segundos = consumido
+    sessao.tempo_pausado_segundos = pausas
+    sessao.pausada = False
+    sessao.pausada_em = None
+    return consumido, concedido - consumido

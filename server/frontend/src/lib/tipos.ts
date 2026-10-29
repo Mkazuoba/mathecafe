@@ -57,6 +57,8 @@ export interface Sessao {
   motivo_encerramento: string | null
   ativa: boolean
   pausada: boolean
+  /** Início da pausa em andamento (null fora da pausa). */
+  pausada_em: string | null
 }
 
 export interface Operador {
