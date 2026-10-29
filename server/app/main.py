@@ -10,6 +10,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
+from app.tempo_diario import ESGOTADO_CLIENTE, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, agente as agente_router
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
@@ -167,25 +168,14 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     }))
                     continue
 
-                # Reset diario: se a ultima sessao foi antes de hoje, zera o saldo
-                ultima_sessao = db.query(Sessao).filter(
-                    Sessao.cliente_id == cliente.id
-                ).order_by(Sessao.iniciada_em.desc()).first()
-                hoje = datetime.utcnow().date()
-                if ultima_sessao and ultima_sessao.iniciada_em.date() < hoje:
-                    cliente.saldo_segundos = 0
-
-                if cliente.saldo_segundos > 0:
-                    tempo = cliente.saldo_segundos
-                else:
-                    config_tempo = db.query(ConfiguracaoSistema).filter(
-                        ConfiguracaoSistema.chave == "tempo_padrao_segundos").first()
-                    if config_tempo:
-                        tempo = int(config_tempo.valor)
-                    else:
-                        grupo = db.query(GrupoEstacao).filter(
-                            GrupoEstacao.id == estacao.grupo_id).first()
-                        tempo = grupo.tempo_padrao_segundos if grupo else 7200
+                # Tempo do dia (zera a meia-noite de Brasilia; ver tempo_diario.py)
+                tempo = reservar_tempo(db, cliente)
+                if tempo is None:
+                    await ws.send_text(json.dumps({
+                        "evento": "login_resultado",
+                        "dados": {"ok": False, "motivo": ESGOTADO_CLIENTE}
+                    }))
+                    continue
 
                 sessao = Sessao(
                     cliente_id=cliente.id,
@@ -194,7 +184,6 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 )
                 db.add(sessao)
                 autorizacao.usado = True
-                cliente.saldo_segundos = 0
                 estacao.status = "ocupada"
                 db.commit()
                 db.refresh(sessao)
@@ -261,7 +250,9 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     sessao.encerrada_em = agora
                     sessao.tempo_consumido_segundos = consumido
                     sessao.motivo_encerramento = motivo
-                    sessao.cliente.saldo_segundos = restante if motivo == "cliente" else 0
+                    # tempo esgotado zera; manutencao devolve o resto (senao o
+                    # cliente ficaria sem tempo o resto do dia)
+                    sessao.cliente.saldo_segundos = 0 if motivo == "tempo_esgotado" else restante
                     # Manutenção: status será atualizado pelo evento status_estacao na sequência
                     sessao.estacao.status = "livre"
                     db.commit()

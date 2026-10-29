@@ -42,7 +42,7 @@ export function ModalSaldo({ cliente, aoFechar }: { cliente: Cliente | null; aoF
   return (
     <Modal titulo={`Saldo de ${cliente?.nome ?? ""}`} aberto={!!cliente} aoFechar={aoFechar} className="max-w-[300px]">
       <form onSubmit={salvar} className="flex flex-col gap-3">
-        <Campo rotulo="Saldo (HH:MM:SS)" id="saldo-rapido">
+        <Campo rotulo="Tempo que ainda pode usar hoje (HH:MM:SS)" id="saldo-rapido">
           <Input id="saldo-rapido" value={valor} onChange={(e) => setValor(e.target.value)} autoFocus />
         </Campo>
         <MensagemErro>{erro}</MensagemErro>

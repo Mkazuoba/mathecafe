@@ -5,6 +5,7 @@ from typing import Optional
 from app.database import get_db
 from app.models import ConfiguracaoSistema
 from app.security import requer_perfil
+from app.tempo_diario import zerar_tempo_de_hoje
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -42,3 +43,9 @@ def atualizar(data: ConfigUpdate, db: Session = Depends(get_db), _=Depends(reque
         "reiniciar_ao_encerrar": valores.get("reiniciar_ao_encerrar", "false") == "true",
         "tempo_padrao_segundos": int(valores.get("tempo_padrao_segundos", "7200")),
     }
+
+
+@router.post("/zerar_tempo_hoje")
+def zerar_tempo_hoje(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    """Faz agora o que a meia-noite faria: todos os clientes voltam ao tempo cheio."""
+    return {"ok": True, "clientes": zerar_tempo_de_hoje(db)}

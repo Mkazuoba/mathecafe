@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 
@@ -14,6 +14,7 @@ class Usuario(Base):
     ativo = Column(Boolean, default=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     saldo_segundos = Column(Integer, default=0)
+    saldo_dia = Column(Date, nullable=True)  # dia (Brasília) do saldo; outro dia = cota cheia (tempo_diario.py)
     observacao = Column(Text, nullable=True)
 
     sessoes = relationship("Sessao", back_populates="cliente", foreign_keys="Sessao.cliente_id")

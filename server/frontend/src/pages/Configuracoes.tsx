@@ -239,6 +239,22 @@ function SecaoComportamento() {
   const [reiniciar, setReiniciar] = useState(false)
   const [tempo, setTempo] = useState("")
   const [erro, setErro] = useState("")
+  const [zerando, setZerando] = useState(false)
+  const { recarregarClientes, recarregarFila } = useDados()
+
+  async function zerarTempoHoje() {
+    if (!window.confirm("Zerar o tempo de hoje de todos os clientes? Todos voltam a ter o tempo do dia cheio.")) return
+    setZerando(true)
+    try {
+      const r = await Api.post<{ clientes: number }>("/api/config/zerar_tempo_hoje", {})
+      avisar(`Tempo de hoje zerado (${r.clientes} cliente${r.clientes === 1 ? "" : "s"})`)
+      await Promise.all([recarregarClientes(), recarregarFila()])
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setZerando(false)
+    }
+  }
 
   useEffect(() => {
     Api.get<ConfigSistema>("/api/config/")
@@ -276,12 +292,27 @@ function SecaoComportamento() {
         </div>
         <Interruptor id="cfg-reiniciar" rotulo="Reiniciar o PC ao encerrar a sessão" ligado={reiniciar} aoMudar={setReiniciar} />
       </div>
-      <Campo rotulo="Tempo padrão de sessão (HH:MM:SS)" id="cfg-tempo">
+      <Campo rotulo="Tempo de uso por dia (HH:MM:SS)" id="cfg-tempo">
         <Input id="cfg-tempo" value={tempo} onChange={(e) => setTempo(e.target.value)} className="max-w-48" />
       </Campo>
-      <p className="mt-1.5 mb-4 text-xs text-texto-fraco">Usado quando o cliente não tem saldo.</p>
+      <p className="mt-1.5 mb-4 text-xs text-texto-fraco">
+        Cada cliente pode usar esse tempo por dia, somando todas as sessões. Quando acaba, só volta amanhã; para dar
+        tempo extra, edite o saldo dele. Zera à meia-noite (horário de Brasília).
+      </p>
       <MensagemErro>{erro}</MensagemErro>
       <Button type="submit">Salvar configurações</Button>
+
+      <div className="mt-8 flex items-center justify-between gap-4 rounded-lg border border-borda bg-superficie-2 px-4 py-3.5">
+        <div>
+          <div className="mb-0.5 text-sm font-semibold">Zerar o tempo de hoje</div>
+          <span className="text-xs text-texto-suave">
+            Todos os clientes voltam a ter o tempo do dia cheio agora, como acontece à meia-noite.
+          </span>
+        </div>
+        <Button type="button" variant="outline" size="sm" disabled={zerando} onClick={zerarTempoHoje}>
+          {zerando ? "..." : "Zerar agora"}
+        </Button>
+      </div>
     </form>
   )
 }
@@ -495,13 +526,12 @@ function ModalApp({
 
 // ── Grupos ──────────────────────────────────────────────────────────────────
 
-interface EditGrupo { nome: string; tempo: string; cor: string }
+interface EditGrupo { nome: string; cor: string }
 
 function SecaoGrupos() {
   const avisar = useAvisos()
   const { grupos, recarregar } = useDados()
   const [novoNome, setNovoNome] = useState("")
-  const [novoTempo, setNovoTempo] = useState("02:00:00")
   const [novaCor, setNovaCor] = useState("#6366f1")
   const [criando, setCriando] = useState(false)
   const [editando, setEditando] = useState<Record<number, Partial<EditGrupo>>>({})
@@ -515,16 +545,10 @@ function SecaoGrupos() {
     if (!novoNome.trim()) return
     setCriando(true)
     try {
-      const segundos = lerTempo(novoTempo)
-      const params = new URLSearchParams({
-        nome: novoNome.trim(),
-        tempo_padrao_segundos: String(segundos),
-        cor: novaCor,
-      })
+      const params = new URLSearchParams({ nome: novoNome.trim(), cor: novaCor })
       await Api.post(`/api/estacoes/grupos?${params}`, {})
       avisar("Grupo criado")
       setNovoNome("")
-      setNovoTempo("02:00:00")
       setNovaCor("#6366f1")
       await recarregar()
     } catch (e) {
@@ -536,11 +560,9 @@ function SecaoGrupos() {
 
   async function salvarGrupo(g: Grupo) {
     const ed = editando[g.id] ?? {}
-    const segundos = lerTempo(ed.tempo ?? formatarTempo(g.tempo_padrao_segundos))
     try {
       await Api.put(`/api/estacoes/grupos/${g.id}`, {
         nome: ed.nome ?? g.nome,
-        tempo_padrao_segundos: segundos,
         cor: ed.cor ?? g.cor,
       })
       avisar("Grupo atualizado")
@@ -555,15 +577,15 @@ function SecaoGrupos() {
     <div>
       <Titulo>Grupos de estacoes</Titulo>
       <p className="mb-4 text-sm text-texto-fraco">
-        Nome, cor e tempo padrao por grupo. A cor aparece nos botoes do mapa e nas abas.
+        Nome e cor de cada grupo (sala). A cor aparece no mapa e nas abas. O tempo de uso por dia é um só para todos, em
+        Comportamento.
       </p>
       <div className="mb-4 flex flex-col gap-2">
         {grupos.map((g) => {
           const ed = editando[g.id] ?? {}
-          const tempoAtual = ed.tempo ?? formatarTempo(g.tempo_padrao_segundos)
           const nomeAtual = ed.nome ?? g.nome
           const corAtual = ed.cor ?? g.cor
-          const alterado = ed.nome !== undefined || ed.tempo !== undefined || ed.cor !== undefined
+          const alterado = ed.nome !== undefined || ed.cor !== undefined
           return (
             <div key={g.id} className="flex items-center gap-3 rounded-lg border border-borda bg-superficie-2 px-4 py-2.5">
               {/* bolinha de cor */}
@@ -580,14 +602,6 @@ function SecaoGrupos() {
                 value={nomeAtual}
                 onChange={(ev) => setEdit(g.id, { nome: ev.target.value })}
                 className="min-w-0 flex-1 rounded-md border border-borda bg-superficie px-2 py-1 text-sm outline-none focus:border-destaque"
-              />
-              {/* tempo */}
-              <input
-                type="text"
-                value={tempoAtual}
-                onChange={(ev) => setEdit(g.id, { tempo: ev.target.value })}
-                className="w-28 rounded-md border border-borda bg-superficie px-2 py-1 text-center font-mono text-sm outline-none focus:border-destaque"
-                placeholder="HH:MM:SS"
               />
               {alterado && (
                 <Button size="sm" onClick={() => salvarGrupo(g)}>Salvar</Button>
@@ -612,9 +626,6 @@ function SecaoGrupos() {
             <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Infantil" />
           </Campo>
         </div>
-        <Campo rotulo="Tempo padrao" id="novo-grupo-tempo">
-          <Input id="novo-grupo-tempo" value={novoTempo} onChange={(e) => setNovoTempo(e.target.value)} placeholder="HH:MM:SS" className="w-28 font-mono text-center" />
-        </Campo>
         <Button type="submit" disabled={criando || !novoNome.trim()}>
           {criando ? "..." : "+ Criar grupo"}
         </Button>

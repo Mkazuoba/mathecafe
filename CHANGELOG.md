@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-29 — Tempo de uso por dia (Ciclo 5)
+
+- **Não havia limite diário de verdade**: quando o tempo acabava, o saldo 0 significava "dar o tempo padrão de novo", e o cliente podia ser liberado outra vez no mesmo dia. O painel até mostrava "Limite diário atingido", mas o servidor ignorava. O "reset" que existia usava a data em UTC (o dia virava às 21h) e só valia no login pelo PC.
+- **Regra nova** (`app/tempo_diario.py`): cada cliente tem por dia o tempo de Configurações → Comportamento, somando todas as sessões. Quando acaba, a fila, o login no PC e o "Iniciar direto" recusam até amanhã; o operador dá tempo extra editando o saldo. O que sobra não passa para o dia seguinte. Zera à meia-noite de Brasília.
+- Nova coluna `usuarios.saldo_dia` (migração automática): saldo de outro dia vale o tempo cheio, sem tarefa agendada. **Na primeira subida, todos os clientes começam com o tempo cheio.**
+- **Configurações → Comportamento → Zerar agora** (admin): faz na hora o que a meia-noite faria — útil para testar.
+- Sair para manutenção devolve o tempo que sobrou (antes zerava, o que agora bloquearia o cliente o dia todo).
+- O tempo padrão por grupo deixou de ser usado (a cota é a global) e saiu da tela Grupos.
+- Painel: "Tempo de hoje esgotado" no cartão do cliente; a aba Clientes chama a coluna de "Tempo de hoje".
+
 ## 2026-10-29 — Aba Clientes de volta, busca refinada e colunas ajustáveis (Ciclo 5)
 
 - **A aba Clientes sempre dizia "Nenhum cliente encontrado"**: ela filtrava a lista que o painel deixou de carregar quando a busca passou para o servidor (são ~43k clientes). Agora busca no servidor, lista até 200 pela ordem escolhida e avisa quando é preciso refinar.

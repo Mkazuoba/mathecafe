@@ -31,7 +31,7 @@ const LIMITE = 200
 const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
   { titulo: "Login", ordem: "login" },
   { titulo: "Nome", ordem: "nome" },
-  { titulo: "Saldo de tempo", ordem: "saldo" },
+  { titulo: "Tempo de hoje", ordem: "saldo" },
   { titulo: "Status" },
   { titulo: "Criado em", ordem: "criado" },
   { titulo: "Ações" },

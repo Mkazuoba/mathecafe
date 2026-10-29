@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
 from app.websocket_manager import manager
+from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
 
@@ -48,7 +49,7 @@ def serial_autorizacao(a: Autorizacao):
         "cliente_id": a.cliente_id,
         "cliente_login": a.cliente.login,
         "cliente_nome": a.cliente.nome,
-        "saldo_segundos": a.cliente.saldo_segundos,
+        "saldo_segundos": saldo_do_dia(a.cliente),
         "autorizado_em": a.autorizado_em.isoformat(),
         "autorizado_por": a.autorizado_por.nome,
     }
@@ -203,6 +204,10 @@ async def autorizar_cliente(cliente_id: int, db: Session = Depends(get_db),
 
     if auth and not auth.usado:
         raise HTTPException(400, "Cliente já está na fila")
+    if db.query(Sessao).filter(Sessao.cliente_id == cliente_id, Sessao.encerrada_em == None).first():
+        raise HTTPException(400, "Cliente já está usando um computador")
+    if saldo_do_dia(cliente) <= 0:
+        raise HTTPException(400, ESGOTADO_OPERADOR)
 
     if auth:
         auth.usado = False
@@ -303,11 +308,10 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     if sessao_existente:
         raise HTTPException(400, "Cliente já tem sessão ativa")
 
-    # Tempo: saldo do cliente ou tempo padrao do grupo
-    if cliente.saldo_segundos > 0:
-        tempo = cliente.saldo_segundos
-    else:
-        tempo = e.grupo.tempo_padrao_segundos if e.grupo else 7200
+    # Tempo do dia (zera a meia-noite de Brasilia; ver tempo_diario.py)
+    tempo = reservar_tempo(db, cliente)
+    if tempo is None:
+        raise HTTPException(400, ESGOTADO_OPERADOR)
 
     # Cria/reusa autorizacao como usada
     auth = db.query(Autorizacao).filter(Autorizacao.cliente_id == cliente.id).first()

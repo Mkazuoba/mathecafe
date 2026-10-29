@@ -395,9 +395,9 @@ def test_busca_refinada_de_clientes(c, admin):
         r = c.post("/api/clientes/", headers=admin, json={"login": login, "nome": nome, "senha": "x12345"})
         assert r.status_code == 200, r.text
         criados[login] = r.json()["id"]
-        if saldo or not ativo:
-            r = c.put(f"/api/clientes/{criados[login]}", headers=admin, json={"saldo_segundos": saldo, "ativo": ativo})
-            assert r.status_code == 200, r.text
+        # saldo editado vale para hoje (quem nao usou nada hoje tem o tempo cheio)
+        r = c.put(f"/api/clientes/{criados[login]}", headers=admin, json={"saldo_segundos": saldo, "ativo": ativo})
+        assert r.status_code == 200, r.text
 
     def logins(**params):
         r = c.get("/api/clientes/", headers=admin, params=params)
@@ -424,3 +424,87 @@ def test_busca_refinada_de_clientes(c, admin):
     todos = c.get("/api/clientes/", headers=admin, params={"tudo": True, "ordem": "saldo", "desc": True}).json()
     assert todos[0]["saldo_segundos"] >= 600
     assert logins(busca="bz1002", ordem="login", desc=True) == ["bz100299", "bz100201", "bz100200"]
+
+
+# ── Tempo do dia: zera a meia-noite (Brasilia) e acaba de verdade ────────────
+
+def _cota(c, admin):
+    return c.get("/api/config/", headers=admin).json()["tempo_padrao_segundos"]
+
+
+def _mudar_dia_do_saldo(cliente_id, saldo, dias_atras):
+    from app.tempo_diario import hoje_br
+    db = SessionLocal()
+    u = db.get(Usuario, cliente_id)
+    u.saldo_segundos = saldo
+    u.saldo_dia = hoje_br() - timedelta(days=dias_atras)
+    db.commit()
+    db.close()
+
+
+def test_dia_vira_a_meia_noite_de_brasilia():
+    from datetime import date, timezone
+    from app.tempo_diario import hoje_br
+    # 01:00 UTC ainda e 22:00 do dia anterior em Sao Paulo (o reset antigo usava UTC)
+    assert hoje_br(datetime(2026, 10, 30, 1, 0, tzinfo=timezone.utc)) == date(2026, 10, 29)
+    assert hoje_br(datetime(2026, 10, 30, 3, 0, tzinfo=timezone.utc)) == date(2026, 10, 30)
+
+
+def test_tempo_do_dia_acaba_e_bloqueia_ate_amanha(c, admin, cenario):
+    cid, cota = cenario["cliente_id"], _cota(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        assert c.post(f"/api/estacoes/fila/{cid}", headers=admin).status_code == 200
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"] and dados["tempo_segundos"] == cota
+        _encerrar_pelo_pc(ws, dados["sessao_id"], cota, motivo="tempo_esgotado")
+
+        # antes: saldo 0 virava "tempo padrao de novo" e o cliente ganhava mais 2h
+        r = c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        assert r.status_code == 400 and "hoje" in r.json()["detail"]
+        r = c.post(f"/api/estacoes/{cenario['estacao']}/iniciar_direto", headers=admin, json={"cliente_id": cid})
+        assert r.status_code == 400 and "hoje" in r.json()["detail"]
+
+        # o operador ainda pode dar tempo extra editando o saldo
+        assert c.put(f"/api/clientes/{cid}", headers=admin, json={"saldo_segundos": 600}).status_code == 200
+        assert c.post(f"/api/estacoes/fila/{cid}", headers=admin).status_code == 200
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"] and dados["tempo_segundos"] == 600
+
+
+def test_sobra_de_ontem_nao_passa_para_hoje(c, admin, cenario):
+    cid, cota = cenario["cliente_id"], _cota(c, admin)
+    _mudar_dia_do_saldo(cid, 1000, dias_atras=1)
+    assert c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"] == cota
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"] and dados["tempo_segundos"] == cota
+
+
+def test_esgotou_ontem_usa_hoje(c, admin, cenario):
+    cid, cota = cenario["cliente_id"], _cota(c, admin)
+    _mudar_dia_do_saldo(cid, 0, dias_atras=1)
+    assert c.post(f"/api/estacoes/fila/{cid}", headers=admin).status_code == 200
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        assert _logar_no_pc(ws, cenario["cliente"])["tempo_segundos"] == cota
+
+
+def test_admin_zera_o_tempo_de_hoje(c, admin, operador, cenario):
+    cid, cota = cenario["cliente_id"], _cota(c, admin)
+    _mudar_dia_do_saldo(cid, 0, dias_atras=0)  # esgotou hoje
+    assert c.post(f"/api/estacoes/fila/{cid}", headers=admin).status_code == 400
+    assert c.post("/api/config/zerar_tempo_hoje", headers=operador).status_code == 403
+    r = c.post("/api/config/zerar_tempo_hoje", headers=admin)
+    assert r.status_code == 200 and r.json()["clientes"] >= 1
+    assert c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"] == cota
+    assert c.post(f"/api/estacoes/fila/{cid}", headers=admin).status_code == 200
+
+
+def test_manutencao_devolve_o_tempo(c, admin, cenario):
+    # com o limite diario, perder o tempo na manutencao bloquearia o cliente o dia todo
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 600, motivo="manutencao")
+    assert c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"] == dados["tempo_segundos"] - 600

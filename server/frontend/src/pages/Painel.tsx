@@ -1097,9 +1097,9 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
                 <div className="mt-0.5 flex items-center gap-1 text-xs">
                   {emUso ? (
                     <span className="font-semibold text-ocupada">Em uso no {emUso}</span>
-                  ) : c.uso_hoje_segundos > 0 && c.saldo_segundos === 0 ? (
+                  ) : c.saldo_segundos <= 0 ? (
                     <span className="flex items-center gap-1 font-semibold text-perigo">
-                      <IconAlertTriangle size={13} /> Limite diário atingido
+                      <IconAlertTriangle size={13} /> Tempo de hoje esgotado
                     </span>
                   ) : c.saldo_segundos > 0 ? (
                     <span className="flex items-center gap-1 font-semibold text-livre">

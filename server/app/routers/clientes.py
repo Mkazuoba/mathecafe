@@ -9,6 +9,7 @@ try:
 except ImportError:
     from backports.zoneinfo import ZoneInfo
 from app.database import _eh_sqlite, get_db, sem_acento
+from app.tempo_diario import cota_diaria, hoje_br, saldo_do_dia, saldo_do_dia_sql
 from app.models import Usuario, Sessao
 from app.security import hash_senha, requer_perfil
 
@@ -45,20 +46,20 @@ def _uso_hoje(db: Session, cliente_id: int) -> int:
     return int(total)
 
 
-def serializar(u: Usuario, db: Session = None):
+def serializar(u: Usuario, db: Session = None, cota: Optional[int] = None):
     return {
         "id": u.id,
         "login": u.login,
         "nome": u.nome,
         "ativo": u.ativo,
-        "saldo_segundos": u.saldo_segundos,
+        "saldo_segundos": saldo_do_dia(u, cota),  # tempo que ainda pode usar hoje
         "observacao": u.observacao,
         "criado_em": u.criado_em.isoformat() if u.criado_em else None,
         "na_fila": u.autorizacao is not None and not u.autorizacao.usado,
         "uso_hoje_segundos": _uso_hoje(db, u.id) if db is not None else 0,
     }
 
-ORDENS = {"nome": Usuario.nome, "login": Usuario.login, "saldo": Usuario.saldo_segundos, "criado": Usuario.criado_em}
+ORDENS = {"nome": Usuario.nome, "login": Usuario.login, "criado": Usuario.criado_em}
 
 
 def _filtro_texto(q: str, campo: str, modo: str):
@@ -102,13 +103,15 @@ def listar(
         consulta = consulta.filter(_filtro_texto(q, campo, modo))
     if status != "todos":
         consulta = consulta.filter(Usuario.ativo == (status == "ativos"))
+    cota = cota_diaria(db)
+    saldo_hoje = saldo_do_dia_sql(cota)
     if saldo == "com":
-        consulta = consulta.filter(Usuario.saldo_segundos > 0)
+        consulta = consulta.filter(saldo_hoje > 0)
     elif saldo == "sem":
-        consulta = consulta.filter(or_(Usuario.saldo_segundos == 0, Usuario.saldo_segundos == None))
-    coluna = ORDENS[ordem]
+        consulta = consulta.filter(saldo_hoje <= 0)
+    coluna = saldo_hoje if ordem == "saldo" else ORDENS[ordem]
     consulta = consulta.order_by(coluna.desc() if desc else coluna, Usuario.nome)
-    return [serializar(c, db) for c in consulta.limit(limite).all()]
+    return [serializar(c, db, cota) for c in consulta.limit(limite).all()]
 
 @router.post("/")
 def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
@@ -133,7 +136,10 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Dep
     if data.senha: cliente.senha_hash = hash_senha(data.senha)
     if data.ativo is not None: cliente.ativo = data.ativo
     if data.observacao is not None: cliente.observacao = data.observacao
-    if data.saldo_segundos is not None: cliente.saldo_segundos = data.saldo_segundos
+    if data.saldo_segundos is not None:
+        # vale para hoje: e assim que o operador da tempo extra
+        cliente.saldo_segundos = data.saldo_segundos
+        cliente.saldo_dia = hoje_br()
     db.commit()
     return serializar(cliente, db)
 

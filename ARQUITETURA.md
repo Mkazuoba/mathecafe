@@ -32,6 +32,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `database.py` | conexão, criação das tabelas, migração leve de colunas (só SQLite), dados iniciais |
 | `config.py` | configurações lidas do `.env` |
 | `security.py` | senhas (bcrypt) e tokens JWT; `requer_perfil(...)` protege as rotas |
+| `tempo_diario.py` | tempo de uso por dia de cada cliente: cota, reset à meia-noite de Brasília, reservar o tempo da sessão |
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios`, `agente` (auto-update) |
@@ -62,27 +63,27 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Tabela | Guarda |
 |---|---|
-| `usuarios` | admin, operadores e clientes (`perfil`), saldo de tempo dos clientes, `ativo` |
-| `grupos_estacao` | grupos de PCs (abas do Mapa), com tempo padrão de sessão |
+| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo` |
+| `grupos_estacao` | grupos de PCs (abas do Mapa), com cor (o `tempo_padrao_segundos` do grupo não é mais usado) |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo |
 | `apps_permitidos` | programas que podem rodar (processo, caminho, imagem de capa), por grupo ou para todos |
-| `configuracoes` | chave/valor: `tempo_padrao_segundos`, `reiniciar_ao_encerrar` |
+| `configuracoes` | chave/valor: `tempo_padrao_segundos` (tempo de uso por dia), `reiniciar_ao_encerrar` |
 
 ## Fluxo de uma sessão
 
 1. Operador clica em **Liberar** (ou arrasta o cliente para uma estação) → a `autorizacao` do cliente é criada ou reativada → evento `fila_atualizada`.
 2. Cliente digita login e senha no agente → `login_cliente` pelo WebSocket.
 3. Servidor confere: senha certa? está na fila? estação livre? Se não, responde o motivo.
-4. Se sim: tempo = saldo do cliente, ou o tempo padrão das configurações. Cria a `sessao`, marca a autorização como usada, estação vira `ocupada`, manda tempo, apps permitidos e `reiniciar_ao_encerrar` ao agente, avisa os painéis (`sessao_iniciada`).
+4. Se sim: tempo = o que o cliente ainda tem hoje (`reservar_tempo`); se acabou, recusa até amanhã. Cria a `sessao`, marca a autorização como usada, estação vira `ocupada`, manda tempo, apps permitidos e `reiniciar_ao_encerrar` ao agente, avisa os painéis (`sessao_iniciada`).
 5. O agente mostra o launcher em tela cheia e conta o tempo; o painel conta junto.
 6. Fim da sessão, de quatro jeitos:
    - cliente encerra ou o tempo acaba → agente manda `sessao_encerrada`;
    - operador encerra pelo painel → servidor manda `encerrar_sessao` ao agente;
    - conexão do PC cai → servidor encerra como `conexao_perdida` (ver abaixo);
    - admin entra em manutenção no PC → agente encerra com motivo `manutencao`.
-7. Servidor grava o tempo que sobrou em `usuarios.saldo_segundos` (zero se o tempo acabou) e libera a estação.
+7. Servidor grava o tempo que sobrou em `usuarios.saldo_segundos` (zero se o tempo acabou) e libera a estação. O que sobra vale só até a meia-noite.
 
 ## Eventos WebSocket
 
@@ -121,6 +122,7 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 ## Decisões não óbvias
 
 - **Sessão do banco por conexão**: o handler `/ws/estacao/{nome}` usa uma sessão do SQLAlchemy durante toda a conexão. Por isso ele chama `db.expire_all()` a cada mensagem do agente; sem isso, o que o painel altera por outras rotas (encerrar sessão, liberar, saldo) fica invisível para ele.
+- **Tempo por dia sem tarefa agendada**: `saldo_dia` diz de que dia (Brasília) é o `saldo_segundos`; saldo de outro dia vale a cota cheia (`saldo_do_dia`). A busca filtra e ordena pelo mesmo cálculo em SQL (`saldo_do_dia_sql`). Editar o saldo grava `saldo_dia = hoje`: é assim que o operador dá tempo extra a quem esgotou. Durante a sessão o saldo fica 0 (reservado). "Zerar agora" só limpa `saldo_dia`.
 - **Uma autorização por cliente** (`cliente_id` é único): ao liberar de novo, o registro existente é reaproveitado (`usado=False`), nunca recriado.
 - **Queda de conexão do PC**: a estação só é marcada `desligada` 8s depois (`SEGUNDOS_ATE_OFFLINE` em `main.py`), para não piscar no painel. O agente volta à tela de login assim que perde a conexão; por isso o servidor encerra a sessão que ficou aberta (`conexao_perdida`), contando o tempo até a queda e devolvendo o resto como saldo — quando o PC reconecta ou quando os 8s passam.
 - **Reconexão**: uma conexão antiga que cai depois de o agente já ter reconectado não derruba a nova (`desconectar_estacao(nome, ws)`).
