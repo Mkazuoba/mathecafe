@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Link } from "react-router-dom"
-import { IconAlertTriangle, IconCamera, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -667,24 +668,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         )}
       </div>
 
-      {/* Screenshot overlay */}
-      {screenshot && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80"
-          onClick={() => setScreenshot(null)}
-        >
-          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(ev) => ev.stopPropagation()}>
-            <img src={screenshot} alt={`Tela de ${e.nome}`} className="max-h-[85vh] rounded-lg shadow-2xl" />
-            <button
-              type="button"
-              onClick={() => setScreenshot(null)}
-              className="absolute top-2 right-2 rounded-full bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80"
-            >
-              Fechar ✕
-            </button>
-          </div>
-        </div>
-      )}
+      {screenshot && <VisorTela src={screenshot} estacao={e.nome} titulo={`Captura de ${e.nome}`} aoFechar={() => setScreenshot(null)} />}
     </div>
   )
 }
@@ -732,6 +716,85 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 // Aba: Comandos
 // ---------------------------------------------------------------------------
 
+/** Baixa a imagem para o computador de quem está vendo: "AD-10 2026-10-29 14-30-05.jpg". */
+function salvarImagem(src: string, estacao: string) {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, "0")
+  const a = document.createElement("a")
+  a.href = src
+  a.download = `${estacao} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.jpg`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+/**
+ * Tela da estação grande, por cima de tudo: "Tela cheia" usa o monitor inteiro
+ * de quem está vendo. Esc volta (o navegador sai da tela cheia antes).
+ */
+function VisorTela({ src, estacao, titulo, aoVivo = false, aoFechar }: {
+  src: string
+  estacao: string
+  titulo: string
+  aoVivo?: boolean
+  aoFechar: () => void
+}) {
+  const caixa = useRef<HTMLDivElement>(null)
+  const [telaCheia, setTelaCheia] = useState(false)
+
+  useEffect(() => {
+    const mudou = () => setTelaCheia(document.fullscreenElement === caixa.current)
+    const esc = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape" && !document.fullscreenElement) aoFechar()
+    }
+    document.addEventListener("fullscreenchange", mudou)
+    document.addEventListener("keydown", esc)
+    return () => {
+      document.removeEventListener("fullscreenchange", mudou)
+      document.removeEventListener("keydown", esc)
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    }
+  }, [aoFechar])
+
+  function alternarTelaCheia() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else caixa.current?.requestFullscreen().catch(() => {})
+  }
+
+  const botao = "flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+  return createPortal(
+    <div
+      ref={caixa}
+      role="dialog"
+      aria-label={titulo}
+      className="fixed inset-0 z-[2000] flex flex-col bg-black"
+      onClick={(ev) => ev.stopPropagation()}
+    >
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-sm text-white">
+        {aoVivo && <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase">● ao vivo</span>}
+        <span className="font-semibold">{titulo}</span>
+        <span className="flex-1" />
+        <button type="button" className={botao} onClick={() => salvarImagem(src, estacao)} title="Salva a imagem que está na tela agora">
+          <IconDownload size={14} /> Salvar imagem
+        </button>
+        <button type="button" className={botao} onClick={alternarTelaCheia}>
+          {telaCheia ? <><IconArrowsMinimize size={14} /> Sair da tela cheia</> : <><IconArrowsMaximize size={14} /> Tela cheia</>}
+        </button>
+        <button type="button" className={botao} onClick={aoFechar} title="Voltar (Esc)">
+          <IconX size={14} /> Fechar
+        </button>
+      </div>
+      <img
+        src={src}
+        alt={titulo}
+        onDoubleClick={alternarTelaCheia}
+        className="min-h-0 w-full flex-1 object-contain"
+      />
+    </div>,
+    document.body,
+  )
+}
+
 function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto, aoFechar, aoCapturarTela, streaming, frameUrl, toggleStreaming }: {
   estacao: Estacao
   sessao: ReturnType<ReturnType<typeof useDados>["sessaoDaEstacao"]> | undefined
@@ -749,6 +812,7 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
   const { sessoes, fila } = useDados()
   const [textoMsg, setTextoMsg] = useState("")
   const [buscaCliente, setBuscaCliente] = useState("")
+  const [ampliado, setAmpliado] = useState(false)
   const idsEmUso = useMemo(() => new Set(sessoes.map((s) => s.cliente_id)), [sessoes])
   const idsNaFila = useMemo(() => new Set(fila.map((f) => f.cliente_id)), [fila])
 
@@ -788,11 +852,42 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
           {streaming && (
             <div className="relative mt-1 overflow-hidden rounded-lg border border-borda bg-black">
               {frameUrl
-                ? <img src={frameUrl} alt="Stream ao vivo" className="w-full rounded-lg" />
+                ? (
+                  <img
+                    src={frameUrl}
+                    alt="Stream ao vivo"
+                    title="Clique duas vezes para ampliar"
+                    className="w-full cursor-zoom-in rounded-lg"
+                    onDoubleClick={() => setAmpliado(true)}
+                  />
+                )
                 : <div className="flex h-32 items-center justify-center text-xs text-texto-fraco">Aguardando primeiro frame...</div>
               }
               <span className="absolute top-1.5 left-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">● ao vivo</span>
+              {frameUrl && (
+                <div className="absolute top-1.5 right-1.5 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => salvarImagem(frameUrl, e.nome)}
+                    title="Salvar a imagem de agora"
+                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-white hover:bg-black/80"
+                  >
+                    <IconDownload size={13} /> Salvar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAmpliado(true)}
+                    title="Ampliar"
+                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-white hover:bg-black/80"
+                  >
+                    <IconMaximize size={13} /> Ampliar
+                  </button>
+                </div>
+              )}
             </div>
+          )}
+          {streaming && ampliado && frameUrl && (
+            <VisorTela src={frameUrl} estacao={e.nome} titulo={`${e.nome} ao vivo`} aoVivo aoFechar={() => setAmpliado(false)} />
           )}
         </div>
       </SecaoComando>

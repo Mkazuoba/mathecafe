@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-29 — Ampliar e salvar a tela da estação (Ciclo 6)
+
+- **Ampliar**: na tela ao vivo, o botão "Ampliar" (ou clique duplo na imagem) abre a tela da estação ocupando a janela inteira; lá, "Tela cheia" usa o monitor todo de quem está vendo. Esc volta, sem fechar o painel da estação nem parar a transmissão. A Captura rápida abre no mesmo visor.
+- **Salvar imagem**: na tela ao vivo e no visor, baixa a imagem do momento para o computador do operador, com o nome da estação e a hora (`AD-10 2026-10-29 14-30-05.jpg`).
+
 ## 2026-10-29 — Captura de tela e tela ao vivo voltam a funcionar (agente 1.6.4)
 
 - **Captura rápida e "Ver ao vivo" chegavam em branco ao painel**: o agente manda a imagem dentro de `dados` (`{"evento": "tela_frame", "dados": {"imagem": ...}}`), mas o servidor a procurava no nível de cima da mensagem e repassava uma imagem vazia. Corrigido em `main.py`; o teste `test_captura_e_tela_ao_vivo_chegam_ao_painel` cobre os dois.
