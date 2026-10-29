@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-29 — Captura de tela e tela ao vivo voltam a funcionar (agente 1.6.4)
+
+- **Captura rápida e "Ver ao vivo" chegavam em branco ao painel**: o agente manda a imagem dentro de `dados` (`{"evento": "tela_frame", "dados": {"imagem": ...}}`), mas o servidor a procurava no nível de cima da mensagem e repassava uma imagem vazia. Corrigido em `main.py`; o teste `test_captura_e_tela_ao_vivo_chegam_ao_painel` cobre os dois.
+- **Agente 1.6.4**: a transmissão ao vivo não escreve mais no log da janela pela thread dela (o Tkinter só aceita a thread principal e podia travar; o log também enchia a cada 1,2s). Ela espera cada quadro ser enviado antes do próximo, para não acumular quadros numa rede lenta.
+- O servidor não imprime mais uma linha por quadro no console.
+
 ## 2026-10-29 — Ficha do cliente com foto (Ciclo 5)
 
 - **Ficha do cliente** (`components/FichaCliente.tsx`) no lugar dos botões Histórico, Editar e Excluir: abre clicando na linha da aba Clientes, no botão "Ficha" ou na engrenagem do cliente no Painel. Três abas:

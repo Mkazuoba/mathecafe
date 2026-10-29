@@ -276,14 +276,14 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 ok = bool(usuario and verificar_senha(dados.get("senha") or "", usuario.senha_hash))
                 await ws.send_text(json.dumps({"evento": "validar_manutencao_resultado", "dados": {"ok": ok}}))
 
+            # A imagem vem em "dados" ({"evento": ..., "dados": {"imagem": b64}}).
+            # Lida do nivel de cima, chegava vazia ao painel.
             elif evento == "captura_tela_resultado":
-                imagem_b64 = dados.get("imagem", "")
-                print(f"[tela] captura de {nome}: {len(imagem_b64)} chars")
+                imagem_b64 = (dados.get("dados") or {}).get("imagem", "")
                 await manager.broadcast_paineis("captura_tela", {"estacao": nome, "imagem": imagem_b64})
 
             elif evento == "tela_frame":
-                imagem_b64 = dados.get("imagem", "")
-                print(f"[tela] frame de {nome}: {len(imagem_b64)} chars")
+                imagem_b64 = (dados.get("dados") or {}).get("imagem", "")
                 await manager.broadcast_paineis("tela_frame", {"estacao": nome, "imagem": imagem_b64})
 
     except WebSocketDisconnect:

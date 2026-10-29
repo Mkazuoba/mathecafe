@@ -691,3 +691,36 @@ def test_foto_do_cliente(c, admin, operador):
     # excluir o cliente leva a foto junto
     c.put(f"/api/clientes/{cid}/foto", headers=operador, json={"imagem": url})
     assert c.delete(f"/api/clientes/{cid}", headers=admin).status_code == 200
+
+
+# ── Captura de tela e acesso remoto (ver a tela ao vivo) ─────────────────────
+
+def _receber_no_painel(ws, evento):
+    for _ in range(20):
+        msg = ws.receive_json()
+        if msg["evento"] == evento:
+            return msg
+    raise AssertionError(f"painel nao recebeu {evento}")
+
+
+def test_captura_e_tela_ao_vivo_chegam_ao_painel(c, admin, cenario):
+    # O agente manda a imagem em "dados"; o servidor lia do nivel de cima e
+    # repassava ao painel uma imagem vazia (captura e acesso remoto em branco)
+    token = admin["Authorization"].split()[1]
+    with c.websocket_connect(f"/ws/painel?token={token}") as painel, \
+         c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as pc:
+        pc.send_json({"evento": "ping"})
+        assert pc.receive_json()["evento"] == "pong"
+
+        assert c.post(f"/api/estacoes/{cenario['estacao']}/capturar_tela", headers=admin).status_code == 200
+        assert pc.receive_json()["evento"] == "capturar_tela"
+        pc.send_json({"evento": "captura_tela_resultado", "dados": {"imagem": "QUJD"}})
+        msg = _receber_no_painel(painel, "captura_tela")
+        assert msg["dados"] == {"estacao": cenario["estacao"], "imagem": "QUJD"}
+
+        assert c.post(f"/api/estacoes/{cenario['estacao']}/iniciar_streaming", headers=admin).status_code == 200
+        assert pc.receive_json()["evento"] == "iniciar_streaming"
+        pc.send_json({"evento": "tela_frame", "dados": {"imagem": "RlJBTUU="}})
+        assert _receber_no_painel(painel, "tela_frame")["dados"]["imagem"] == "RlJBTUU="
+        c.post(f"/api/estacoes/{cenario['estacao']}/parar_streaming", headers=admin)
+        assert pc.receive_json()["evento"] == "parar_streaming"

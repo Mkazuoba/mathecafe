@@ -169,3 +169,12 @@ def test_minimizar_so_na_manutencao():
 
     src = _fonte()
     assert 'self.root.bind("<Unmap>", self._ao_minimizar)' in src
+
+
+def test_streaming_nao_mexe_no_tkinter_fora_da_thread_principal():
+    # _enviar e _log escrevem no log da janela: chamados pela thread do
+    # streaming, o Tkinter pode travar (e o log enchia a cada 1,2s)
+    src = _fonte()
+    loop = src[src.index("def _loop_streaming"):]
+    loop = loop[:loop.index("\n    def ", 1)]
+    assert "self._enviar(" not in loop and "self._log(" not in loop

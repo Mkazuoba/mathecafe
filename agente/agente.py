@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.3"
+VERSAO = "1.6.4"
 
 import asyncio
 import json
@@ -760,17 +760,21 @@ class AgenteApp:
             self._log(f"Sessao renovada: {self._fmt(novo_total)} no total")
 
     def _loop_streaming(self):
-        # Roda em thread separada — NAO usar self._log() aqui (Tkinter nao e thread-safe)
-        print("[streaming] iniciado")
+        # Roda em thread separada: nada de self._log/self._enviar aqui, que
+        # escrevem no log da janela (o Tkinter so aceita a thread principal)
+        self.incoming.put({"evento": "_info", "dados": {"msg": "Tela ao vivo: iniciada"}})
         while self._streaming:
             try:
                 b64 = self._tirar_screenshot()
-                self._enviar({"evento": "tela_frame", "dados": {"imagem": b64}})
-                print(f"[streaming] frame: {len(b64)} chars")
+                if self.loop and self.ws:
+                    envio = asyncio.run_coroutine_threadsafe(
+                        self.ws.send(json.dumps({"evento": "tela_frame", "dados": {"imagem": b64}})), self.loop)
+                    envio.result(timeout=10)  # rede lenta: espera em vez de acumular quadros
             except Exception as ex:
-                print(f"[streaming] erro: {ex}")
+                self.incoming.put({"evento": "_info", "dados": {"msg": f"Tela ao vivo: erro ({ex})"}})
+                time.sleep(3)
             time.sleep(1.2)
-        print("[streaming] encerrado")
+        self.incoming.put({"evento": "_info", "dados": {"msg": "Tela ao vivo: encerrada"}})
 
     # ── Fluxo de sessão ───────────────────────────────────────────────────────
     def _encerrar_sessao_cliente(self):
