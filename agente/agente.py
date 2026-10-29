@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.2"
+VERSAO = "1.6.3"
 
 import asyncio
 import json
@@ -154,6 +154,10 @@ try:
     _u32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
     _u32.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
     _u32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    _u32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    _u32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+    _u32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_int, ctypes.c_int, ctypes.c_uint]
     _dwm = ctypes.WinDLL("dwmapi")
     _dwm.DwmGetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
 except (AttributeError, OSError):
@@ -188,6 +192,18 @@ def janelas_visiveis():
 
 def fechar_janela(hwnd):
     _u32.PostMessageW(hwnd, 0x0010, None, None)  # WM_CLOSE
+
+
+def botao_minimizar(hwnd, ativo):
+    """Mostra ou tira o botão de minimizar da barra de título."""
+    if _u32 is None:
+        return
+    GWL_STYLE, WS_MINIMIZEBOX = -16, 0x00020000
+    estilo = _u32.GetWindowLongW(hwnd, GWL_STYLE)
+    estilo = estilo | WS_MINIMIZEBOX if ativo else estilo & ~WS_MINIMIZEBOX
+    _u32.SetWindowLongW(hwnd, GWL_STYLE, estilo)
+    # SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED: redesenha a moldura
+    _u32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
 
 
 # ── Bloqueio de atalhos do Windows ───────────────────────────────────────────
@@ -311,6 +327,7 @@ class AgenteApp:
         # Atalhos
         self._teclado = BloqueioTeclado(self._tecla_bloqueada)
         self.root.bind("<Escape>", self._tentar_esc)
+        self.root.bind("<Unmap>", self._ao_minimizar)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
 
@@ -328,6 +345,25 @@ class AgenteApp:
         """ESC só sai da tela cheia no modo manutenção."""
         if self.modo_manutencao_ativo:
             self.root.attributes("-fullscreen", False)
+
+    def _ao_minimizar(self, event=None):
+        """Minimizar (botão, clique na barra de tarefas) só no modo manutenção."""
+        if self.modo_manutencao_ativo or self.root.state() != "iconic":
+            return
+        self.root.after(50, self._restaurar_janela)
+
+    def _restaurar_janela(self):
+        self.root.deiconify()
+        if self.sessao_ativa:
+            self.root.state("zoomed")
+        self.root.lift()
+
+    def _permitir_minimizar(self, ativo):
+        try:
+            self.root.update_idletasks()
+            botao_minimizar(int(self.root.wm_frame(), 16), ativo)
+        except Exception:
+            pass
 
     def _tecla_bloqueada(self, vk, alt, ctrl, shift):
         """Chamado pelo hook de teclado (outra thread): True engole a tecla."""
@@ -789,6 +825,7 @@ class AgenteApp:
         self.root.attributes("-fullscreen", False)
         self.root.attributes("-topmost", False)
         self.root.state("zoomed")
+        self._permitir_minimizar(False)
         self.root.lift()
         self.root.focus_force()
 
@@ -1144,12 +1181,14 @@ class AgenteApp:
             self.root.attributes("-topmost", False)
 
         self.modo_manutencao_ativo = True
+        self._permitir_minimizar(True)
         self._enviar({"evento": "status_estacao", "status": "manutencao"})
         self.frame_manutencao.pack(fill="x", before=self.header_frame)
         self._log("Modo manutencao ativado")
 
     def _sair_modo_manutencao(self):
         self.modo_manutencao_ativo = False
+        self._permitir_minimizar(False)
         self.frame_manutencao.pack_forget()
         self._enviar({"evento": "status_estacao", "status": "livre"})
         self.frame_sessao.pack_forget()

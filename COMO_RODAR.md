@@ -91,7 +91,7 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online). É a única saída do agente: Esc e fechar a janela só funcionam nela.
-- **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; o cliente alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si não fecha). Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
+- **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; o cliente alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si não fecha nem minimiza). Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
 - **Estação travada sem servidor** (não dá para entrar em manutenção): Ctrl+Alt+Del → Sair e entre com a conta de admin segurando **Shift** para o autologin não entrar de novo.
 - **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
 - Erros fatais do agente ficam em `C:\MatheCafe\agente_erro.log`.

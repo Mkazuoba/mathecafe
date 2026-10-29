@@ -131,3 +131,41 @@ def test_esc_e_fechar_so_na_manutencao():
 def test_agente_dist_igual_ao_agente():
     # O auto-update distribui server/agente_dist: precisa ser o mesmo arquivo
     assert _fonte(DIST).replace("\r\n", "\n") == _fonte().replace("\r\n", "\n")
+
+
+def test_minimizar_so_na_manutencao():
+    # Na 1.6.2 o cliente minimizava o agente pelo botao da barra de titulo
+    ns = _carregar(metodos=("_ao_minimizar",))
+
+    class Root:
+        def __init__(self):
+            self.estado = "iconic"
+            self.agendado = []
+
+        def state(self, valor=None):
+            if valor is None:
+                return self.estado
+            self.estado = valor
+
+        def deiconify(self):
+            self.estado = "normal"
+
+        def after(self, ms, func, *args):
+            self.agendado.append(func)
+
+    e = _Estado()
+    e.root = Root()
+    e.sessao_ativa = True
+    e._restaurar_janela = lambda: e.root.deiconify()
+    ns["_ao_minimizar"](e)
+    for f in e.root.agendado:
+        f()
+    assert e.root.estado != "iconic"
+
+    e.modo_manutencao_ativo = True
+    e.root = Root()
+    ns["_ao_minimizar"](e)
+    assert e.root.estado == "iconic" and not e.root.agendado
+
+    src = _fonte()
+    assert 'self.root.bind("<Unmap>", self._ao_minimizar)' in src
