@@ -12,4 +12,5 @@ dist/
 .env
 *.env
 !*.env.example
+.secret_key
 Arquivos VSCyber/

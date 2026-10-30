@@ -14,6 +14,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/teste.db"
 os.environ["ADMIN_LOGIN"] = "admin.teste"
 os.environ["ADMIN_SENHA"] = "senha-admin-teste"
+os.environ["SECRET_KEY"] = "chave-so-dos-testes-" + "x" * 40  # sem gerar server/.secret_key
 
 from datetime import datetime, timedelta
 

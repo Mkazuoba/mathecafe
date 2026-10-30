@@ -17,7 +17,7 @@ pip install -r requirements.txt
 Configuração (opcional para testar localmente, obrigatória em produção):
 
 ```bash
-copy .env.example .env           # e troque o SECRET_KEY
+copy .env.example .env           # SECRET_KEY pode ficar vazia: o servidor gera uma
 ```
 
 Crie o administrador (senha com no mínimo 10 caracteres):
@@ -80,7 +80,7 @@ Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.ba
 5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha (`politicas_cliente.ps1`), que aparecem no Ctrl+Alt+Del. Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
 6. cadastra a estação no servidor.
 
-**Atualizar uma estação**: rode o `instalar.bat` de novo (com os arquivos novos). Ele substitui tudo e mantém o usuário.
+**Atualizar uma estação**: o agente se atualiza sozinho ao abrir. Mudanças no instalador ou na tarefa agendada (como o fim do atraso de 5s no logon, de 30/10) só valem rodando o `instalar.bat` de novo, com os arquivos novos: ele substitui tudo e mantém o usuário.
 
 Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\MatheCafe\desinstalar.bat` como administrador (remove a tarefa e o autologin).
 
@@ -116,7 +116,7 @@ A espera de 8s até a estação aparecer como desligada só se testa com o servi
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (o antigo `uvicorn main:app ...` continua funcionando, via `server/main.py`)
 - Não precisa de Node no Render: o painel compilado já está em `server/app/static/`.
-- Variáveis: `SECRET_KEY`, e `ADMIN_LOGIN` / `ADMIN_SENHA` para criar o primeiro admin (o Render gratuito não tem terminal para rodar o `app.cli`).
+- Variáveis: `SECRET_KEY` (obrigatória aqui: o disco do Render é apagado a cada deploy, e a chave gerada em `server/.secret_key` sumiria junto), e `ADMIN_LOGIN` / `ADMIN_SENHA` para criar o primeiro admin (o Render gratuito não tem terminal para rodar o `app.cli`).
 
 > O SQLite do Render é apagado a cada deploy. Para uso real, configure `DATABASE_URL` com um PostgreSQL (Supabase).
 

@@ -56,7 +56,7 @@ def test_whitelist_confere_janelas_de_processos_antigos():
     # processo novo e escapava da whitelist; Explorador e o explorer.exe
     src = _fonte()
     verificar = src[src.index("def _verificar_processos"):src.index("def _fechar_janelas_fora_da_whitelist")]
-    assert "self._fechar_janelas_fora_da_whitelist(pid_atual)" in verificar
+    assert "self._fechar_janelas_fora_da_whitelist(pid_atual, self.whitelist_procs)" in verificar
     # proibidos (cmd, regedit...) caem mesmo se ja existiam antes da sessao
     assert verificar.index("PROCESSOS_SEMPRE_BLOQUEADOS") < verificar.index("_pids_pre_sessao")
     assert '"CabinetWClass"' in src
@@ -178,3 +178,26 @@ def test_streaming_nao_mexe_no_tkinter_fora_da_thread_principal():
     loop = src[src.index("def _loop_streaming"):]
     loop = loop[:loop.index("\n    def ", 1)]
     assert "self._enviar(" not in loop and "self._log(" not in loop
+
+
+def test_tela_do_agente_abre_antes_de_tudo():
+    # Na inicializacao do Windows o cliente abria apps antes do agente: a
+    # tarefa esperava 5s e o agente so abria a janela depois de consultar
+    # a atualizacao (ate 5s)
+    src = _fonte()
+    main = src[src.index("def main():"):]
+    assert main.index("root = tk.Tk()") < main.index("checar_atualizacao")
+    assert "verificar_update(" not in main
+    tarefa = open(os.path.join(os.path.dirname(AGENTE), "registrar_tarefa.ps1"), encoding="utf-8").read()
+    assert "PT5S" not in tarefa
+
+
+def test_tela_de_login_fecha_o_que_abriram_antes():
+    # O que fosse aberto antes do agente continuava rodando atras da tela de
+    # login (ali so o Gerenciador de Tarefas era fechado)
+    src = _fonte()
+    verificar = src[src.index("def _verificar_processos"):src.index("def _fechar_janelas_fora_da_whitelist")]
+    login = verificar[:verificar.index("if self.sessao_ativa:")]
+    assert "PROCESSOS_SEMPRE_BLOQUEADOS" in login
+    assert "self._fechar_janelas_fora_da_whitelist(pid_atual, set())" in login
+    assert 'self.root.after(500, self._verificar_processos)' in src

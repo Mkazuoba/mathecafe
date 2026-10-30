@@ -142,5 +142,7 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **Preferências do operador ficam no navegador** (`localStorage`: `painel.layout`, `painel.ordem`, `painel.grupo`, `painel.busca`, `clientes.busca`), sempre com `try/catch`; sem storage, valem até recarregar.
 - **WebSocket do painel exige login**: `/ws/painel?token=...` só aceita admin ou operador (os eventos trazem nomes de clientes).
 - **Mapa mostra estações sem grupo** numa aba "Sem grupo"; no painel lateral o admin troca o grupo da estação.
+- **SECRET_KEY nunca fixa no código** (`config.resolver_secret_key`): vale a do ambiente/`.env` se tiver 32+ caracteres e não for de exemplo (senão o servidor não sobe); sem ela, usa `server/.secret_key`, gerada na primeira subida. Trocar a chave desloga todo mundo. Guarde o arquivo junto com o backup do banco.
+- **Agente abre a janela antes de tudo**: a atualização é conferida numa thread depois de a janela estar no ar, e na tela de login o agente fecha qualquer janela que não seja do Windows (o que o cliente abriu na inicialização antes do agente).
 - **Admin sem senha fixa**: criado por `python -m app.cli` ou pelas variáveis `ADMIN_LOGIN`/`ADMIN_SENHA`.
 - **Mensagens no console só com caracteres latinos**: emoji em `print` derruba o servidor num console Windows (cp1252).

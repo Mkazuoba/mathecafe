@@ -28,7 +28,7 @@ $acao = New-ScheduledTaskAction `
     -WorkingDirectory $Pasta
 
 $gatilho = New-ScheduledTaskTrigger -AtLogOn -User $conta
-$gatilho.Delay = "PT5S"
+# Sem atraso: o cliente nao pode usar o PC antes da janela do agente
 
 $principal = New-ScheduledTaskPrincipal -UserId $conta -LogonType Interactive -RunLevel Limited
 

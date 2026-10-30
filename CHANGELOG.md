@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-30 — SECRET_KEY segura e estação fechada desde a inicialização (agente 1.6.5)
+
+- **SECRET_KEY**: o código trazia uma chave padrão pública (`TROQUE_ESTA_CHAVE_EM_PRODUCAO`); um servidor sem `.env` assinava os logins com ela e qualquer um podia forjar um login de admin. Agora, sem chave configurada, o servidor gera uma aleatória na primeira subida e guarda em `server/.secret_key` (fora do git), reaproveitando-a nas próximas. Chave de exemplo ou com menos de 32 caracteres: o servidor não sobe e diz o que fazer. O servidor da biblioteca já tem a própria chave no `.env` e continua igual (ninguém é deslogado).
+- **Apps abertos antes do agente na inicialização do Windows**: a tarefa esperava 5s depois do logon e o agente só abria a janela depois de consultar a atualização (até 5s); o que o cliente abrisse nesse intervalo continuava rodando atrás da tela de login.
+  - A tela do agente abre primeiro; a atualização é conferida e baixada em segundo plano (com sessão em andamento, fica para a próxima abertura).
+  - Na tela de login o agente fecha, a cada segundo, qualquer janela de programa que não seja do Windows e terminais (`cmd`, PowerShell...). A primeira conferência é aos 0,5s, não mais aos 3s.
+  - A tarefa agendada não espera mais 5s (`registrar_tarefa.ps1`): **vale só depois de rodar o `instalar.bat` de novo na estação**; o resto chega pela atualização automática.
+
 ## 2026-10-30 — Revisão: sessão presa depois de reiniciar o servidor (Ciclo 6, tarefa 6.3)
 
 - **Sessões abertas ficavam presas quando o servidor reiniciava**: as estações viravam "desligada", mas a sessão continuava aberta até aquele PC reconectar; se ele não voltasse, o cliente ficava "em uso" e não podia ser liberado. Agora, ao subir, o servidor encerra essas sessões (motivo "Servidor desligado") e devolve ao cliente o tempo que sobrou.

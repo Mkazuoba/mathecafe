@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.4"
+VERSAO = "1.6.5"
 
 import asyncio
 import json
@@ -333,7 +333,7 @@ class AgenteApp:
 
         self.root.after(100, self._processar_fila)
         self.root.after(1000, self._atualizar_countdown)
-        self.root.after(3000, self._verificar_processos)
+        self.root.after(500, self._verificar_processos)
 
     # ── Controle de janela ────────────────────────────────────────────────────
     def _tentar_fechar(self):
@@ -1213,17 +1213,20 @@ class AgenteApp:
 
     # ── Whitelist de processos ────────────────────────────────────────────────
     def _verificar_processos(self):
+        pid_atual = os.getpid()
         if not self.sessao_ativa and not self.modo_manutencao_ativo:
+            # Tela de login: nada do cliente fica aberto, nem o que ele abriu
+            # na inicializacao do Windows antes de o agente aparecer
             for proc in psutil.process_iter(["name"]):
                 try:
                     nome = (proc.info["name"] or "").lower()
-                    if nome in PROCESSOS_BLOQUEADOS_NO_LOGIN:
+                    if nome in PROCESSOS_BLOQUEADOS_NO_LOGIN or nome in PROCESSOS_SEMPRE_BLOQUEADOS:
                         proc.kill()
                         self._log(f"Bloqueado (tela de login): {nome}")
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+            self._fechar_janelas_fora_da_whitelist(pid_atual, set())
         if self.sessao_ativa:
-            pid_atual = os.getpid()
             for proc in psutil.process_iter(["pid", "name"]):
                 try:
                     nome = (proc.info["name"] or "").lower()
@@ -1255,11 +1258,11 @@ class AgenteApp:
                     continue
 
             if self.whitelist_procs:
-                self._fechar_janelas_fora_da_whitelist(pid_atual)
+                self._fechar_janelas_fora_da_whitelist(pid_atual, self.whitelist_procs)
 
         self.root.after(1000, self._verificar_processos)
 
-    def _fechar_janelas_fora_da_whitelist(self, pid_atual):
+    def _fechar_janelas_fora_da_whitelist(self, pid_atual, permitidos):
         """Um programa que já rodava antes do login (Edge em segundo plano, por
         exemplo) abre janelas novas sem criar processo novo; o Explorador de
         Arquivos é o próprio explorer.exe. Por isso também se confere quem é o
@@ -1271,7 +1274,7 @@ class AgenteApp:
                 nome = psutil.Process(pid).name().lower()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-            if nome in self.whitelist_procs:
+            if nome in permitidos:
                 continue
             if nome in JANELAS_DE_PROCESSOS_SEGUROS:
                 classe_app, descricao = JANELAS_DE_PROCESSOS_SEGUROS[nome]
@@ -1298,61 +1301,47 @@ def _versao_tuple(v: str):
         return (0, 0, 0)
 
 
-def verificar_update(servidor_http: str) -> bool:
-    """
-    Consulta o servidor. Se houver versao mais nova, baixa e reinicia.
-    Retorna True se reiniciou (processo novo no ar), False se nao havia update.
-    servidor_http: URL HTTP, ex: http://192.168.0.10:8000
-    """
+def baixar_atualizacao(servidor_http: str):
+    """Consulta o servidor e, se houver versao nova, baixa ao lado deste arquivo.
+    Roda numa thread (sem Tkinter). Devolve (versao, caminho_baixado) ou None."""
     import json as _json
-    import tkinter as _tk
-    import tkinter.messagebox as _mb
-
-    def _aviso(titulo, msg):
-        """Mostra caixa de dialogo sem janela principal visivel."""
-        r = _tk.Tk()
-        r.withdraw()
-        _mb.showinfo(titulo, msg, parent=r)
-        r.destroy()
-
     try:
-        url_versao = f"{servidor_http}/api/agente/versao"
-        print(f"Verificando update em {url_versao}...")
-        with abrir_url(url_versao, timeout=5) as r:
-            dados = _json.loads(r.read())
-        versao_servidor = dados.get("versao", "0.0.0")
-        print(f"Versao local: {VERSAO} | Versao servidor: {versao_servidor}")
-
+        with abrir_url(f"{servidor_http}/api/agente/versao", timeout=5) as r:
+            versao_servidor = _json.loads(r.read()).get("versao", "0.0.0")
         if _versao_tuple(versao_servidor) <= _versao_tuple(VERSAO):
-            print("Agente ja esta na versao mais recente.")
-            return False
-
-        # Avisa o usuario antes de atualizar
-        _aviso(
-            "Atualizacao disponivel",
-            f"Nova versao encontrada: {versao_servidor}\nVersao atual: {VERSAO}\n\nO agente sera atualizado e reiniciado automaticamente."
-        )
-
-        print(f"Baixando versao {versao_servidor}...")
-        url_download = f"{servidor_http}/api/agente/download"
-        caminho_atual = os.path.abspath(__file__)
-        caminho_novo = caminho_atual + ".novo"
-
-        with abrir_url(url_download, timeout=30) as r:
+            return None
+        caminho_novo = os.path.abspath(__file__) + ".novo"
+        with abrir_url(f"{servidor_http}/api/agente/download", timeout=30) as r:
             conteudo = r.read()
-
         with open(caminho_novo, "wb") as f:
             f.write(conteudo)
-
-        os.replace(caminho_novo, caminho_atual)
-        print(f"Agente atualizado para {versao_servidor}. Reiniciando...")
-        import sys as _sys
-        os.execv(_sys.executable, [_sys.executable] + _sys.argv)
-        return True
-
+        return versao_servidor, caminho_novo
     except Exception as e:
         print(f"Aviso: falha ao verificar update: {e}")
-        return False
+        return None
+
+
+def checar_atualizacao(app, servidor_http: str):
+    """A janela abre primeiro (o cliente nao pode usar o PC antes dela) e a
+    atualizacao e conferida em segundo plano. Com sessao em andamento, nao
+    reinicia: a versao nova entra na proxima vez que o agente abrir."""
+    def aplicar(versao, caminho_novo):
+        if app.sessao_ativa:
+            return
+        import tkinter.messagebox as _mb
+        _mb.showinfo("Atualizacao disponivel",
+                     f"Nova versao encontrada: {versao}\nVersao atual: {VERSAO}\n\n"
+                     "O agente sera atualizado e reiniciado automaticamente.", parent=app.root)
+        os.replace(caminho_novo, os.path.abspath(__file__))
+        import sys as _sys
+        os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+
+    def trabalhar():
+        baixado = baixar_atualizacao(servidor_http)
+        if baixado:
+            app.root.after(0, lambda: aplicar(*baixado))
+
+    threading.Thread(target=trabalhar, daemon=True).start()
 
 
 CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente.cfg")
@@ -1426,15 +1415,12 @@ def main():
     # Salva para a proxima vez
     salvar_cfg(servidor, estacao)
 
-    # Verifica update antes de abrir a janela
-    # Converte ws:// -> http:// para a chamada REST
-    servidor_http = servidor.replace("wss://", "https://").replace("ws://", "http://")
-    verificar_update(servidor_http)  # reinicia automaticamente se houver update
-
     root = tk.Tk()
     # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
     root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
     app = AgenteApp(root, servidor, estacao)
+    # Atualizacao so depois da janela no ar (ws:// -> http:// para a chamada REST)
+    checar_atualizacao(app, servidor.replace("wss://", "https://").replace("ws://", "http://"))
     root.mainloop()
 
 
