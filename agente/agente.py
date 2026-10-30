@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.5"
+VERSAO = "1.6.6"
 
 import asyncio
 import json
@@ -194,13 +194,16 @@ def fechar_janela(hwnd):
     _u32.PostMessageW(hwnd, 0x0010, None, None)  # WM_CLOSE
 
 
-def botao_minimizar(hwnd, ativo):
-    """Mostra ou tira o botão de minimizar da barra de título."""
+def botoes_janela(hwnd, ativo):
+    """Mostra ou tira os botões de minimizar e maximizar/restaurar e a borda de
+    redimensionar: na sessão o cliente não pode diminuir o agente."""
     if _u32 is None:
         return
-    GWL_STYLE, WS_MINIMIZEBOX = -16, 0x00020000
+    GWL_STYLE = -16
+    WS_MINIMIZEBOX, WS_MAXIMIZEBOX, WS_THICKFRAME = 0x00020000, 0x00010000, 0x00040000
+    travados = WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME
     estilo = _u32.GetWindowLongW(hwnd, GWL_STYLE)
-    estilo = estilo | WS_MINIMIZEBOX if ativo else estilo & ~WS_MINIMIZEBOX
+    estilo = estilo | travados if ativo else estilo & ~travados
     _u32.SetWindowLongW(hwnd, GWL_STYLE, estilo)
     # SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED: redesenha a moldura
     _u32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
@@ -328,6 +331,7 @@ class AgenteApp:
         self._teclado = BloqueioTeclado(self._tecla_bloqueada)
         self.root.bind("<Escape>", self._tentar_esc)
         self.root.bind("<Unmap>", self._ao_minimizar)
+        self.root.bind("<Configure>", self._ao_redimensionar)
         self.root.bind("<Control-Shift-M>", self._abrir_prompt_admin)
         self.root.bind("<Control-Shift-KeyPress-M>", self._abrir_prompt_admin)
 
@@ -358,10 +362,19 @@ class AgenteApp:
             self.root.state("zoomed")
         self.root.lift()
 
-    def _permitir_minimizar(self, ativo):
+    def _ao_redimensionar(self, event):
+        """Na sessão a janela fica maximizada: se sair disso (arrastar a barra
+        de título, por exemplo), volta sozinha. Fora da sessão é tela cheia."""
+        if event.widget is not self.root or self.modo_manutencao_ativo or not self.sessao_ativa:
+            return
+        if self.root.state() == "normal":
+            self.root.after(50, self._restaurar_janela)
+
+    def _liberar_janela(self, ativo):
+        """Botões de minimizar/maximizar e borda: só no modo manutenção."""
         try:
             self.root.update_idletasks()
-            botao_minimizar(int(self.root.wm_frame(), 16), ativo)
+            botoes_janela(int(self.root.wm_frame(), 16), ativo)
         except Exception:
             pass
 
@@ -829,7 +842,7 @@ class AgenteApp:
         self.root.attributes("-fullscreen", False)
         self.root.attributes("-topmost", False)
         self.root.state("zoomed")
-        self._permitir_minimizar(False)
+        self._liberar_janela(False)
         self.root.lift()
         self.root.focus_force()
 
@@ -1185,14 +1198,14 @@ class AgenteApp:
             self.root.attributes("-topmost", False)
 
         self.modo_manutencao_ativo = True
-        self._permitir_minimizar(True)
+        self._liberar_janela(True)
         self._enviar({"evento": "status_estacao", "status": "manutencao"})
         self.frame_manutencao.pack(fill="x", before=self.header_frame)
         self._log("Modo manutencao ativado")
 
     def _sair_modo_manutencao(self):
         self.modo_manutencao_ativo = False
-        self._permitir_minimizar(False)
+        self._liberar_janela(False)
         self.frame_manutencao.pack_forget()
         self._enviar({"evento": "status_estacao", "status": "livre"})
         self.frame_sessao.pack_forget()

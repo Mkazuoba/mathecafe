@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-30 — Agente não diminui na sessão (agente 1.6.6)
+
+- Na sessão, o botão de maximizar/restaurar e a borda de redimensionar saem da janela junto com o minimizar (na 1.6.5 dava para restaurar e diminuir o agente). Se a janela sair de maximizada por outro caminho (arrastar a barra de título), volta sozinha. No modo manutenção, tudo volta ao normal.
+
 ## 2026-10-30 — SECRET_KEY segura e estação fechada desde a inicialização (agente 1.6.5)
 
 - **SECRET_KEY**: o código trazia uma chave padrão pública (`TROQUE_ESTA_CHAVE_EM_PRODUCAO`); um servidor sem `.env` assinava os logins com ela e qualquer um podia forjar um login de admin. Agora, sem chave configurada, o servidor gera uma aleatória na primeira subida e guarda em `server/.secret_key` (fora do git), reaproveitando-a nas próximas. Chave de exemplo ou com menos de 32 caracteres: o servidor não sobe e diz o que fazer. O servidor da biblioteca já tem a própria chave no `.env` e continua igual (ninguém é deslogado).

@@ -201,3 +201,52 @@ def test_tela_de_login_fecha_o_que_abriram_antes():
     assert "PROCESSOS_SEMPRE_BLOQUEADOS" in login
     assert "self._fechar_janelas_fora_da_whitelist(pid_atual, set())" in login
     assert 'self.root.after(500, self._verificar_processos)' in src
+
+
+def test_janela_da_sessao_nao_diminui():
+    # Na 1.6.5 o botao de restaurar (e arrastar a barra de titulo) deixava o
+    # cliente diminuir o agente; so o minimizar estava travado
+    ns = _carregar(metodos=("_ao_redimensionar",))
+
+    class Root:
+        def __init__(self, estado):
+            self.estado = estado
+            self.agendado = []
+
+        def state(self):
+            return self.estado
+
+        def after(self, ms, func, *args):
+            self.agendado.append(func)
+
+    class Evento:
+        pass
+
+    e = _Estado()
+    e._restaurar_janela = lambda: None
+    e.sessao_ativa = True
+    e.root = Root("normal")
+    ev = Evento()
+    ev.widget = e.root
+    ns["_ao_redimensionar"](e, ev)
+    assert e.root.agendado == [e._restaurar_janela]
+
+    # eventos dos widgets de dentro da janela nao contam
+    e.root = Root("normal")
+    outro = Evento()
+    outro.widget = object()
+    ns["_ao_redimensionar"](e, outro)
+    assert not e.root.agendado
+
+    # maximizada, na tela de login ou na manutencao: deixa como esta
+    for sessao, manutencao, estado in ((True, False, "zoomed"), (False, False, "normal"), (True, True, "normal")):
+        e.sessao_ativa, e.modo_manutencao_ativo = sessao, manutencao
+        e.root = Root(estado)
+        ev.widget = e.root
+        ns["_ao_redimensionar"](e, ev)
+        assert not e.root.agendado
+
+    src = _fonte()
+    assert 'self.root.bind("<Configure>", self._ao_redimensionar)' in src
+    botoes = src[src.index("def botoes_janela"):src.index("# ── Bloqueio de atalhos")]
+    assert "0x00010000" in botoes and "0x00040000" in botoes  # maximizar e borda de redimensionar
