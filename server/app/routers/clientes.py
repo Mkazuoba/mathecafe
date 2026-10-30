@@ -1,5 +1,3 @@
-import base64
-import binascii
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -12,6 +10,7 @@ try:
 except ImportError:
     from backports.zoneinfo import ZoneInfo
 from app.database import _eh_sqlite, get_db, sem_acento
+from app.imagens import ler_imagem
 from app.tempo_diario import cota_diaria, hoje_br, saldo_do_dia, saldo_do_dia_sql
 from app.models import FotoCliente, Usuario, Sessao
 from app.security import hash_senha, requer_perfil
@@ -40,16 +39,6 @@ class FotoBody(BaseModel):
     imagem: str  # data URL (o painel reduz a imagem antes de enviar)
 
 FOTO_MAX_BYTES = 2_000_000
-# assinatura no inicio do arquivo -> tipo (nao confia no que o navegador diz)
-_ASSINATURAS = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG\r\n\x1a\n": "image/png"}
-
-def _tipo_da_imagem(dados: bytes) -> Optional[str]:
-    for assinatura, tipo in _ASSINATURAS.items():
-        if dados.startswith(assinatura):
-            return tipo
-    if dados[:4] == b"RIFF" and dados[8:12] == b"WEBP":
-        return "image/webp"
-    return None
 
 def _uso_hoje(db: Session, cliente_id: int) -> int:
     """Retorna segundos consumidos hoje (fuso Brasil UTC-3) em sessoes encerradas."""
@@ -215,15 +204,7 @@ def obter_foto(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("
 @router.put("/{id}/foto")
 def salvar_foto(id: int, body: FotoBody, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
     cliente = _cliente_ou_404(db, id)
-    try:
-        dados = base64.b64decode(body.imagem.split(",", 1)[-1], validate=True)
-    except (binascii.Error, ValueError):
-        raise HTTPException(status_code=400, detail="Imagem inválida")
-    if len(dados) > FOTO_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="Foto grande demais (máximo 2 MB)")
-    tipo = _tipo_da_imagem(dados)
-    if not tipo:
-        raise HTTPException(status_code=400, detail="Envie uma imagem JPG, PNG ou WebP")
+    tipo, dados = ler_imagem(body.imagem, FOTO_MAX_BYTES)
     foto = db.get(FotoCliente, id) or FotoCliente(cliente_id=id)
     foto.tipo, foto.conteudo = tipo, dados
     db.add(foto)

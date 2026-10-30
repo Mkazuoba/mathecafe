@@ -9,7 +9,7 @@ const buttonVariants = cva(
       variant: {
         default: "bg-destaque text-white hover:bg-destaque-forte",
         outline: "border border-borda bg-superficie-3 text-texto-suave hover:border-borda-forte hover:text-texto",
-        ghost: "text-texto-suave hover:bg-white/5 hover:text-texto",
+        ghost: "text-texto-suave hover:bg-texto/5 hover:text-texto",
         perigo: "border border-perigo-borda bg-perigo-fundo text-perigo hover:bg-perigo-borda hover:text-white",
       },
       size: {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-30 — Barra própria, tema claro e programação da biblioteca (agente 1.7.0)
+
+- **Barra de tarefas do MatheCafé** (agente, `BarraSessao`): na sessão a barra do Windows some e a nossa fica exatamente no lugar dela, sempre visível, com **Início** (volta ao launcher), um botão por app liberado aberto (clicar traz para a frente), o tema, o tempo restante e **Encerrar sessão**. O espaço reservado pela barra do Windows continua reservado, então um app maximizado não cobre a nossa. Ela some na pausa, na manutenção e no fim da sessão, e a barra do Windows volta ao sair da sessão ou se o agente fechar.
+- **Sessão em tela cheia sem barra de título**: na 1.6.6 ainda dava para arrastar a janela e a barra do Windows sumia; agora não há o que arrastar nem diminuir, e os apps abrem na frente. Sem barra do Windows, o Iniciar também não abre pelo mouse (6.6).
+- **Tema claro**:
+  - No painel: botão de sol/lua no cabeçalho, guardado no navegador de cada operador (`lib/tema.ts`, cores em `index.css`).
+  - No agente: o próprio cliente troca no botão "Tema claro" da tela de login ou da barra; fica guardado no `agente.cfg` da estação (`PALETAS`, `trocar_cores`).
+- **Programação da biblioteca**: Configurações → **Programação** recebe os cartazes (vários de uma vez, reduzidos para 1280px), com título, ordem, ativo e segundos por cartaz. O agente mostra os ativos em carrossel numa coluna ao lado dos apps durante a sessão e recarrega sozinho quando algo muda no painel (evento `programacao_atualizada`). Igual em todas as estações.
+- API: `/api/programacao/` (admin cadastra; operador consulta) e `/api/programacao/agente` + `/api/programacao/{id}/imagem`, abertos para o agente (cartazes públicos, como a atualização do agente). Validação de imagem num módulo só (`app/imagens.py`), usado também pela foto do cliente.
+
 ## 2026-10-30 — Agente não diminui na sessão (agente 1.6.6)
 
 - Na sessão, o botão de maximizar/restaurar e a borda de redimensionar saem da janela junto com o minimizar (na 1.6.5 dava para restaurar e diminuir o agente). Se a janela sair de maximizada por outro caminho (arrastar a barra de título), volta sozinha. No modo manutenção, tudo volta ao normal.

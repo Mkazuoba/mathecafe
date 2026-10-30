@@ -6,11 +6,14 @@ import {
   IconHistory,
   IconLayoutDashboard,
   IconMap,
+  IconMoon,
   IconSettings,
+  IconSun,
   IconUsers,
 } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useDados } from "@/lib/dados"
+import { useTema } from "@/lib/tema"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +37,7 @@ export function Layout() {
   const [expandida, setExpandida] = useState(lerExpandida)
   const { tempoReal } = useDados()
   const admin = Api.ehAdmin()
+  const { tema, alternar: alternarTema } = useTema()
 
   function alternar() {
     setExpandida((v) => {
@@ -76,7 +80,7 @@ export function Layout() {
                   "flex items-center gap-3.5 border-l-[3px] px-[13px] py-3 text-[13px] font-medium whitespace-nowrap transition-colors",
                   isActive
                     ? "border-l-destaque bg-destaque/15 text-texto"
-                    : "border-l-transparent text-texto-suave hover:bg-white/5 hover:text-texto",
+                    : "border-l-transparent text-texto-suave hover:bg-texto/5 hover:text-texto",
                 )
               }
             >
@@ -98,6 +102,15 @@ export function Layout() {
             <span className={cn("size-2 rounded-full", tempoReal ? "bg-livre" : "bg-desligada")} />
             {tempoReal ? "tempo real" : "reconectando..."}
           </span>
+          <button
+            type="button"
+            onClick={alternarTema}
+            title={tema === "claro" ? "Usar o tema escuro" : "Usar o tema claro"}
+            aria-label={tema === "claro" ? "Usar o tema escuro" : "Usar o tema claro"}
+            className="rounded-md p-1.5 text-texto-suave hover:bg-texto/5 hover:text-texto"
+          >
+            {tema === "claro" ? <IconMoon size={18} /> : <IconSun size={18} />}
+          </button>
           <span className="text-sm text-texto-suave">{Api.nome()}</span>
           <Button variant="outline" size="sm" onClick={() => Api.sair()}>
             Sair

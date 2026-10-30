@@ -35,7 +35,8 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `tempo_diario.py` | tempo de uso por dia de cada cliente: cota, reset à meia-noite de Brasília, reservar o tempo da sessão |
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
-| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `agente` (auto-update) |
+| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
+| `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
 | `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
@@ -65,6 +66,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 |---|---|
 | `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou) |
 | `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
+| `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
 | `grupos_estacao` | grupos de PCs (abas do Mapa), com cor (o `tempo_padrao_segundos` do grupo não é mais usado) |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
@@ -91,7 +93,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | Direção | Eventos |
 |---|---|
 | Servidor → painel | `captura_tela`, `tela_frame`, `estacao_online`, `estacao_offline`, `sessao_iniciada`, `sessao_encerrada`, `fila_atualizada` |
-| Servidor → agente | `login_resultado`, `encerrar_sessao`, `manutencao_resultado`, `pong` |
+| Servidor → agente | `login_resultado`, `encerrar_sessao`, `manutencao_resultado`, `pong`, `programacao_atualizada` (recarregar os cartazes) |
 | Agente → servidor | `login_cliente`, `sessao_encerrada`, `status_estacao` (manutencao/livre), `validar_manutencao`, `ping`, `captura_tela_resultado` e `tela_frame` (imagem em `dados.imagem`) |
 
 ## Perfis
@@ -143,6 +145,8 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **WebSocket do painel exige login**: `/ws/painel?token=...` só aceita admin ou operador (os eventos trazem nomes de clientes).
 - **Mapa mostra estações sem grupo** numa aba "Sem grupo"; no painel lateral o admin troca o grupo da estação.
 - **SECRET_KEY nunca fixa no código** (`config.resolver_secret_key`): vale a do ambiente/`.env` se tiver 32+ caracteres e não for de exemplo (senão o servidor não sobe); sem ela, usa `server/.secret_key`, gerada na primeira subida. Trocar a chave desloga todo mundo. Guarde o arquivo junto com o backup do banco.
+- **Barra própria na sessão** (agente 1.7.0): a janela do agente é tela cheia sem "sempre por cima" (apps abrem na frente) e a `BarraSessao` (Toplevel sempre por cima) ocupa o retângulo da barra do Windows, que é escondida com `ShowWindow`. O espaço que o Windows reserva para a barra dele continua reservado, então apps maximizados param acima da nossa. A barra do Windows volta no fim da sessão, na manutenção e por `atexit`. Na pausa, a nossa some.
+- **Tema do agente sem reconstruir a tela**: `trocar_cores` percorre os widgets e troca cada cor da paleta antiga pela da nova (`PALETAS`, sem cores repetidas dentro de uma paleta). Cores de status (verde, vermelho, laranja) são as mesmas nos dois temas.
 - **Agente abre a janela antes de tudo**: a atualização é conferida numa thread depois de a janela estar no ar, e na tela de login o agente fecha qualquer janela que não seja do Windows (o que o cliente abriu na inicialização antes do agente).
 - **Admin sem senha fixa**: criado por `python -m app.cli` ou pelas variáveis `ADMIN_LOGIN`/`ADMIN_SENHA`.
 - **Mensagens no console só com caracteres latinos**: emoji em `print` derruba o servidor num console Windows (cp1252).

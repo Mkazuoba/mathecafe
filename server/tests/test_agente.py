@@ -103,6 +103,8 @@ def test_atalhos_bloqueados_fora_da_manutencao():
 
 def test_esc_e_fechar_so_na_manutencao():
     ns = _carregar(metodos=("_tentar_fechar", "_tentar_esc"))
+    barra = []
+    ns["barra_do_windows"] = barra.append  # fechar devolve a barra do Windows
 
     class Root:
         fechou = False
@@ -126,6 +128,7 @@ def test_esc_e_fechar_so_na_manutencao():
     ns["_tentar_fechar"](e)
     ns["_tentar_esc"](e)
     assert e.root.fechou and e.root.atributos == {"-fullscreen": False}
+    assert barra == [True]
 
 
 def test_agente_dist_igual_ao_agente():
@@ -204,17 +207,19 @@ def test_tela_de_login_fecha_o_que_abriram_antes():
 
 
 def test_janela_da_sessao_nao_diminui():
-    # Na 1.6.5 o botao de restaurar (e arrastar a barra de titulo) deixava o
-    # cliente diminuir o agente; so o minimizar estava travado
+    # 1.6.5: o botao de restaurar deixava diminuir o agente; 1.6.6: ainda dava
+    # para arrastar e a barra do Windows sumia. Na 1.7.0 a sessao e tela cheia
+    # (sem barra de titulo) com a barra propria do MatheCafe
     ns = _carregar(metodos=("_ao_redimensionar",))
 
     class Root:
-        def __init__(self, estado):
-            self.estado = estado
+        def __init__(self, cheia):
+            self.cheia = cheia
             self.agendado = []
 
-        def state(self):
-            return self.estado
+        def attributes(self, nome):
+            assert nome == "-fullscreen"
+            return self.cheia
 
         def after(self, ms, func, *args):
             self.agendado.append(func)
@@ -225,28 +230,101 @@ def test_janela_da_sessao_nao_diminui():
     e = _Estado()
     e._restaurar_janela = lambda: None
     e.sessao_ativa = True
-    e.root = Root("normal")
+    e.root = Root(False)
     ev = Evento()
     ev.widget = e.root
     ns["_ao_redimensionar"](e, ev)
     assert e.root.agendado == [e._restaurar_janela]
 
     # eventos dos widgets de dentro da janela nao contam
-    e.root = Root("normal")
+    e.root = Root(False)
     outro = Evento()
     outro.widget = object()
     ns["_ao_redimensionar"](e, outro)
     assert not e.root.agendado
 
-    # maximizada, na tela de login ou na manutencao: deixa como esta
-    for sessao, manutencao, estado in ((True, False, "zoomed"), (False, False, "normal"), (True, True, "normal")):
+    # em tela cheia, na tela de login ou na manutencao: deixa como esta
+    for sessao, manutencao, cheia in ((True, False, True), (False, False, False), (True, True, False)):
         e.sessao_ativa, e.modo_manutencao_ativo = sessao, manutencao
-        e.root = Root(estado)
+        e.root = Root(cheia)
         ev.widget = e.root
         ns["_ao_redimensionar"](e, ev)
         assert not e.root.agendado
 
     src = _fonte()
     assert 'self.root.bind("<Configure>", self._ao_redimensionar)' in src
-    botoes = src[src.index("def botoes_janela"):src.index("# ── Bloqueio de atalhos")]
-    assert "0x00010000" in botoes and "0x00040000" in botoes  # maximizar e borda de redimensionar
+    inicio = src[src.index("def _iniciar_sessao"):src.index("def _montar_launcher")]
+    assert '"zoomed"' not in inicio and 'self.root.attributes("-fullscreen", True)' in inicio
+
+
+def test_barra_propria_substitui_a_do_windows():
+    src = _fonte()
+    inicio = src[src.index("def _iniciar_sessao"):src.index("def _montar_launcher")]
+    assert "self.barra.mostrar()" in inicio
+    voltar = src[src.index("def _voltar_login"):src.index("def _countdown_encerramento")]
+    assert "self.barra.esconder()" in voltar
+    manutencao = src[src.index("def _modo_manutencao"):src.index("def _sair_modo_manutencao")]
+    assert "self.barra.esconder()" in manutencao
+    # se o agente fechar, a barra do Windows volta
+    assert "atexit.register(barra_do_windows, True)" in src
+    # na pausa a barra some (senao o cliente usaria os apps pausado)
+    manter = src[src.index("    def manter(self):"):]
+    assert "self.app._sessao_pausada" in manter[:manter.index("\n    def ", 1)]
+    # o que aparece na barra so pode ser app liberado
+    janelas = src[src.index("def _janelas_dos_apps"):]
+    janelas = janelas[:janelas.index("\n    def ", 1)]
+    assert "self.whitelist_procs" in janelas
+
+
+def test_paletas_do_tema():
+    ns = {}
+    arvore = ast.parse(_fonte())
+    for no in arvore.body:
+        if isinstance(no, ast.Assign) and any(getattr(t, "id", "") == "PALETAS" for t in no.targets):
+            exec(compile(ast.Module(body=[no], type_ignores=[]), AGENTE, "exec"), ns)
+    paletas = ns["PALETAS"]
+    assert set(paletas) == {"escuro", "claro"}
+    assert set(paletas["escuro"]) == set(paletas["claro"])
+    for p in paletas.values():
+        # cores repetidas numa paleta tornariam a troca ambigua
+        assert len({v.lower() for v in p.values()}) == len(p)
+    assert paletas["escuro"]["fundo"] == "#0f1117"  # o escuro continua como era
+
+
+def test_trocar_cores_percorre_toda_a_janela():
+    import types
+    arvore = ast.parse(_fonte())
+    corpo = [no for no in arvore.body
+             if (isinstance(no, ast.FunctionDef) and no.name == "trocar_cores")
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") == "CORES_DOS_WIDGETS" for t in no.targets))]
+    ns = {"tk": types.SimpleNamespace(TclError=KeyError)}
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+
+    class W:
+        def __init__(self, filhos=(), **cores):
+            self.cores, self.filhos = cores, list(filhos)
+
+        def cget(self, opcao):
+            return self.cores[opcao]  # KeyError faz o papel do TclError
+
+        def configure(self, d):
+            self.cores.update(d)
+
+        def winfo_children(self):
+            return self.filhos
+
+    neto = W(background="#0F1117", foreground="white")
+    raiz = W([W([neto], background="#171b26")], background="#0f1117")
+    ns["trocar_cores"](raiz, {"#0f1117": "#f4f5fa", "#171b26": "#ffffff"})
+    assert raiz.cores["background"] == "#f4f5fa"
+    assert raiz.filhos[0].cores["background"] == "#ffffff"
+    assert neto.cores == {"background": "#f4f5fa", "foreground": "white"}
+
+
+def test_programacao_no_agente():
+    src = _fonte()
+    assert 'evento == "programacao_atualizada"' in src
+    assert "/api/programacao/agente" in src
+    # carregamento antigo que chegue atrasado nao substitui o novo
+    mostrar = src[src.index("def _mostrar_lista"):]
+    assert "self._geracao" in mostrar[:mostrar.index("\n    def ", 1)]

@@ -65,7 +65,8 @@ O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a trans
 2. **Configurações → Apps permitidos**: cadastre os programas que os clientes podem abrir (processo `.exe`, caminho completo e, se quiser, uma imagem de capa).
 3. **Mapa → Modo configuração**: cadastre as estações (o nome, ex. `PC-01`, é o mesmo usado no agente) e arraste-as para a posição da sala.
 4. **Clientes**: cadastre os clientes.
-5. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
+5. **Configurações → Programação** (opcional): suba os cartazes da programação da biblioteca; eles aparecem ao lado dos apps durante a sessão.
+6. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
 
 ## 4. Agente (em cada estação)
 
@@ -91,7 +92,7 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online). É a única saída do agente: Esc e fechar a janela só funcionam nela.
-- **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; o cliente alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si não fecha, não minimiza e não diminui). Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
+- **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; a barra do Windows dá lugar à do MatheCafé (Início, apps abertos, tema, tempo, Encerrar), e o cliente também alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si é tela cheia: não fecha, não minimiza, não diminui). Se a barra do Windows não voltar depois de um problema, sair do usuário e entrar de novo a traz de volta. Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
 - **Estação travada sem servidor** (não dá para entrar em manutenção): Ctrl+Alt+Del → Sair e entre com a conta de admin segurando **Shift** para o autologin não entrar de novo.
 - **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
 - Erros fatais do agente ficam em `C:\MatheCafe\agente_erro.log`.

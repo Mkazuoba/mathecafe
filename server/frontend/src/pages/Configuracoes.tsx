@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
+import { SecaoProgramacao } from "@/components/SecaoProgramacao"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
@@ -17,6 +18,7 @@ const SECOES = [
   { id: "comportamento", rotulo: "Comportamento" },
   { id: "grupos", rotulo: "Grupos" },
   { id: "apps", rotulo: "Apps permitidos" },
+  { id: "programacao", rotulo: "Programação" },
   { id: "relatorios", rotulo: "Relatórios" },
   { id: "historico", rotulo: "Histórico de uso" },
   { id: "conta", rotulo: "Minha conta" },
@@ -52,6 +54,7 @@ export default function Configuracoes() {
           {secao === "comportamento" && <SecaoComportamento />}
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
+          {secao === "programacao" && <SecaoProgramacao />}
           {secao === "relatorios" && <SecaoRelatorios />}
           {secao === "historico" && <SecaoHistorico />}
           {secao === "conta" && <SecaoConta />}
@@ -112,7 +115,7 @@ function SecaoOperadores() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-sm font-medium">
                 {o.nome} <SeloAtivo ativo={o.ativo} />
-                <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${o.perfil === "admin" ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>{o.perfil}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${o.perfil === "admin" ? "bg-manutencao-fundo text-manutencao" : "bg-superficie-3 text-texto-suave"}`}>{o.perfil}</span>
               </div>
               <div className="font-mono text-xs text-texto-fraco">{o.login}</div>
             </div>

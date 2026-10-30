@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.6.6"
+VERSAO = "1.7.0"
 
 import asyncio
 import json
@@ -30,6 +30,7 @@ import time
 import os
 import subprocess
 import ctypes
+import atexit
 from datetime import datetime
 from io import BytesIO
 import urllib.parse
@@ -158,6 +159,17 @@ try:
     _u32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
     _u32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
                                   ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    from ctypes import wintypes as _wt
+    _u32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    _u32.FindWindowW.restype = ctypes.c_void_p
+    _u32.FindWindowExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
+    _u32.FindWindowExW.restype = ctypes.c_void_p
+    _u32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    _u32.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(_wt.RECT)]
+    _u32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+    _u32.IsIconic.argtypes = [ctypes.c_void_p]
+    _u32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    _u32.GetForegroundWindow.restype = ctypes.c_void_p
     _dwm = ctypes.WinDLL("dwmapi")
     _dwm.DwmGetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
 except (AttributeError, OSError):
@@ -207,6 +219,99 @@ def botoes_janela(hwnd, ativo):
     _u32.SetWindowLongW(hwnd, GWL_STYLE, estilo)
     # SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED: redesenha a moldura
     _u32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
+
+
+# ── Barra de tarefas do Windows e janelas dos apps ───────────────────────────
+# Na sessão a barra do Windows some (sem Iniciar) e a do MatheCafé fica no
+# lugar dela. O espaço que o Windows reserva para a barra continua reservado,
+# então um app maximizado para em cima da nossa barra em vez de cobri-la.
+def _barras_do_windows():
+    if _u32 is None:
+        return []
+    barras = []
+    principal = _u32.FindWindowW("Shell_TrayWnd", None)
+    if principal:
+        barras.append(principal)
+    outra = None
+    while True:  # uma por monitor a mais
+        outra = _u32.FindWindowExW(None, outra, "Shell_SecondaryTrayWnd", None)
+        if not outra:
+            break
+        barras.append(outra)
+    return barras
+
+
+def barra_do_windows(visivel):
+    for h in _barras_do_windows():
+        _u32.ShowWindow(h, 5 if visivel else 0)  # SW_SHOW / SW_HIDE
+
+
+def barra_do_windows_visivel():
+    return any(_u32.IsWindowVisible(h) for h in _barras_do_windows())
+
+
+def area_da_barra_do_windows():
+    """(x, y, largura, altura) da barra principal do Windows, ou None."""
+    h = _u32.FindWindowW("Shell_TrayWnd", None) if _u32 else None
+    if not h:
+        return None
+    r = _wt.RECT()
+    _u32.GetWindowRect(h, ctypes.byref(r))
+    return r.left, r.top, r.right - r.left, r.bottom - r.top
+
+
+def titulo_da_janela(hwnd):
+    buf = ctypes.create_unicode_buffer(256)
+    _u32.GetWindowTextW(hwnd, buf, 256)
+    return buf.value
+
+
+def trazer_para_frente(hwnd):
+    if _u32.IsIconic(hwnd):
+        _u32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    _u32.SetForegroundWindow(hwnd)
+
+
+def janela_em_foco():
+    return _u32.GetForegroundWindow() if _u32 else None
+
+
+# ── Tema (o cliente escolhe na tela do agente) ───────────────────────────────
+# Mesmas chaves nas duas; dentro de cada uma, sem cores repetidas (a troca
+# substitui cada cor da paleta antiga pela da nova, widget por widget).
+PALETAS = {
+    "escuro": {
+        "fundo": "#0f1117", "superficie": "#171b26", "superficie2": "#1e2333", "superficie3": "#252b3b",
+        "texto": "#e2e8f0", "texto2": "#94a3b8", "fraco": "#6b7280",
+        "destaque": "#6366f1", "destaque_forte": "#4f46e5",
+    },
+    "claro": {
+        "fundo": "#f4f5fa", "superficie": "#ffffff", "superficie2": "#e9ecf3", "superficie3": "#dde1ea",
+        "texto": "#171b26", "texto2": "#4b5368", "fraco": "#7a8298",
+        "destaque": "#4f46e5", "destaque_forte": "#4338ca",
+    },
+}
+ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
+
+CORES_DOS_WIDGETS = ("background", "foreground", "activebackground", "activeforeground",
+                     "highlightbackground", "highlightcolor", "insertbackground",
+                     "selectbackground", "disabledforeground", "troughcolor")
+
+
+def trocar_cores(widget, mapa):
+    """Troca as cores (de `mapa`) neste widget e em todos os de dentro."""
+    for opcao in CORES_DOS_WIDGETS:
+        try:
+            valor = str(widget.cget(opcao)).lower()
+        except tk.TclError:
+            continue
+        if valor in mapa:
+            try:
+                widget.configure({opcao: mapa[valor]})
+            except tk.TclError:
+                pass
+    for filho in widget.winfo_children():
+        trocar_cores(filho, mapa)
 
 
 # ── Bloqueio de atalhos do Windows ───────────────────────────────────────────
@@ -279,6 +384,183 @@ class BloqueioTeclado:
             self._user32.DispatchMessageW(ctypes.byref(msg))
 
 
+class BarraSessao:
+    """Barra do MatheCafé na sessão, no lugar da do Windows: Início (volta ao
+    launcher), um botão por app liberado aberto, tema, tempo e Encerrar."""
+    ALTURA = 48
+
+    def __init__(self, app):
+        self.app = app
+        p = app.paleta
+        self.top = tk.Toplevel(app.root)
+        self.top.withdraw()
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.configure(bg=p["superficie"])
+        self._botoes = {}
+
+        self.btn_inicio = tk.Button(self.top, text="⌂  Início", font=app.f_app, bg=p["destaque"],
+                                    fg="white", activebackground=p["destaque_forte"], activeforeground="white",
+                                    relief="flat", padx=14, command=self.inicio)
+        self.btn_inicio.pack(side="left", padx=(8, 6), pady=6, fill="y")
+        self.frame_apps = tk.Frame(self.top, bg=p["superficie"])
+        self.frame_apps.pack(side="left", fill="y")
+
+        tk.Button(self.top, text="Encerrar sessão", font=app.f_small, bg="#ef4444", fg="white",
+                  activebackground="#dc2626", activeforeground="white", relief="flat", padx=10,
+                  command=app._encerrar_sessao_cliente).pack(side="right", padx=8, pady=8, fill="y")
+        self.lbl_tempo = tk.Label(self.top, text="00:00:00", font=("Consolas", 15, "bold"),
+                                  fg="#22c55e", bg=p["superficie"])
+        self.lbl_tempo.pack(side="right", padx=10)
+        self.btn_tema = tk.Button(self.top, text=ROTULO_TEMA[app.tema], font=app.f_small, bg=p["superficie2"],
+                                  fg=p["texto2"], activebackground=p["superficie3"], relief="flat", padx=10,
+                                  command=app.alternar_tema)
+        self.btn_tema.pack(side="right", padx=4, pady=8, fill="y")
+
+    def mostrar(self):
+        largura, altura = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
+        area = area_da_barra_do_windows()
+        if area and area[1] > altura // 2 and area[2] >= largura // 2 and area[3] >= 30:
+            x, y, w, h = area  # exatamente onde estava a do Windows
+        else:
+            x, y, w, h = 0, altura - self.ALTURA, largura, self.ALTURA
+        self.top.geometry(f"{w}x{h}+{x}+{y}")
+        self.top.deiconify()
+        self.top.attributes("-topmost", True)
+        self.top.lift()
+        barra_do_windows(False)
+
+    def esconder(self):
+        self.top.withdraw()
+        for b in self._botoes.values():
+            b.destroy()
+        self._botoes = {}
+        barra_do_windows(True)
+
+    def manter(self):
+        """A cada segundo na sessão. Na pausa a barra some (a tela de pausa
+        cobre tudo); o Windows às vezes mostra a barra dele de novo."""
+        if self.app._sessao_pausada:
+            self.top.withdraw()
+            return
+        if self.top.state() == "withdrawn":
+            self.top.deiconify()
+        if barra_do_windows_visivel():
+            barra_do_windows(False)
+        self.top.lift()
+
+    def inicio(self):
+        self.app.root.deiconify()
+        self.app.root.lift()
+        self.app.root.focus_force()
+        self.top.lift()
+
+    def atualizar_apps(self, janelas):
+        """janelas: [(hwnd, titulo)] dos apps liberados abertos agora."""
+        abertas = dict(janelas)
+        for hwnd in [h for h in self._botoes if h not in abertas]:
+            self._botoes.pop(hwnd).destroy()
+        p, foco = self.app.paleta, janela_em_foco()
+        for hwnd, titulo in janelas:
+            texto = titulo if len(titulo) <= 26 else titulo[:25] + "…"
+            botao = self._botoes.get(hwnd)
+            if botao is None:
+                botao = tk.Button(self.frame_apps, font=self.app.f_small, relief="flat", padx=10,
+                                  command=lambda h=hwnd: trazer_para_frente(h))
+                botao.pack(side="left", padx=3, pady=8, fill="y")
+                self._botoes[hwnd] = botao
+            no_foco = hwnd == foco
+            botao.config(text=texto, bg=p["destaque"] if no_foco else p["superficie2"],
+                         fg="white" if no_foco else p["texto"], activebackground=p["superficie3"])
+
+
+class Programacao:
+    """Cartazes da programação da biblioteca ao lado dos apps, um de cada vez.
+    Vêm do servidor (Configurações → Programação); sem cartaz, a coluna some."""
+    LARGURA = 380
+
+    def __init__(self, app, frame):
+        self.app = app
+        self.frame = frame
+        p = app.paleta
+        self.frame.pack_propagate(False)
+        tk.Label(frame, text="PROGRAMAÇÃO DA BIBLIOTECA", font=app.f_small,
+                 fg=p["texto2"], bg=p["fundo"]).pack(anchor="w", pady=(0, 6))
+        self.lbl_img = tk.Label(frame, bg=p["fundo"])
+        self.lbl_img.pack()
+        self.lbl_legenda = tk.Label(frame, text="", font=app.f_normal, fg=p["texto"], bg=p["fundo"],
+                                    wraplength=self.LARGURA - 20, justify="center")
+        self.lbl_legenda.pack(pady=6)
+        self.itens = []
+        self._foto = None
+        self.indice = 0
+        self.segundos = 10
+        self._timer = None
+        self._geracao = 0
+
+    def recarregar(self):
+        if not PIL_AVAILABLE:
+            return
+        self._geracao += 1
+        threading.Thread(target=self._baixar, args=(self._geracao,), daemon=True).start()
+
+    def _baixar(self, geracao):
+        # thread: nada de Tkinter aqui
+        base = self.app.servidor.replace("wss://", "https://").replace("ws://", "http://")
+        try:
+            with abrir_url(f"{base}/api/programacao/agente", timeout=5) as r:
+                dados = json.loads(r.read())
+            imagens = []
+            for item in dados.get("itens", []):
+                with abrir_url(f"{base}/api/programacao/{item['id']}/imagem?v={item.get('versao', 0)}", timeout=10) as r:
+                    imagens.append((item.get("titulo", ""), Image.open(BytesIO(r.read())).convert("RGB")))
+        except Exception as ex:
+            self.app.incoming.put({"evento": "_info", "dados": {"msg": f"Programacao: nao carregou ({ex})"}})
+            return
+        segundos = dados.get("segundos", 10)
+        self.app.root.after(0, lambda: self._mostrar_lista(geracao, segundos, imagens))
+
+    def _mostrar_lista(self, geracao, segundos, imagens):
+        if geracao != self._geracao:
+            return  # um carregamento mais novo já está a caminho
+        self.segundos = max(3, int(segundos or 10))
+        self.itens = imagens
+        self.indice = 0
+        if not imagens or not self.app.sessao_ativa:
+            self.parar()
+            return
+        self.frame.configure(width=self.LARGURA)
+        self.frame.pack(side="right", fill="y", padx=(0, 20), pady=(0, 10), before=self.app.frame_launcher)
+        self._exibir()
+
+    def _exibir(self):
+        if self._timer:
+            self.app.root.after_cancel(self._timer)
+            self._timer = None
+        if not self.itens:
+            return
+        titulo, img = self.itens[self.indice % len(self.itens)]
+        largura = self.LARGURA - 20
+        altura = max(200, self.app.root.winfo_height() - 300)
+        escala = min(largura / img.width, altura / img.height, 1.0)
+        self._foto = ImageTk.PhotoImage(img.resize((max(1, int(img.width * escala)), max(1, int(img.height * escala))),
+                                                   Image.LANCZOS))
+        self.lbl_img.config(image=self._foto)
+        self.lbl_legenda.config(text=titulo)
+        self.indice += 1
+        if len(self.itens) > 1:
+            self._timer = self.app.root.after(self.segundos * 1000, self._exibir)
+
+    def parar(self):
+        if self._timer:
+            self.app.root.after_cancel(self._timer)
+            self._timer = None
+        self.itens = []
+        self._foto = None
+        self.lbl_img.config(image="")
+        self.frame.pack_forget()
+
+
 class AgenteApp:
     def __init__(self, root, servidor, estacao):
         self.root = root
@@ -315,8 +597,15 @@ class AgenteApp:
         self._sessao_pausada = False
         self._aviso_5min_dado = False
 
+        # Tema escolhido pelo cliente, guardado no agente.cfg da estação
+        self.tema = carregar_cfg().get("TEMA", "escuro")
+        if self.tema not in PALETAS:
+            self.tema = "escuro"
+        self.paleta = PALETAS[self.tema]
+        self._definir_cores()
+
         self.root.title(f"MatheCafe v{VERSAO} - {estacao}")
-        self.root.configure(bg="#0f1117")
+        self.root.configure(bg=self.paleta["fundo"])
         self.root.resizable(True, True)
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
@@ -325,6 +614,7 @@ class AgenteApp:
         self.root.protocol("WM_DELETE_WINDOW", self._tentar_fechar)
 
         self._build_ui()
+        self.barra = BarraSessao(self)
         self._start_ws_thread()
 
         # Atalhos
@@ -343,6 +633,7 @@ class AgenteApp:
     def _tentar_fechar(self):
         """Fechar (X, Alt+F4) só funciona no modo manutenção."""
         if self.modo_manutencao_ativo:
+            barra_do_windows(True)
             self.root.destroy()
 
     def _tentar_esc(self, event=None):
@@ -359,15 +650,31 @@ class AgenteApp:
     def _restaurar_janela(self):
         self.root.deiconify()
         if self.sessao_ativa:
-            self.root.state("zoomed")
+            self.root.attributes("-fullscreen", True)
         self.root.lift()
 
+    def _definir_cores(self):
+        p = self.paleta
+        self.c_bg, self.c_bg2, self.c_bg3, self.c_bg4 = p["fundo"], p["superficie"], p["superficie2"], p["superficie3"]
+        self.c_text, self.c_text2, self.c_accent = p["texto"], p["texto2"], p["destaque"]
+
+    def alternar_tema(self):
+        """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
+        novo = "claro" if self.tema == "escuro" else "escuro"
+        antiga, nova = PALETAS[self.tema], PALETAS[novo]
+        trocar_cores(self.root, {antiga[k].lower(): nova[k] for k in antiga})
+        self.tema, self.paleta = novo, nova
+        self._definir_cores()
+        for botao in (self.btn_tema, self.barra.btn_tema):
+            botao.config(text=ROTULO_TEMA[novo])
+        salvar_tema(novo)
+
     def _ao_redimensionar(self, event):
-        """Na sessão a janela fica maximizada: se sair disso (arrastar a barra
-        de título, por exemplo), volta sozinha. Fora da sessão é tela cheia."""
+        """Na sessão a janela é tela cheia (sem barra de título para arrastar):
+        se sair disso, volta sozinha."""
         if event.widget is not self.root or self.modo_manutencao_ativo or not self.sessao_ativa:
             return
-        if self.root.state() == "normal":
+        if not self.root.attributes("-fullscreen"):
             self.root.after(50, self._restaurar_janela)
 
     def _liberar_janela(self, ativo):
@@ -395,12 +702,9 @@ class AgenteApp:
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        self.c_bg = bg = "#0f1117"
-        self.c_bg2 = bg2 = "#171b26"
-        self.c_bg3 = bg3 = "#1e2333"
-        self.c_text = text = "#e2e8f0"
-        self.c_text2 = text2 = "#94a3b8"
-        self.c_accent = accent = "#6366f1"
+        p = self.paleta
+        bg, bg2, bg3 = self.c_bg, self.c_bg2, self.c_bg3
+        text, text2, accent = self.c_text, self.c_text2, self.c_accent
 
         title_font = tkfont.Font(family="Segoe UI", size=16, weight="bold")
         normal_font = tkfont.Font(family="Segoe UI", size=11)
@@ -416,11 +720,15 @@ class AgenteApp:
         header.pack(fill="x")
         tk.Label(header, text="MatheCafe", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=(14,4), pady=10)
         ver_font = tkfont.Font(family="Segoe UI", size=9)
-        tk.Label(header, text=f"v{VERSAO}", font=ver_font, fg="#6b7280", bg=bg2).pack(side="left", pady=10)
+        tk.Label(header, text=f"v{VERSAO}", font=ver_font, fg=p["fraco"], bg=bg2).pack(side="left", pady=10)
         self.lbl_estacao = tk.Label(header, text=self.estacao, font=normal_font, fg=text2, bg=bg2)
         self.lbl_estacao.pack(side="left", padx=4)
         self.lbl_status = tk.Label(header, text="conectando...", font=small_font, fg="#f97316", bg=bg2)
         self.lbl_status.pack(side="right", padx=14)
+        self.btn_tema = tk.Button(header, text=ROTULO_TEMA[self.tema], font=small_font, bg=bg3, fg=text2,
+                                  activebackground=p["superficie3"], relief="flat", padx=10,
+                                  command=self.alternar_tema)
+        self.btn_tema.pack(side="right", padx=4, pady=8)
 
         # ── Frame de login ──
         self.frame_login = tk.Frame(self.root, bg=bg)
@@ -446,7 +754,7 @@ class AgenteApp:
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
 
         self.btn_login = tk.Button(_form, text="Entrar", font=normal_font,
-                                    bg=accent, fg="white", relief="flat", activebackground="#4f46e5",
+                                    bg=accent, fg="white", relief="flat", activebackground=p["destaque_forte"],
                                     command=self._fazer_login, state="disabled")
         self.btn_login.pack(fill="x", ipady=8)
 
@@ -455,6 +763,8 @@ class AgenteApp:
 
         # ── Frame de sessão (launcher) ──
         self.frame_sessao = tk.Frame(self.root, bg=bg)
+        # espaço da barra do MatheCafé, que fica por cima, embaixo da tela
+        tk.Frame(self.frame_sessao, bg=bg, height=BarraSessao.ALTURA).pack(side="bottom", fill="x")
 
         topo_sessao = tk.Frame(self.frame_sessao, bg=bg2)
         topo_sessao.pack(fill="x")
@@ -471,8 +781,13 @@ class AgenteApp:
         tk.Label(self.frame_sessao, text="Selecione um aplicativo para abrir",
                  font=small_font, fg=text2, bg=bg).pack(pady=(16, 8))
 
-        self.frame_launcher = tk.Frame(self.frame_sessao, bg=bg)
-        self.frame_launcher.pack(expand=True, fill="both", padx=20)
+        self.frame_corpo = tk.Frame(self.frame_sessao, bg=bg)
+        self.frame_corpo.pack(expand=True, fill="both")
+        self.frame_launcher = tk.Frame(self.frame_corpo, bg=bg)
+        self.frame_launcher.pack(side="left", expand=True, fill="both", padx=20)
+        # coluna da programação: aparece quando há cartaz (Programacao.recarregar)
+        self.frame_programacao = tk.Frame(self.frame_corpo, bg=bg, width=Programacao.LARGURA)
+        self._programacao = Programacao(self, self.frame_programacao)
 
         self.frame_login.pack(fill="both", expand=True)
 
@@ -701,6 +1016,11 @@ class AgenteApp:
                 self._streaming = True
                 threading.Thread(target=self._loop_streaming, daemon=True).start()
 
+        elif evento == "programacao_atualizada":
+            self._log("<- programacao_atualizada")
+            if self.sessao_ativa:
+                self._programacao.recarregar()
+
         elif evento == "parar_streaming":
             self._log("<- parar_streaming")
             self._streaming = False
@@ -746,12 +1066,12 @@ class AgenteApp:
             self._overlay_pausa = tk.Toplevel(self.root)
             self._overlay_pausa.overrideredirect(True)
             self._overlay_pausa.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{self.root.winfo_x()}+{self.root.winfo_y()}")
-            self._overlay_pausa.configure(bg="#0f1117")
+            self._overlay_pausa.configure(bg=self.c_bg)
             self._overlay_pausa.attributes("-topmost", True)
             tk.Label(self._overlay_pausa, text="SESSAO PAUSADA",
-                     font=("Segoe UI", 22, "bold"), bg="#0f1117", fg="#f59e0b").pack(expand=True)
+                     font=("Segoe UI", 22, "bold"), bg=self.c_bg, fg="#f59e0b").pack(expand=True)
             tk.Label(self._overlay_pausa, text="Aguarde o operador retomar",
-                     font=("Segoe UI", 12), bg="#0f1117", fg="#9ca3af").pack()
+                     font=("Segoe UI", 12), bg=self.c_bg, fg=self.c_text2).pack()
         except Exception as ex:
             self._log(f"Erro ao exibir overlay: {ex}")
 
@@ -839,10 +1159,13 @@ class AgenteApp:
         self.frame_login.pack_forget()
         self.frame_sessao.pack(fill="both", expand=True)
 
-        self.root.attributes("-fullscreen", False)
+        # Tela cheia sem "sempre por cima": os apps abrem na frente, e não há
+        # barra de título para arrastar ou diminuir. A barra do MatheCafé
+        # (Início, apps, tempo) fica no lugar da do Windows.
         self.root.attributes("-topmost", False)
-        self.root.state("zoomed")
-        self._liberar_janela(False)
+        self.root.attributes("-fullscreen", True)
+        self.barra.mostrar()
+        self._programacao.recarregar()
         self.root.lift()
         self.root.focus_force()
 
@@ -896,18 +1219,18 @@ class AgenteApp:
         for idx, app in enumerate(apps):
             row, col = divmod(idx, COLUNAS)
 
-            card = tk.Frame(scroll_frame, bg="#1e2333", width=CARD_W, height=CARD_H, cursor="hand2")
+            card = tk.Frame(scroll_frame, bg=self.c_bg3, width=CARD_W, height=CARD_H, cursor="hand2")
             card.grid(row=row, column=col, padx=10, pady=10)
             card.grid_propagate(False)
 
             inicial = (app.get("nome", "?")[:1] or "?").upper()
-            img_lbl = tk.Label(card, text=inicial, font=f_inicial, fg="white", bg="#1e2333")
+            img_lbl = tk.Label(card, text=inicial, font=f_inicial, fg=self.c_accent, bg=self.c_bg3)
             img_lbl.place(x=0, y=0, width=CARD_W, height=IMG_H)
 
             nome_raw = app.get("nome", "")
             nome_txt = (nome_raw[:18] + "...") if len(nome_raw) > 18 else nome_raw
             nome_lbl = tk.Label(card, text=nome_txt, font=f_nome,
-                                 fg=self.c_text, bg="#1e2333", justify="center")
+                                 fg=self.c_text, bg=self.c_bg3, justify="center")
             nome_lbl.place(x=4, y=IMG_H + 4, width=CARD_W - 8, height=CARD_H - IMG_H - 8)
 
             for w in (card, img_lbl, nome_lbl):
@@ -916,11 +1239,11 @@ class AgenteApp:
             ws = [card, img_lbl, nome_lbl]
             def _enter(e, widgets=ws):
                 for w in widgets:
-                    try: w.config(bg="#252b3b")
+                    try: w.config(bg=self.c_bg4)
                     except Exception: pass
             def _leave(e, widgets=ws):
                 for w in widgets:
-                    try: w.config(bg="#1e2333")
+                    try: w.config(bg=self.c_bg3)
                     except Exception: pass
 
             for w in (card, img_lbl, nome_lbl):
@@ -953,6 +1276,7 @@ class AgenteApp:
             decorrido = time.time() - self.inicio_sessao
             restante = max(0, self.tempo_total - decorrido)
             self.lbl_countdown.config(text=self._fmt(restante))
+            self.barra.lbl_tempo.config(text=self._fmt(restante), fg="#ef4444" if restante < 300 else "#22c55e")
 
             if restante < 300:
                 self.lbl_countdown.config(fg="#ef4444")
@@ -1037,6 +1361,8 @@ class AgenteApp:
     def _voltar_login(self):
         """Encerra apps, exibe tela de encerramento por 6s e volta ao login."""
         self._encerrar_apps_do_cliente()
+        self.barra.esconder()
+        self._programacao.parar()
 
         # Reseta estado imediatamente para parar o countdown e o monitor de processos
         self.sessao_ativa = False
@@ -1184,6 +1510,7 @@ class AgenteApp:
         self._log(f"Mensagem exibida: {texto}")
 
     def _modo_manutencao(self):
+        self.barra.esconder()
         if self.sessao_ativa:
             consumido = int(time.time() - self.inicio_sessao)
             self._enviar({
@@ -1272,8 +1599,28 @@ class AgenteApp:
 
             if self.whitelist_procs:
                 self._fechar_janelas_fora_da_whitelist(pid_atual, self.whitelist_procs)
+            self.barra.atualizar_apps(self._janelas_dos_apps(pid_atual))
+            self.barra.manter()
 
         self.root.after(1000, self._verificar_processos)
+
+    def _janelas_dos_apps(self, pid_atual):
+        """[(hwnd, titulo)] das janelas dos apps liberados, para a barra."""
+        janelas = []
+        for pid, lista in janelas_visiveis().items():
+            if pid == pid_atual:
+                continue
+            try:
+                nome = psutil.Process(pid).name().lower()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            if nome not in self.whitelist_procs:
+                continue
+            for hwnd, _classe in lista:
+                titulo = titulo_da_janela(hwnd)
+                if titulo:
+                    janelas.append((hwnd, titulo))
+        return janelas
 
     def _fechar_janelas_fora_da_whitelist(self, pid_atual, permitidos):
         """Um programa que já rodava antes do login (Edge em segundo plano, por
@@ -1374,15 +1721,23 @@ def carregar_cfg():
             pass
     return cfg
 
-def salvar_cfg(servidor, estacao):
-    """Persiste servidor e estacao em agente.cfg para a proxima inicializacao."""
+def salvar_cfg(servidor, estacao, tema=None):
+    """Persiste servidor, estacao e tema em agente.cfg para a proxima inicializacao."""
+    tema = tema or carregar_cfg().get("TEMA", "")
     try:
         with open(CFG_FILE, "w", encoding="utf-8") as f:
             f.write(f"# MatheCafe - configuracao da estacao (gerado automaticamente)\n")
             f.write(f"SERVIDOR={servidor}\n")
             f.write(f"ESTACAO={estacao}\n")
+            if tema:
+                f.write(f"TEMA={tema}\n")
     except Exception as e:
         print(f"Aviso: nao foi possivel salvar agente.cfg: {e}")
+
+
+def salvar_tema(tema):
+    cfg = carregar_cfg()
+    salvar_cfg(cfg.get("SERVIDOR", ""), cfg.get("ESTACAO", ""), tema)
 
 def main():
     parser = argparse.ArgumentParser(description="MatheCafe - Agente da Estacao")
@@ -1428,6 +1783,8 @@ def main():
     # Salva para a proxima vez
     salvar_cfg(servidor, estacao)
 
+    # Se o agente fechar ou cair, a barra do Windows (escondida na sessão) volta
+    atexit.register(barra_do_windows, True)
     root = tk.Tk()
     # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
     root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)

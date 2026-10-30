@@ -896,7 +896,7 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
         <SecaoComando titulo="Sessão ativa">
           <div className="mb-2 text-sm text-texto-suave">
             {sessao.cliente_nome} <span className="text-texto-fraco">({sessao.cliente_login})</span>
-            {sessao.pausada && <span className="ml-2 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs font-semibold text-yellow-400">PAUSADA</span>}
+            {sessao.pausada && <span className="ml-2 rounded bg-manutencao-fundo px-1.5 py-0.5 text-xs font-semibold text-manutencao">PAUSADA</span>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

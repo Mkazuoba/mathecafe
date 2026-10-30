@@ -103,3 +103,15 @@ class FotoCliente(Base):
     cliente_id = Column(Integer, ForeignKey("usuarios.id"), primary_key=True)
     tipo = Column(String(20), nullable=False)  # image/jpeg | image/png | image/webp
     conteudo = Column(LargeBinary, nullable=False)
+
+
+class ItemProgramacao(Base):
+    """Cartaz da programação da biblioteca (carrossel no agente, na sessão)."""
+    __tablename__ = "programacao"
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String(120), default="")
+    ordem = Column(Integer, default=0)
+    ativo = Column(Boolean, default=True)
+    tipo = Column(String(20), nullable=False)
+    conteudo = Column(LargeBinary, nullable=False)
+    atualizado_em = Column(DateTime, default=datetime.utcnow)

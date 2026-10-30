@@ -4,6 +4,7 @@ import { IconCamera, IconInfoCircle, IconHistory, IconLock, IconPencil, IconTras
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
+import { reduzirImagem } from "@/lib/imagens"
 import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
@@ -100,29 +101,7 @@ export function FichaCliente({ clienteId, aoFechar, abaInicial = "geral" }: {
 
 // ── Foto ─────────────────────────────────────────────────────────────────────
 
-const LADO_MAXIMO = 480 // px: a foto é reduzida no navegador antes de ir ao servidor
-
-/** Reduz a imagem escolhida e devolve um JPEG em data URL. */
-function reduzirImagem(arquivo: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(arquivo)
-    const img = new Image()
-    img.onload = () => {
-      const escala = Math.min(1, LADO_MAXIMO / Math.max(img.width, img.height))
-      const canvas = document.createElement("canvas")
-      canvas.width = Math.round(img.width * escala)
-      canvas.height = Math.round(img.height * escala)
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      URL.revokeObjectURL(url)
-      resolve(canvas.toDataURL("image/jpeg", 0.85))
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error("Não foi possível abrir essa imagem"))
-    }
-    img.src = url
-  })
-}
+const LADO_FOTO = 480 // px: a foto é reduzida no navegador antes de ir ao servidor
 
 /** A foto vem com o token (uma <img src> não manda o login), então vira um blob local. */
 function useFoto(cliente: Cliente) {
@@ -176,7 +155,7 @@ function EditorFoto({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cli
     if (!arquivo) return
     setEnviando(true)
     try {
-      const imagem = await reduzirImagem(arquivo)
+      const imagem = await reduzirImagem(arquivo, LADO_FOTO)
       aoSalvar(await Api.put<Cliente>(`/api/clientes/${cliente.id}/foto`, { imagem }))
       avisar("Foto salva")
     } catch (e) {

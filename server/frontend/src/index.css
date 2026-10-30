@@ -36,6 +36,46 @@
   --color-perigo-borda: #7f1d1d;
 }
 
+:root {
+  color-scheme: dark;
+}
+
+/* Tema claro (botão no cabeçalho, guardado no navegador): as mesmas
+   variáveis do @theme com outros valores, então todo o painel acompanha. */
+:root[data-tema="claro"] {
+  color-scheme: light;
+
+  --color-fundo: #f4f5fa;
+  --color-superficie: #ffffff;
+  --color-superficie-2: #f0f2f7;
+  --color-superficie-3: #e5e8f0;
+  --color-borda: #dcdfeb;
+  --color-borda-forte: #c3c8d8;
+  --color-texto: #171b26;
+  --color-texto-suave: #4b5368;
+  --color-texto-fraco: #7a8298;
+
+  --color-destaque: #4f46e5;
+  --color-destaque-forte: #4338ca;
+  --color-destaque-fundo: #e6e5fb;
+
+  --color-livre: #15803d;
+  --color-livre-fundo: #dcf3e3;
+  --color-livre-borda: #86d5a3;
+  --color-ocupada: #c2410c;
+  --color-ocupada-fundo: #ffedd5;
+  --color-ocupada-borda: #f7b37a;
+  --color-desligada: #64748b;
+  --color-desligada-fundo: #eceef6;
+  --color-manutencao: #b45309;
+  --color-manutencao-fundo: #fef3c7;
+  --color-manutencao-borda: #f0c75e;
+
+  --color-perigo: #dc2626;
+  --color-perigo-fundo: #fee2e2;
+  --color-perigo-borda: #f5a3a3;
+}
+
 html,
 body,
 #root {

@@ -789,3 +789,50 @@ def test_sem_batimento_nao_cobra_o_tempo_desligado(c, admin, cenario):
     encerrar_sessoes_do_desligamento(db)
     db.close()
     assert _sessao(sid).tempo_consumido_segundos == 0
+
+
+# ── Programacao da biblioteca (carrossel no agente) ──────────────────────────
+
+def test_programacao_admin_cadastra_e_agente_ve(c, admin, operador, cenario):
+    import base64
+    url = "data:image/jpeg;base64," + base64.b64encode(_JPEG).decode()
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as pc:
+        pc.send_json({"evento": "ping"})
+        assert pc.receive_json()["evento"] == "pong"
+
+        assert c.post("/api/programacao/", headers=operador, json={"titulo": "x", "imagem": url}).status_code == 403
+        r1 = c.post("/api/programacao/", headers=admin, json={"titulo": "Oficina de HQ", "imagem": url})
+        assert r1.status_code == 200, r1.text
+        assert pc.receive_json()["evento"] == "programacao_atualizada"  # o agente recarrega
+        r2 = c.post("/api/programacao/", headers=admin, json={"titulo": "Contacao de historias", "imagem": url})
+        assert pc.receive_json()["evento"] == "programacao_atualizada"
+        id1, id2 = r1.json()["id"], r2.json()["id"]
+
+        # o agente nao tem login: lista e imagens sao abertas
+        d = c.get("/api/programacao/agente").json()
+        assert d["segundos"] >= 3
+        ids = [i["id"] for i in d["itens"]]
+        assert ids.index(id1) < ids.index(id2)
+        img = c.get(f"/api/programacao/{id1}/imagem")
+        assert img.status_code == 200 and img.content == _JPEG and img.headers["content-type"] == "image/jpeg"
+
+        # reordenar, desativar e apagar
+        assert c.put("/api/programacao/ordem", headers=admin, json={"ids": [id2, id1]}).status_code == 200
+        pc.receive_json()
+        ids = [i["id"] for i in c.get("/api/programacao/agente").json()["itens"]]
+        assert ids.index(id2) < ids.index(id1)
+        assert c.put(f"/api/programacao/{id2}", headers=admin, json={"ativo": False}).status_code == 200
+        pc.receive_json()
+        assert id2 not in [i["id"] for i in c.get("/api/programacao/agente").json()["itens"]]
+        assert any(i["id"] == id2 for i in c.get("/api/programacao/", headers=operador).json()["itens"])
+        assert c.delete(f"/api/programacao/{id2}", headers=admin).status_code == 200
+        pc.receive_json()
+        assert c.get(f"/api/programacao/{id2}/imagem").status_code == 404
+
+    # so imagem de verdade
+    falsa = "data:image/png;base64," + base64.b64encode(b"nao sou imagem").decode()
+    assert c.post("/api/programacao/", headers=admin, json={"titulo": "x", "imagem": falsa}).status_code == 400
+    # tempo de cada cartaz
+    assert c.put("/api/programacao/config", headers=admin, json={"segundos": 15}).status_code == 200
+    assert c.get("/api/programacao/agente").json()["segundos"] == 15
+    assert c.put("/api/programacao/config", headers=admin, json={"segundos": 1}).status_code == 422
