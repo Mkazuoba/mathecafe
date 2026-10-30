@@ -724,3 +724,67 @@ def test_captura_e_tela_ao_vivo_chegam_ao_painel(c, admin, cenario):
         assert _receber_no_painel(painel, "tela_frame")["dados"]["imagem"] == "RlJBTUU="
         c.post(f"/api/estacoes/{cenario['estacao']}/parar_streaming", headers=admin)
         assert pc.receive_json()["evento"] == "parar_streaming"
+
+
+# ── 6.3 Sessao presa depois de reiniciar o servidor ──────────────────────────
+
+def _sessao_aberta(cenario, inicio_min):
+    from app.models import Estacao
+    from app.tempo_diario import reservar_tempo
+    db = SessionLocal()
+    est = db.query(Estacao).filter(Estacao.nome == cenario["estacao"]).one()
+    est.status = "ocupada"
+    s = Sessao(cliente_id=cenario["cliente_id"], estacao_id=est.id, tempo_total_segundos=7200,
+               iniciada_em=datetime.utcnow() - timedelta(minutes=inicio_min))
+    db.add(s)
+    reservar_tempo(db, db.get(Usuario, cenario["cliente_id"]))  # como o login no PC faz
+    db.commit()
+    sid = s.id
+    db.close()
+    return sid
+
+
+def _batimento(minutos_atras):
+    from app.models import ConfiguracaoSistema
+    db = SessionLocal()
+    cfg = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == "servidor_vivo_em").first()
+    if minutos_atras is None:
+        if cfg:
+            db.delete(cfg)
+    else:
+        valor = (datetime.utcnow() - timedelta(minutes=minutos_atras)).isoformat()
+        if cfg:
+            cfg.valor = valor
+        else:
+            db.add(ConfiguracaoSistema(chave="servidor_vivo_em", valor=valor))
+    db.commit()
+    db.close()
+
+
+def test_servidor_reinicia_e_encerra_sessao_aberta(c, admin, cenario):
+    # Comecou ha 90 min, o servidor caiu ha 30 (ultimo batimento): usou 60 min.
+    # Antes a sessao ficava aberta para sempre e o cliente aparecia "em uso".
+    from app.main import encerrar_sessoes_do_desligamento
+    sid = _sessao_aberta(cenario, inicio_min=90)
+    _batimento(30)
+    db = SessionLocal()
+    assert encerrar_sessoes_do_desligamento(db) >= 1
+    db.close()
+    s = _sessao(sid)
+    assert s.encerrada_em is not None and s.motivo_encerramento == "servidor_desligado"
+    assert abs(s.tempo_consumido_segundos - 3600) <= 2
+    saldo = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - 3600) <= 2
+    assert all(x["id"] != sid for x in c.get("/api/sessoes/ativas", headers=admin).json())
+    # e o cliente pode ser liberado de novo
+    assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
+
+
+def test_sem_batimento_nao_cobra_o_tempo_desligado(c, admin, cenario):
+    from app.main import encerrar_sessoes_do_desligamento
+    sid = _sessao_aberta(cenario, inicio_min=50)
+    _batimento(None)
+    db = SessionLocal()
+    encerrar_sessoes_do_desligamento(db)
+    db.close()
+    assert _sessao(sid).tempo_consumido_segundos == 0

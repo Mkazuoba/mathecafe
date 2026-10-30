@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-30 — Revisão: sessão presa depois de reiniciar o servidor (Ciclo 6, tarefa 6.3)
+
+- **Sessões abertas ficavam presas quando o servidor reiniciava**: as estações viravam "desligada", mas a sessão continuava aberta até aquele PC reconectar; se ele não voltasse, o cliente ficava "em uso" e não podia ser liberado. Agora, ao subir, o servidor encerra essas sessões (motivo "Servidor desligado") e devolve ao cliente o tempo que sobrou.
+- **Batimento**: a cada minuto o servidor grava em `configuracoes` (`servidor_vivo_em`) que está no ar. É esse horário que diz quando ele caiu — e ali a sessão terminou de fato, porque o agente volta ao login quando perde o servidor. Sem batimento gravado (só na primeira subida com esta versão), nada é cobrado.
+
 ## 2026-10-29 — Ampliar e salvar a tela da estação (Ciclo 6)
 
 - **Ampliar**: na tela ao vivo, o botão "Ampliar" (ou clique duplo na imagem) abre a tela da estação ocupando a janela inteira; lá, "Tela cheia" usa o monitor todo de quem está vendo. Esc volta, sem fechar o painel da estação nem parar a transmissão. A Captura rápida abre no mesmo visor.

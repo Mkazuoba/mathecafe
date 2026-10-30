@@ -90,9 +90,9 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Direção | Eventos |
 |---|---|
-| Servidor → painel | `estacao_online`, `estacao_offline`, `sessao_iniciada`, `sessao_encerrada`, `fila_atualizada` |
+| Servidor → painel | `captura_tela`, `tela_frame`, `estacao_online`, `estacao_offline`, `sessao_iniciada`, `sessao_encerrada`, `fila_atualizada` |
 | Servidor → agente | `login_resultado`, `encerrar_sessao`, `manutencao_resultado`, `pong` |
-| Agente → servidor | `login_cliente`, `sessao_encerrada`, `status_estacao` (manutencao/livre), `validar_manutencao`, `ping` |
+| Agente → servidor | `login_cliente`, `sessao_encerrada`, `status_estacao` (manutencao/livre), `validar_manutencao`, `ping`, `captura_tela_resultado` e `tela_frame` (imagem em `dados.imagem`) |
 
 ## Perfis
 
@@ -127,6 +127,7 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **Pausa**: retomar soma a pausa ao `tempo_total_segundos` (o agente conta pelo relógio de parede) e acumula `tempo_pausado_segundos`. Ao encerrar, `fechar_tempo_da_sessao` desconta as pausas (inclusive a que estiver em andamento) e grava o tempo concedido e o consumido de verdade. O painel para a contagem em `pausada_em`.
 - **Uma autorização por cliente** (`cliente_id` é único): ao liberar de novo, o registro existente é reaproveitado (`usado=False`), nunca recriado.
 - **Queda de conexão do PC**: a estação só é marcada `desligada` 8s depois (`SEGUNDOS_ATE_OFFLINE` em `main.py`), para não piscar no painel. O agente volta à tela de login assim que perde a conexão; por isso o servidor encerra a sessão que ficou aberta (`conexao_perdida`), contando o tempo até a queda e devolvendo o resto como saldo — quando o PC reconecta ou quando os 8s passam.
+- **Servidor reiniciado**: a cada minuto o servidor grava `servidor_vivo_em` em `configuracoes`. Ao subir, `encerrar_sessoes_do_desligamento` fecha as sessões abertas como `servidor_desligado`, contando o uso até o último batimento (o agente volta ao login quando perde o servidor), e só então marca as estações como desligadas.
 - **Reconexão**: uma conexão antiga que cai depois de o agente já ter reconectado não derruba a nova (`desconectar_estacao(nome, ws)`).
 - **Status vem do banco**: `GET /api/estacoes/` devolve o `status` gravado (e `online` separado). Ao subir, o servidor marca todas as estações como `desligada`, exceto as em manutenção.
 - **Modo manutenção sem senha fixa**: o agente pede login e senha de admin/operador e o servidor confere (`validar_manutencao`). Sem conexão com o servidor, não há como entrar em manutenção.

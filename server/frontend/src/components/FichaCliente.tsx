@@ -335,6 +335,7 @@ const MOTIVOS: Record<string, string> = {
   operador: "Operador",
   manutencao: "Manutenção",
   conexao_perdida: "Queda de conexão",
+  servidor_desligado: "Servidor desligado",
 }
 
 function AbaHistorico({ cliente }: { cliente: Cliente }) {

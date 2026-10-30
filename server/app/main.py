@@ -30,17 +30,76 @@ app.include_router(config.router, prefix="/api")
 app.include_router(relatorios.router, prefix="/api")
 app.include_router(agente_router.router, prefix="/api")
 
+# A cada minuto o servidor grava que esta vivo. Ao subir de novo, isso diz
+# quando ele caiu: e ali que as sessoes abertas terminaram de fato (o agente
+# volta ao login quando perde o servidor).
+SEGUNDOS_BATIMENTO = 60
+CHAVE_BATIMENTO = "servidor_vivo_em"
+
+
+def _gravar_batimento(db: Session, quando: datetime):
+    cfg = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == CHAVE_BATIMENTO).first()
+    if cfg:
+        cfg.valor = quando.isoformat()
+    else:
+        db.add(ConfiguracaoSistema(chave=CHAVE_BATIMENTO, valor=quando.isoformat()))
+    db.commit()
+
+
+def encerrar_sessoes_do_desligamento(db: Session) -> int:
+    """Encerra as sessoes que ficaram abertas quando o servidor caiu, contando o
+    uso ate o ultimo batimento e devolvendo o resto ao cliente. Sem batimento
+    (primeira vez com esta versao), nao cobra nada."""
+    cfg = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == CHAVE_BATIMENTO).first()
+    try:
+        caiu_em = datetime.fromisoformat(cfg.valor) if cfg else None
+    except ValueError:
+        caiu_em = None
+    abertas = db.query(Sessao).filter(Sessao.encerrada_em == None).all()
+    for sessao in abertas:
+        fim = max(sessao.iniciada_em, min(caiu_em, datetime.utcnow())) if caiu_em else sessao.iniciada_em
+        _, restante = fechar_tempo_da_sessao(sessao, fim)
+        sessao.encerrada_em = fim
+        sessao.motivo_encerramento = "servidor_desligado"
+        sessao.cliente.saldo_segundos = restante
+    db.commit()
+    return len(abertas)
+
+
+async def _batimento():
+    while True:
+        db = SessionLocal()
+        try:
+            _gravar_batimento(db, datetime.utcnow())
+        except Exception as e:
+            print(f"Batimento: erro ao gravar ({e})")
+        finally:
+            db.close()
+        await asyncio.sleep(SEGUNDOS_BATIMENTO)
+
+
 @app.on_event("startup")
-def startup():
+async def startup():
     init_db()
-    # Nenhum agente está conectado quando o servidor acaba de subir
-    # (manutenção é mantida: vale mesmo com o PC desligado)
     db = SessionLocal()
     try:
+        n = encerrar_sessoes_do_desligamento(db)
+        if n:
+            print(f"Encerradas {n} sessao(oes) que ficaram abertas com o servidor desligado")
+        # Nenhum agente está conectado quando o servidor acaba de subir
+        # (manutenção é mantida: vale mesmo com o PC desligado)
         db.query(Estacao).filter(Estacao.status != "manutencao").update({Estacao.status: "desligada"})
         db.commit()
     finally:
         db.close()
+    app.state.batimento = asyncio.create_task(_batimento())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    tarefa = getattr(app.state, "batimento", None)
+    if tarefa:
+        tarefa.cancel()
 
 # ── WebSocket: painel ─────────────────────────────────────────────────────────
 @app.websocket("/ws/painel")
