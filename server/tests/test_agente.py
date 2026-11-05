@@ -328,3 +328,83 @@ def test_programacao_no_agente():
     # carregamento antigo que chegue atrasado nao substitui o novo
     mostrar = src[src.index("def _mostrar_lista"):]
     assert "self._geracao" in mostrar[:mostrar.index("\n    def ", 1)]
+
+
+def _funcoes_do_agente(*nomes, **globais):
+    arvore = ast.parse(_fonte())
+    corpo = [no for no in arvore.body
+             if (isinstance(no, ast.FunctionDef) and no.name in nomes)
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") in nomes for t in no.targets))]
+    ns = dict(globais)
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    return ns
+
+
+def test_endereco_do_servidor_normalizado():
+    ns = _funcoes_do_agente("normalizar_servidor")
+    n = ns["normalizar_servidor"]
+    assert n(" 10.26.31.99:8000 ") == "ws://10.26.31.99:8000"
+    assert n("http://10.26.31.99:8000/") == "ws://10.26.31.99:8000"
+    assert n("https://mathecafe.onrender.com") == "wss://mathecafe.onrender.com"
+    assert n("ws://localhost:8000") == "ws://localhost:8000"
+    assert n("   ") == ""
+
+
+def test_cfg_guarda_as_outras_chaves(tmp_path):
+    import os as _os
+    cfg = tmp_path / "agente.cfg"
+    ns = _funcoes_do_agente("carregar_cfg", "gravar_cfg", "salvar_cfg", "salvar_tema",
+                            os=_os, CFG_FILE=str(cfg))
+    ns["salvar_cfg"]("ws://a:8000", "PC-01")
+    ns["salvar_tema"]("claro")
+    ns["gravar_cfg"](OPERADORES="x")
+    ns["salvar_cfg"]("ws://b:8000", "PC-02")  # trocar o servidor não apaga tema nem operadores
+    assert ns["carregar_cfg"]() == {"SERVIDOR": "ws://b:8000", "ESTACAO": "PC-02",
+                                    "TEMA": "claro", "OPERADORES": "x"}
+
+
+def test_operador_entra_na_manutencao_sem_rede(tmp_path):
+    # Agente apontando para o servidor errado fica sem conexão: sem isto não
+    # daria para entrar na manutenção e corrigir o endereço
+    import os as _os, hashlib, hmac
+    cfg = tmp_path / "agente.cfg"
+    ns = _funcoes_do_agente("carregar_cfg", "gravar_cfg", "_hash_operador", "lembrar_operador",
+                            "esquecer_operador", "operador_conferido_sem_rede",
+                            "_operadores_guardados", "OPERADORES_LEMBRADOS",
+                            os=_os, hashlib=hashlib, hmac=hmac, CFG_FILE=str(cfg))
+    conferir = ns["operador_conferido_sem_rede"]
+    assert not conferir("maria", "senha-da-maria")  # nunca entrou nesta estação
+    ns["lembrar_operador"]("Maria", "senha-da-maria")
+    ns["lembrar_operador"]("joao", "senha-do-joao")
+    assert conferir("maria", "senha-da-maria") and conferir("joao", "senha-do-joao")
+    assert not conferir("maria", "errada") and not conferir("ana", "senha-da-maria")
+    assert "senha-da-maria" not in cfg.read_text(encoding="utf-8")  # só o hash
+    ns["lembrar_operador"]("maria", "senha-nova")  # trocou a senha: vale a nova
+    assert conferir("maria", "senha-nova") and not conferir("maria", "senha-da-maria")
+    ns["esquecer_operador"]("maria")  # servidor recusou: some daqui também
+    assert not conferir("maria", "senha-nova") and conferir("joao", "senha-do-joao")
+    for i in range(10):
+        ns["lembrar_operador"](f"op{i}", "s")
+    assert len(ns["carregar_cfg"]()["OPERADORES"].split(",")) == 5  # só os últimos
+
+
+def test_configurar_conexao_na_manutencao():
+    src = _fonte()
+    barra = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(")]
+    assert "self._abrir_config_conexao" in barra
+    prompt = src[src.index("def _abrir_prompt_admin"):src.index("def _exibir_mensagem_operador")]
+    assert "operador_conferido_sem_rede(" in prompt
+    resultado = src[src.index('evento == "validar_manutencao_resultado"'):]
+    resultado = resultado[:resultado.index("elif evento ==")]
+    assert "lembrar_operador(" in resultado and "esquecer_operador(" in resultado
+    config = src[src.index("def _abrir_config_conexao"):]
+    config = config[:config.index("\n    def ", 1)]
+    # só dentro da manutenção, e reinicia o agente com a configuração nova
+    assert "self.modo_manutencao_ativo" in config and "salvar_cfg(" in config and "os.execv" in config
+
+
+def test_reconectar_na_manutencao_avisa_o_servidor():
+    src = _fonte()
+    conectado = src[src.index('if evento == "_conectado":'):]
+    conectado = conectado[:conectado.index("elif evento ==")]
+    assert "self.modo_manutencao_ativo" in conectado and '"status": "manutencao"' in conectado

@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.7.0"
+VERSAO = "1.7.1"
 
 import asyncio
 import json
@@ -31,6 +31,8 @@ import os
 import subprocess
 import ctypes
 import atexit
+import hashlib
+import hmac
 from datetime import datetime
 from io import BytesIO
 import urllib.parse
@@ -581,6 +583,7 @@ class AgenteApp:
         self.whitelist_apps = []
         self.whitelist_procs = set()
         self.reiniciar_ao_encerrar = False
+        self._credenciais_manutencao = None
         self._img_refs = []
         self.modo_manutencao_ativo = False
 
@@ -818,6 +821,9 @@ class AgenteApp:
         tk.Button(self.frame_manutencao, text="Encerrar manutencao",
                   bg="#92400e", fg="white", relief="flat", font=small_font,
                   command=self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
+        tk.Button(self.frame_manutencao, text="Configurar conexao",
+                  bg="#92400e", fg="white", relief="flat", font=small_font,
+                  command=self._abrir_config_conexao).pack(side="right", pady=8)
 
     def _log(self, msg, _remoto=True):
         self.log.configure(state="normal")
@@ -906,6 +912,10 @@ class AgenteApp:
             self.lbl_status.config(text="online", fg="#22c55e")
             self.btn_login.config(state="normal")
             self._log("Conectado ao servidor")
+            if self.modo_manutencao_ativo:
+                # Caiu e voltou durante a manutencao: o servidor marca livre
+                # a cada conexao nova, entao lembra que ainda esta nela
+                self._enviar({"evento": "status_estacao", "status": "manutencao"})
 
         elif evento == "_desconectado":
             self.lbl_status.config(text="offline", fg="#ef4444")
@@ -947,6 +957,12 @@ class AgenteApp:
 
         elif evento == "validar_manutencao_resultado":
             self._log(f"<- validar_manutencao_resultado: {dados}")
+            credenciais, self._credenciais_manutencao = self._credenciais_manutencao, None
+            if credenciais:
+                if dados.get("ok"):
+                    lembrar_operador(*credenciais)
+                else:
+                    esquecer_operador(credenciais[0])
             if self._prompt_manutencao and self._prompt_manutencao.winfo_exists():
                 if dados.get("ok"):
                     self._prompt_manutencao.destroy()
@@ -1456,10 +1472,18 @@ class AgenteApp:
                 return
             btn.config(state="disabled", text="Verificando...")
             if self.conectado:
-                # Valida pelo servidor
+                # Valida pelo servidor; se ele aceitar, fica lembrado aqui
+                self._credenciais_manutencao = (login, senha)
                 self._enviar({"evento": "validar_manutencao", "login": login, "senha": senha})
+            elif operador_conferido_sem_rede(login, senha):
+                # Sem conexao (ex.: servidor errado no agente.cfg): vale quem ja
+                # entrou nesta estacao com o servidor no ar
+                self._log(f"Manutencao sem conexao: operador {login}")
+                prompt.destroy()
+                self._prompt_manutencao = None
+                self._modo_manutencao()
             else:
-                # Sem conexao: nao permite manutencao
+                # Sem conexao e operador desconhecido: nao permite manutencao
                 for w in prompt.winfo_children():
                     if isinstance(w, tk.Label) and getattr(w, "_is_erro", False):
                         w.config(text="Sem conexao com o servidor")
@@ -1484,6 +1508,66 @@ class AgenteApp:
             self._prompt_manutencao = None
             prompt.destroy()
         prompt.protocol("WM_DELETE_WINDOW", _on_close)
+
+    def _abrir_config_conexao(self):
+        """Troca o servidor e o nome da estacao sem reinstalar (so na manutencao).
+        Salva no agente.cfg e reinicia o agente, que conecta com o novo."""
+        if not self.modo_manutencao_ativo:
+            return
+        janela = tk.Toplevel(self.root)
+        janela.title("Configurar conexao")
+        janela.configure(bg="#1A1B26")
+        janela.resizable(False, False)
+        janela.attributes("-topmost", True)
+        w, h = 420, 300
+        janela.geometry(f"{w}x{h}+{(janela.winfo_screenwidth() - w) // 2}+{(janela.winfo_screenheight() - h) // 2}")
+        janela.grab_set()
+
+        def campo(rotulo, valor):
+            tk.Label(janela, text=rotulo, bg="#1A1B26", fg="white",
+                     font=("Segoe UI", 10)).pack(anchor="w", padx=24, pady=(14, 2))
+            e = tk.Entry(janela, font=("Segoe UI", 11), bg="#2A2B3D", fg="white", insertbackground="white")
+            e.insert(0, valor)
+            e.pack(padx=24, fill="x")
+            return e
+
+        e_servidor = campo("Endereco do servidor (ex: 10.26.31.99:8000):", self.servidor)
+        e_estacao = campo("Nome desta estacao (igual ao do Mapa):", self.estacao)
+        e_servidor.focus()
+        lbl = tk.Label(janela, text="", bg="#1A1B26", fg="#94a3b8", font=("Segoe UI", 9),
+                       wraplength=w - 48, justify="left")
+        lbl.pack(anchor="w", padx=24, pady=(10, 0))
+        botoes = tk.Frame(janela, bg="#1A1B26")
+        botoes.pack(side="bottom", fill="x", padx=24, pady=16)
+
+        def lidos():
+            return normalizar_servidor(e_servidor.get()), e_estacao.get().strip()
+
+        def testar():
+            servidor, estacao = lidos()
+            if not servidor or not estacao:
+                return lbl.config(text="Preencha o servidor e o nome da estacao", fg="#ef4444")
+            lbl.config(text="Testando...", fg="#94a3b8")
+
+            def trabalhar():
+                ok, msg = testar_conexao(servidor, estacao)
+                self.root.after(0, lambda: janela.winfo_exists() and
+                                lbl.config(text=msg, fg="#22c55e" if ok else "#ef4444"))
+            threading.Thread(target=trabalhar, daemon=True).start()
+
+        def salvar():
+            servidor, estacao = lidos()
+            if not servidor or not estacao:
+                return lbl.config(text="Preencha o servidor e o nome da estacao", fg="#ef4444")
+            salvar_cfg(servidor, estacao)
+            self._log(f"Conexao trocada para {servidor} / {estacao} - reiniciando o agente")
+            # Recomeca do zero com o agente.cfg novo (como na atualizacao)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        for texto, cor, cmd in (("Salvar e reiniciar", "#4f46e5", salvar), ("Testar", "#2A2B3D", testar),
+                                ("Cancelar", "#2A2B3D", janela.destroy)):
+            tk.Button(botoes, text=texto, command=cmd, bg=cor, fg="white", relief="flat",
+                      font=("Segoe UI", 10), padx=12, pady=4).pack(side="right", padx=(6, 0))
 
     def _exibir_mensagem_operador(self, texto):
         """Mostra mensagem enviada pelo operador em uma janela modal."""
@@ -1721,23 +1805,103 @@ def carregar_cfg():
             pass
     return cfg
 
-def salvar_cfg(servidor, estacao, tema=None):
-    """Persiste servidor, estacao e tema em agente.cfg para a proxima inicializacao."""
-    tema = tema or carregar_cfg().get("TEMA", "")
+def gravar_cfg(**valores):
+    """Atualiza chaves do agente.cfg sem apagar as outras (vazio remove)."""
+    cfg = carregar_cfg()
+    cfg.update({k: v for k, v in valores.items() if v is not None})
     try:
         with open(CFG_FILE, "w", encoding="utf-8") as f:
-            f.write(f"# MatheCafe - configuracao da estacao (gerado automaticamente)\n")
-            f.write(f"SERVIDOR={servidor}\n")
-            f.write(f"ESTACAO={estacao}\n")
-            if tema:
-                f.write(f"TEMA={tema}\n")
+            f.write("# MatheCafe - configuracao da estacao (gerado automaticamente)\n")
+            for k, v in cfg.items():
+                if v:
+                    f.write(f"{k}={v}\n")
     except Exception as e:
         print(f"Aviso: nao foi possivel salvar agente.cfg: {e}")
 
 
+def salvar_cfg(servidor, estacao, tema=None):
+    """Persiste servidor, estacao (e tema) em agente.cfg para a proxima inicializacao."""
+    gravar_cfg(SERVIDOR=servidor, ESTACAO=estacao, TEMA=tema)
+
+
 def salvar_tema(tema):
-    cfg = carregar_cfg()
-    salvar_cfg(cfg.get("SERVIDOR", ""), cfg.get("ESTACAO", ""), tema)
+    gravar_cfg(TEMA=tema)
+
+
+def normalizar_servidor(texto):
+    """Aceita IP puro, http:// ou https:// e devolve ws:// ou wss://."""
+    servidor = (texto or "").strip().rstrip("/")
+    if not servidor:
+        return ""
+    servidor = servidor.replace("https://", "wss://").replace("http://", "ws://")
+    if not servidor.startswith("ws"):
+        servidor = "ws://" + servidor
+    return servidor
+
+
+def testar_conexao(servidor, estacao):
+    """Conecta como a estacao e diz se o servidor a aceitou. Roda numa thread."""
+    url = f"{servidor}/ws/estacao/{urllib.parse.quote(estacao)}"
+    proxy = None if servidor_na_rede_local(url) else True
+
+    async def tentar():
+        async with websockets.connect(url, open_timeout=6, proxy=proxy) as ws:
+            await ws.send(json.dumps({"evento": "ping"}))
+            await asyncio.wait_for(ws.recv(), timeout=6)
+
+    try:
+        asyncio.run(tentar())
+        return True, f"Conectou: o servidor reconhece a estacao {estacao}."
+    except websockets.exceptions.ConnectionClosed as e:
+        if e.rcvd and e.rcvd.code == 4004:
+            return False, f"O servidor respondeu, mas nao tem a estacao '{estacao}'. Cadastre no Mapa ou corrija o nome."
+        return False, f"O servidor fechou a conexao: {e}"
+    except Exception as e:
+        return False, f"Nao conectou em {servidor}: {e or type(e).__name__}"
+
+
+# Operadores que ja entraram na manutencao desta estacao com o servidor no ar:
+# guardados so como hash, para entrar na manutencao quando nao ha conexao
+OPERADORES_LEMBRADOS = 5
+
+
+def _hash_operador(login, senha, sal):
+    dado = f"{login.strip().lower()}\n{senha}".encode("utf-8")
+    return hashlib.pbkdf2_hmac("sha256", dado, bytes.fromhex(sal), 200_000).hex()
+
+
+def _operadores_guardados():
+    itens = []
+    for item in carregar_cfg().get("OPERADORES", "").split(","):
+        partes = item.rsplit(":", 2)
+        if len(partes) == 3:
+            itens.append(partes)
+    return itens
+
+
+def esquecer_operador(login):
+    login = login.strip().lower()
+    gravar_cfg(OPERADORES=",".join(":".join(p) for p in _operadores_guardados() if p[0] != login))
+
+
+def lembrar_operador(login, senha):
+    login = login.strip().lower()
+    sal = os.urandom(16).hex()
+    outros = [":".join(p) for p in _operadores_guardados() if p[0] != login]
+    novos = (outros + [f"{login}:{sal}:{_hash_operador(login, senha, sal)}"])[-OPERADORES_LEMBRADOS:]
+    gravar_cfg(OPERADORES=",".join(novos))
+
+
+def operador_conferido_sem_rede(login, senha):
+    login = login.strip().lower()
+    for nome, sal, guardado in _operadores_guardados():
+        if nome == login:
+            try:
+                return hmac.compare_digest(guardado, _hash_operador(login, senha, sal))
+            except ValueError:
+                return False
+    return False
+
 
 def main():
     parser = argparse.ArgumentParser(description="MatheCafe - Agente da Estacao")
@@ -1775,10 +1939,7 @@ def main():
             print("Servidor ou estacao nao informados. Encerrando.")
             return
 
-    # Normaliza protocolo (aceita IP puro, http://, https://)
-    servidor = servidor.strip().replace("https://", "wss://").replace("http://", "ws://")
-    if not servidor.startswith("ws"):
-        servidor = "ws://" + servidor
+    servidor = normalizar_servidor(servidor)
 
     # Salva para a proxima vez
     salvar_cfg(servidor, estacao)

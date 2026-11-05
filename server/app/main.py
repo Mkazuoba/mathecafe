@@ -156,8 +156,10 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     # Ao perder a conexão o agente volta para a tela de login, então uma
     # sessão ainda aberta nesta estação ficou órfã.
     await _encerrar_sessao_orfa(db, estacao, datetime.utcnow())
-    if estacao.status != "manutencao":
-        estacao.status = "livre"
+    # O agente sempre abre na tela de login: um "manutencao" que sobrou (agente
+    # fechado ou reiniciado na manutencao) travava a estacao e recusava o login.
+    # Se ele so reconectou e continua na manutencao, avisa logo em seguida.
+    estacao.status = "livre"
     db.commit()
     await manager.broadcast_paineis("estacao_online", {"nome": nome})
 

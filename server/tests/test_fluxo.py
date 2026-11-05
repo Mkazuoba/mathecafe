@@ -836,3 +836,62 @@ def test_programacao_admin_cadastra_e_agente_ve(c, admin, operador, cenario):
     assert c.put("/api/programacao/config", headers=admin, json={"segundos": 15}).status_code == 200
     assert c.get("/api/programacao/agente").json()["segundos"] == 15
     assert c.put("/api/programacao/config", headers=admin, json={"segundos": 1}).status_code == 422
+
+
+def test_banco_do_servidor_pelo_painel(c, admin, operador, tmp_path, monkeypatch):
+    from app.routers import config as rota
+    h = admin
+    assert c.get("/api/config/banco", headers=operador).status_code == 403
+
+    atual = c.get("/api/config/banco", headers=h).json()
+    assert atual["tipo"] == "SQLite"
+    # nos testes a URL vem da variável de ambiente: o .env não manda nela
+    assert atual["no_ambiente"] is True
+
+    # banco novo: conecta, mas está vazio
+    novo = f"sqlite:///{(tmp_path / 'novo.db').as_posix()}"
+    r = c.post("/api/config/banco/testar", json={"url": novo}, headers=h).json()
+    assert r["ok"] and r["vazio"] is True
+    # o banco atual já tem os dados do MatheCafé
+    r = c.post("/api/config/banco/testar", json={"url": os.environ["DATABASE_URL"]}, headers=h).json()
+    assert r["ok"] and r["vazio"] is False
+    # servidor fora do ar: erro sem mostrar a senha
+    r = c.post("/api/config/banco/testar", json={"url": "postgresql://u:senhasecreta@127.0.0.1:1/x"}, headers=h).json()
+    assert not r["ok"] and "senhasecreta" not in r["mensagem"]
+    assert c.post("/api/config/banco/testar", json={"url": "abc"}, headers=h).status_code == 400
+
+    # com DATABASE_URL no ambiente (Render), gravar no .env não adiantaria
+    assert c.put("/api/config/banco", json={"url": novo}, headers=h).status_code == 409
+
+    env = tmp_path / ".env"
+    env.write_text("SECRET_KEY=abc\n", encoding="utf-8")
+    monkeypatch.setattr(rota, "banco_no_ambiente", lambda: False)
+    monkeypatch.setattr(rota, "ARQUIVO_ENV", env)
+    assert c.put("/api/config/banco", json={"url": "postgresql://u:senhasecreta@127.0.0.1:1/x"},
+                 headers=h).status_code == 400  # não grava um banco que não conecta
+    r = c.put("/api/config/banco", json={"url": novo}, headers=h)
+    assert r.status_code == 200 and r.json()["reiniciar"] is True
+    assert env.read_text(encoding="utf-8") == f"SECRET_KEY=abc\nDATABASE_URL={novo}\n"
+
+
+def test_agente_que_reabre_sai_da_manutencao(c, admin, cenario):
+    # Agente fechado (ou reiniciado) no modo manutencao volta na tela de login,
+    # mas o banco seguia "manutencao": painel travado e login recusado com
+    # "Estacao nao esta disponivel"
+    from app.models import Estacao
+    db = SessionLocal()
+    db.query(Estacao).filter(Estacao.nome == cenario["estacao"]).update({Estacao.status: "manutencao"})
+    db.commit()
+    db.close()
+    # desligado, continua aparecendo em manutencao
+    lista = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+    assert lista[cenario["estacao"]]["status"] == "manutencao"
+
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"
+        lista = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+        assert lista[cenario["estacao"]]["status"] == "livre"
+
+        assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
+        assert _logar_no_pc(ws, cenario["cliente"])["ok"]

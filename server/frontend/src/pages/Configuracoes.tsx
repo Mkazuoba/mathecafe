@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
+import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoProgramacao } from "@/components/SecaoProgramacao"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
@@ -21,6 +22,7 @@ const SECOES = [
   { id: "programacao", rotulo: "Programação" },
   { id: "relatorios", rotulo: "Relatórios" },
   { id: "historico", rotulo: "Histórico de uso" },
+  { id: "servidor", rotulo: "Servidor" },
   { id: "conta", rotulo: "Minha conta" },
 ] as const
 type Secao = (typeof SECOES)[number]["id"]
@@ -57,6 +59,7 @@ export default function Configuracoes() {
           {secao === "programacao" && <SecaoProgramacao />}
           {secao === "relatorios" && <SecaoRelatorios />}
           {secao === "historico" && <SecaoHistorico />}
+          {secao === "servidor" && <SecaoBanco />}
           {secao === "conta" && <SecaoConta />}
         </div>
       </div>

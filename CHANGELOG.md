@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-05 — Trocar servidor e banco sem reinstalar; estação presa em manutenção (agente 1.7.1)
+
+- **Estação presa em "manutenção"**: o status ficava gravado no banco e não saía quando o agente reabria na tela de login (fechado ou reiniciado na manutenção). O painel mostrava Manutenção e o servidor recusava o login do cliente ("Estação não está disponível"). Agora toda conexão nova volta a estação para livre; se o agente só caiu e voltou ainda na manutenção, ele avisa o servidor logo em seguida.
+- **Configurar conexão no agente**: no modo manutenção, o botão **Configurar conexão** troca o endereço do servidor e o nome da estação, com **Testar** (conecta como a estação e diz se o servidor a reconhece) e **Salvar e reiniciar** (grava o `agente.cfg` e reabre o agente). Não precisa mais do `instalar.bat` para isso.
+- **Manutenção sem conexão**: agente apontando para o servidor errado fica offline e não conseguia entrar na manutenção. Agora vale, sem conexão, o login de um operador que já entrou na manutenção daquela estação com o servidor no ar (os últimos 5, guardados só como hash PBKDF2 no `agente.cfg`; se o servidor recusar a senha, o operador é esquecido).
+- **Banco do servidor pelo painel**: Configurações → **Servidor** mostra o banco em uso (sem a senha) e troca por outro (PostgreSQL/Supabase ou SQLite): **Testar conexão** diz se conectou e se o banco já tem dados do MatheCafé; **Salvar** grava `DATABASE_URL` no `server/.env`, que vale ao reiniciar o servidor. Se a URL vem da variável de ambiente (Render), o painel avisa que a troca é por lá.
+- **Driver do PostgreSQL**: `psycopg[binary]` não estava no `requirements.txt`, então o servidor não conectaria no Supabase. URLs `postgres://` e `postgresql://` passam a usar o psycopg 3.
+
 ## 2026-10-30 — Barra própria, tema claro e programação da biblioteca (agente 1.7.0)
 
 - **Barra de tarefas do MatheCafé** (agente, `BarraSessao`): na sessão a barra do Windows some e a nossa fica exatamente no lugar dela, sempre visível, com **Início** (volta ao launcher), um botão por app liberado aberto (clicar traz para a frente), o tema, o tempo restante e **Encerrar sessão**. O espaço reservado pela barra do Windows continua reservado, então um app maximizado não cobre a nossa. Ela some na pausa, na manutenção e no fim da sessão, e a barra do Windows volta ao sair da sessão ou se o agente fechar.

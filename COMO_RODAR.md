@@ -91,7 +91,8 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - O nome da estação precisa ser exatamente o cadastrado no Mapa.
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
-- **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor; o agente precisa estar online). É a única saída do agente: Esc e fechar a janela só funcionam nela.
+- **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor). Sem conexão, só entra quem já entrou na manutenção daquela estação com o servidor no ar. É a única saída do agente: Esc e fechar a janela só funcionam nela.
+- **Trocar o servidor ou o nome da estação**: na manutenção, **Configurar conexão** → Testar → Salvar e reiniciar. Não precisa reinstalar.
 - **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; a barra do Windows dá lugar à do MatheCafé (Início, apps abertos, tema, tempo, Encerrar), e o cliente também alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si é tela cheia: não fecha, não minimiza, não diminui). Se a barra do Windows não voltar depois de um problema, sair do usuário e entrar de novo a traz de volta. Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
 - **Estação travada sem servidor** (não dá para entrar em manutenção): Ctrl+Alt+Del → Sair e entre com a conta de admin segurando **Shift** para o autologin não entrar de novo.
 - **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
@@ -120,6 +121,8 @@ A espera de 8s até a estação aparecer como desligada só se testa com o servi
 - Variáveis: `SECRET_KEY` (obrigatória aqui: o disco do Render é apagado a cada deploy, e a chave gerada em `server/.secret_key` sumiria junto), e `ADMIN_LOGIN` / `ADMIN_SENHA` para criar o primeiro admin (o Render gratuito não tem terminal para rodar o `app.cli`).
 
 > O SQLite do Render é apagado a cada deploy. Para uso real, configure `DATABASE_URL` com um PostgreSQL (Supabase).
+
+**Trocar o banco** (servidor da biblioteca, sem `DATABASE_URL` no ambiente): painel → Configurações → **Servidor** → cole a URL (Supabase: Project Settings → Database → Connection string) → Testar conexão → Salvar → reinicie o servidor. Um banco vazio recebe as tabelas sozinho, mas precisa de um admin (`python -m app.cli`). Depois de atualizar o código, rode `pip install -r requirements.txt` (driver do PostgreSQL).
 
 ### Docker
 

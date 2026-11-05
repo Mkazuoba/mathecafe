@@ -2,7 +2,7 @@ import unicodedata
 from pathlib import Path
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
-from app.config import get_settings
+from app.config import get_settings, normalizar_url_banco
 from app.models import Base, Usuario, GrupoEstacao, ConfiguracaoSistema
 from app.security import hash_senha
 
@@ -12,7 +12,10 @@ settings = get_settings()
 # SQLite com caminho relativo resolve a partir de server/, independente de onde
 # o uvicorn for iniciado. Usa forward slashes para compatibilidade no Windows.
 _base_server = Path(__file__).resolve().parent.parent  # server/
-_db_url = settings.DATABASE_URL
+try:
+    _db_url = normalizar_url_banco(settings.DATABASE_URL)
+except ValueError:
+    _db_url = settings.DATABASE_URL  # o create_engine abaixo diz o que esta errado
 _eh_sqlite = _db_url.startswith("sqlite")
 if _eh_sqlite and _db_url.startswith("sqlite:///") and not Path(_db_url[len("sqlite:///"):]).is_absolute():
     _db_url = f"sqlite:///{(_base_server / _db_url[len('sqlite:///'):]).resolve().as_posix()}"

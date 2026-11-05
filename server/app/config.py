@@ -59,3 +59,43 @@ def get_settings():
     s = Settings()
     s.SECRET_KEY = resolver_secret_key(s.SECRET_KEY, _ARQUIVO_CHAVE)
     return s
+
+
+def normalizar_url_banco(url: str) -> str:
+    """URL do banco no formato que o SQLAlchemy usa aqui.
+
+    O Supabase e o Render dão postgres:// ou postgresql://; o driver instalado
+    é o psycopg 3 (postgresql+psycopg://). Só SQLite e PostgreSQL são aceitos.
+    """
+    url = (url or "").strip()
+    for prefixo in ("postgres://", "postgresql://"):
+        if url.startswith(prefixo):
+            return "postgresql+psycopg://" + url[len(prefixo):]
+    if url.startswith(("postgresql+psycopg://", "sqlite:///")):
+        return url
+    raise ValueError("Use uma URL sqlite:///... ou postgresql://usuario:senha@servidor:5432/banco")
+
+
+def descrever_banco(url: str) -> dict:
+    """Tipo e destino do banco para mostrar no painel, sem a senha."""
+    if url.startswith("sqlite"):
+        return {"tipo": "SQLite", "destino": url[len("sqlite:///"):]}
+    from sqlalchemy.engine import make_url
+    u = make_url(url)
+    destino = f"{u.host or ''}{f':{u.port}' if u.port else ''}/{u.database or ''}"
+    if u.username:
+        destino = f"{u.username}@{destino}"
+    return {"tipo": "PostgreSQL", "destino": destino}
+
+
+def gravar_no_env(arquivo: Path, chave: str, valor: str):
+    """Troca (ou acrescenta) a linha CHAVE=valor do .env, sem mexer nas outras."""
+    linhas = arquivo.read_text(encoding="utf-8").splitlines() if arquivo.exists() else []
+    nova = f"{chave}={valor}"
+    for i, linha in enumerate(linhas):
+        if linha.strip().startswith(f"{chave}="):
+            linhas[i] = nova
+            break
+    else:
+        linhas.append(nova)
+    arquivo.write_text("\n".join(linhas) + "\n", encoding="utf-8")
