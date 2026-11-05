@@ -3,8 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from app.config import _ENV_FILE, descrever_banco, gravar_no_env, normalizar_url_banco
-from app.database import _db_url, get_db
+from datetime import datetime
+from fastapi.responses import FileResponse
+from app import backup
+from app.config import _ENV_FILE, descrever_banco, get_settings, gravar_no_env, normalizar_url_banco, pasta_de_backup
+from app.database import ARQUIVO_SQLITE, _db_url, get_db
+from app.tempo_diario import FUSO, hoje_br
 from app.models import ConfiguracaoSistema
 from app.security import requer_perfil
 from app.tempo_diario import zerar_tempo_de_hoje
@@ -125,3 +129,41 @@ def trocar_banco(data: BancoUrl, _=Depends(requer_perfil("admin"))):
         raise HTTPException(400, teste["mensagem"])
     gravar_no_env(ARQUIVO_ENV, "DATABASE_URL", url)
     return {**teste, "reiniciar": True}
+
+
+# ── Backup diario (SQLite) ───────────────────────────────────────────────────
+PASTA_BACKUP = pasta_de_backup(get_settings().BACKUP_PASTA)
+DIAS_BACKUP = max(1, get_settings().BACKUP_DIAS)
+
+
+def backup_agora():
+    """Faz o backup do banco agora (horario de Brasilia no nome)."""
+    agora = datetime.now(FUSO).replace(tzinfo=None)
+    return backup.fazer_backup(ARQUIVO_SQLITE, PASTA_BACKUP, agora, DIAS_BACKUP)
+
+
+def backup_diario_pendente() -> bool:
+    return ARQUIVO_SQLITE is not None and not backup.backup_de_hoje_feito(PASTA_BACKUP, hoje_br())
+
+
+@router.get("/backup")
+def ver_backups(_=Depends(requer_perfil("admin"))):
+    return {"ativo": ARQUIVO_SQLITE is not None, "pasta": str(PASTA_BACKUP), "dias": DIAS_BACKUP,
+            "backups": backup.listar_backups(PASTA_BACKUP)}
+
+
+@router.post("/backup")
+def fazer_backup_agora(_=Depends(requer_perfil("admin"))):
+    if ARQUIVO_SQLITE is None:
+        raise HTTPException(400, "Backup automatico so para o SQLite; o PostgreSQL tem o backup do proprio provedor")
+    destino = backup_agora()
+    return next(b for b in backup.listar_backups(PASTA_BACKUP) if b["nome"] == destino.name)
+
+
+@router.get("/backup/{nome}")
+def baixar_backup(nome: str, _=Depends(requer_perfil("admin"))):
+    # So nomes no formato do backup: nada de caminho para fora da pasta
+    arquivo = PASTA_BACKUP / nome
+    if not backup.NOME_BACKUP.match(nome) or not arquivo.is_file():
+        raise HTTPException(404, "Backup nao encontrado")
+    return FileResponse(arquivo, filename=nome, media_type="application/octet-stream")

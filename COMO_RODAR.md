@@ -39,6 +39,29 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 > Na própria máquina, use `127.0.0.1` em vez de `localhost`. No Windows, `localhost` tenta primeiro o IPv6 e perde cerca de 2s a cada conexão.
 
+### Servidor de produção (máquina da biblioteca)
+
+Para o servidor subir sozinho quando a máquina liga, sem terminal aberto: abra o PowerShell **como Administrador** na pasta `server` e rode
+
+```bash
+powershell -ExecutionPolicy Bypass -File registrar_servidor.ps1
+```
+
+Ele cria a tarefa `MatheCafe-Servidor` (na inicialização do Windows, como SYSTEM, reabrindo se cair), libera a porta 8000 no firewall e já sobe o servidor. Feche antes o servidor que estiver rodando num terminal (os dois não usam a mesma porta).
+
+- Log: `server\logs\servidor.log`.
+- Parar / subir de novo (reiniciar depois de atualizar o código ou trocar o banco): `schtasks /end /tn MatheCafe-Servidor` e `schtasks /run /tn MatheCafe-Servidor`, como Administrador.
+- Outra porta: `registrar_servidor.ps1 -Porta 8080`. Desfazer: `registrar_servidor.ps1 -Remover`.
+- Para subir à mão do mesmo jeito (sem `--reload`): `iniciar_servidor.bat`.
+
+### Backup do banco
+
+O servidor faz sozinho um backup do `cybercafe.db` por dia, logo depois da meia-noite (ou quando sobe, se o do dia ainda não foi feito), em `server\backups`, guardando 14 dias. No painel: Configurações → Servidor → **Backup do banco** (fazer agora, baixar). No `.env`: `BACKUP_PASTA` (outro disco ou pasta de rede, ex.: `D:/BackupMatheCafe`) e `BACKUP_DIAS`.
+
+Guarde junto, uma vez, o `server\.secret_key` (ou a `SECRET_KEY` do `.env`): sem ele o banco restaurado funciona, mas todos precisam entrar no painel de novo.
+
+**Restaurar**: pare o servidor (`schtasks /end /tn MatheCafe-Servidor`), guarde o `cybercafe.db` atual com outro nome, copie o backup escolhido para `server\cybercafe.db` e suba de novo (`schtasks /run /tn MatheCafe-Servidor`).
+
 ## 2. Painel web (React)
 
 O painel já vem compilado em `server/app/static/`: para só usar o sistema, não precisa de Node. Para **mexer no painel**, instale o [Node.js LTS](https://nodejs.org) e:

@@ -12,6 +12,7 @@ import tempfile
 
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/teste.db"
+os.environ["BACKUP_PASTA"] = f"{_tmp}/backups"  # o backup diario roda ao subir
 os.environ["ADMIN_LOGIN"] = "admin.teste"
 os.environ["ADMIN_SENHA"] = "senha-admin-teste"
 os.environ["SECRET_KEY"] = "chave-so-dos-testes-" + "x" * 40  # sem gerar server/.secret_key
@@ -895,3 +896,25 @@ def test_agente_que_reabre_sai_da_manutencao(c, admin, cenario):
 
         assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
         assert _logar_no_pc(ws, cenario["cliente"])["ok"]
+
+
+def test_backup_pelo_painel(c, admin, operador, tmp_path, monkeypatch):
+    from app.routers import config as rota
+    monkeypatch.setattr(rota, "PASTA_BACKUP", tmp_path)
+    assert c.get("/api/config/backup", headers=operador).status_code == 403
+    assert c.post("/api/config/backup", headers=operador).status_code == 403
+
+    info = c.get("/api/config/backup", headers=admin).json()
+    assert info["ativo"] is True and info["backups"] == [] and info["dias"] >= 1
+
+    r = c.post("/api/config/backup", headers=admin)
+    assert r.status_code == 200, r.text
+    nome = r.json()["nome"]
+    assert [b["nome"] for b in c.get("/api/config/backup", headers=admin).json()["backups"]] == [nome]
+
+    baixado = c.get(f"/api/config/backup/{nome}", headers=admin)
+    assert baixado.status_code == 200 and baixado.content.startswith(b"SQLite format 3")
+    assert c.get(f"/api/config/backup/{nome}", headers=operador).status_code == 403
+    # só nomes de backup: nada de sair da pasta
+    for ruim in ("..%2F.env", "cybercafe.db", "outro-2026-11-05-0001.db"):
+        assert c.get(f"/api/config/backup/{ruim}", headers=admin).status_code == 404

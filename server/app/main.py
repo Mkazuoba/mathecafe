@@ -76,6 +76,14 @@ async def _batimento():
             print(f"Batimento: erro ao gravar ({e})")
         finally:
             db.close()
+        # Backup do dia: o primeiro batimento depois da meia-noite (ou da
+        # subida do servidor, se o de hoje ainda nao foi feito)
+        try:
+            if config.backup_diario_pendente():
+                destino = await asyncio.to_thread(config.backup_agora)
+                print(f"Backup do banco: {destino}")
+        except Exception as e:
+            print(f"Backup do banco: erro ({e})")
         await asyncio.sleep(SEGUNDOS_BATIMENTO)
 
 

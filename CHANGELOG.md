@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 — Servidor sobe sozinho e backup diário do banco (Ciclo 4, tarefas 4.5 e 4.6)
+
+- **Backup diário**: o servidor copia o `cybercafe.db` todo dia logo depois da meia-noite (ou ao subir, se o do dia ainda não foi feito) para `server/backups` e guarda os últimos 14 dias. A cópia usa o backup do próprio SQLite, então fica íntegra mesmo com o servidor em uso. A pasta e os dias se trocam no `.env` (`BACKUP_PASTA`, `BACKUP_DIAS`), por exemplo para outro disco.
+- **Painel → Configurações → Servidor → Backup do banco**: lista os backups, **Fazer backup agora** e **Baixar** (para guardar uma cópia fora do servidor). Só o admin.
+- **Servidor subindo sozinho**: `server/registrar_servidor.ps1` (como Administrador) cria a tarefa `MatheCafe-Servidor`, que sobe o servidor quando o Windows liga, sem ninguém fazer login, e reabre se ele cair; também libera a porta no firewall. A saída vai para `server/logs/servidor.log`. `iniciar_servidor.bat` sobe o servidor do mesmo jeito à mão.
+
 ## 2026-11-05 — Trocar servidor e banco sem reinstalar; estação presa em manutenção (agente 1.7.1)
 
 - **Estação presa em "manutenção"**: o status ficava gravado no banco e não saía quando o agente reabria na tela de login (fechado ou reiniciado na manutenção). O painel mostrava Manutenção e o servidor recusava o login do cliente ("Estação não está disponível"). Agora toda conexão nova volta a estação para livre; se o agente só caiu e voltou ainda na manutenção, ele avisa o servidor logo em seguida.

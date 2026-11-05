@@ -37,6 +37,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `cli.py` | `python -m app.cli` cria um administrador |
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
 | `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
+| `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
 | `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
@@ -152,3 +153,5 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **Agente abre a janela antes de tudo**: a atualização é conferida numa thread depois de a janela estar no ar, e na tela de login o agente fecha qualquer janela que não seja do Windows (o que o cliente abriu na inicialização antes do agente).
 - **Admin sem senha fixa**: criado por `python -m app.cli` ou pelas variáveis `ADMIN_LOGIN`/`ADMIN_SENHA`.
 - **Mensagens no console só com caracteres latinos**: emoji em `print` derruba o servidor num console Windows (cp1252).
+- **Backup no batimento** (`main.py`): a cada minuto, se o backup do dia (data de Brasília) ainda não existe, ele é feito numa thread. Assim o primeiro sai logo depois da meia-noite ou quando o servidor sobe. Nome `cybercafe-AAAA-MM-DD-HHMM.db`: o "Fazer backup agora" do painel não sobrescreve o da madrugada. Gravado como `.tmp` e renomeado, para nunca existir um backup pela metade. Só SQLite; no PostgreSQL, o provedor cuida.
+- **Servidor de produção como tarefa do Windows** (`registrar_servidor.ps1`): `MatheCafe-Servidor`, na inicialização, como SYSTEM (servidor não precisa de área de trabalho, ao contrário do agente), reabrindo se cair; libera a porta no firewall. `iniciar_servidor.bat` grava a saída em `server/logs/servidor.log` (sem buffer, sem log de cada requisição).

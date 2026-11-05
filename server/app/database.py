@@ -20,6 +20,8 @@ _eh_sqlite = _db_url.startswith("sqlite")
 if _eh_sqlite and _db_url.startswith("sqlite:///") and not Path(_db_url[len("sqlite:///"):]).is_absolute():
     _db_url = f"sqlite:///{(_base_server / _db_url[len('sqlite:///'):]).resolve().as_posix()}"
 print(f"Database: {_db_url if _eh_sqlite else _db_url.split('@')[-1]}")
+# Arquivo do banco, para o backup diario (so no SQLite)
+ARQUIVO_SQLITE = Path(_db_url[len("sqlite:///"):]) if _db_url.startswith("sqlite:///") else None
 
 engine = create_engine(
     _db_url,

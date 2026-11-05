@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Opcional: cria este admin na inicialização se ainda não houver nenhum
     ADMIN_LOGIN: str = ""
     ADMIN_SENHA: str = ""
+    # Backup diario do SQLite (app/backup.py). Vazio: server/backups. Pode ser
+    # outro disco ou pasta de rede (ex.: D:/BackupMatheCafe).
+    BACKUP_PASTA: str = ""
+    BACKUP_DIAS: int = 14
 
     class Config:
         env_file = str(_ENV_FILE)
@@ -59,6 +63,13 @@ def get_settings():
     s = Settings()
     s.SECRET_KEY = resolver_secret_key(s.SECRET_KEY, _ARQUIVO_CHAVE)
     return s
+
+
+def pasta_de_backup(configurada: str) -> Path:
+    """BACKUP_PASTA resolvida: vazia vira server/backups; relativa, a partir de server/."""
+    base = Path(__file__).resolve().parent.parent
+    pasta = Path(configurada.strip()) if (configurada or "").strip() else Path("backups")
+    return pasta if pasta.is_absolute() else (base / pasta).resolve()
 
 
 def normalizar_url_banco(url: str) -> str:
