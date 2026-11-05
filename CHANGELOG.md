@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-05 — Piso adulto / infantil no servidor (Ciclo 4, tarefa 4.7a)
+
+- **Piso do cliente**: o cadastro ganhou o piso (Adulto ou Infantil). Quem já está no banco ficou no Adulto. A troca do piso registra quem trocou e quando (`piso_alterado_por`, `piso_alterado_em`); a confirmação fica no painel (4.7b).
+- **Piso da estação**: vem do grupo (`grupos_estacao.piso`). Estação sem grupo ou grupo sem piso conta como Adulto, então só um PC marcado como Infantil recebe criança.
+- **Recusa sempre**: cliente de um piso não faz login num PC do outro ("Este cadastro é do piso Infantil e este computador é do piso Adulto. Procure o atendimento.") e não pode ser arrastado para ele (iniciar direto). A liberação continua valendo para um PC do piso certo.
+- A API devolve o piso em clientes, estações, grupos e fila (`cliente_piso`). Regra em `app/pisos.py`.
+- Até marcar o grupo da sala infantil como Infantil (painel, 4.7b), nada muda no uso.
+
+## 2026-11-05 — Painel antigo aposentado (Ciclo 2, tarefa 2.7)
+
+- **`/antigo` removido**: o painel HTML anterior (`server/app/static_antigo`) saiu; o React é o único painel.
+- **`server/main.py` voltou a só reexportar `app.main:app`**: um envio pelo GitHub (09/10) tinha posto lá uma cópia velha do servidor inteiro, e quem subisse com `uvicorn main:app` (start command antigo do Render) rodaria o código de outubro. Teste novo impede que volte.
+
 ## 2026-11-05 — Servidor sobe sozinho e backup diário do banco (Ciclo 4, tarefas 4.5 e 4.6)
 
 - **Backup diário**: o servidor copia o `cybercafe.db` todo dia logo depois da meia-noite (ou ao subir, se o do dia ainda não foi feito) para `server/backups` e guarda os últimos 14 dias. A cópia usa o backup do próprio SQLite, então fica íntegra mesmo com o servidor em uso. A pasta e os dias se trocam no `.env` (`BACKUP_PASTA`, `BACKUP_DIAS`), por exemplo para outro disco.

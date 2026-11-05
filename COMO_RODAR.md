@@ -80,8 +80,6 @@ Terminou uma mudança? Gere o build e faça o commit dos arquivos de `server/app
 npm run build        # compila para server/app/static
 ```
 
-O painel HTML anterior continua em http://127.0.0.1:8000/antigo/ durante a transição.
-
 ## 3. Primeiro uso (pelo painel)
 
 1. **Configurações → Operadores**: cadastre os operadores.

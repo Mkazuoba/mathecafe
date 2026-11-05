@@ -1,7 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
 import asyncio, json, os
@@ -10,6 +9,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
+from app.pisos import recusa_de_piso
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, agente as agente_router
 
@@ -235,6 +235,16 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     }))
                     continue
 
+                # Piso adulto/infantil: recusa sempre; a liberacao continua
+                # valendo para um PC do piso certo
+                motivo_piso = recusa_de_piso(cliente, estacao)
+                if motivo_piso:
+                    await ws.send_text(json.dumps({
+                        "evento": "login_resultado",
+                        "dados": {"ok": False, "motivo": motivo_piso}
+                    }))
+                    continue
+
                 # Tempo do dia (zera a meia-noite de Brasilia; ver tempo_diario.py)
                 tempo = reservar_tempo(db, cliente)
                 if tempo is None:
@@ -378,12 +388,7 @@ def health():
 
 # ── Painel web ────────────────────────────────────────────────────────────────
 # static/ é o build do React (server/frontend → `npm run build`).
-# static_antigo/ é o painel HTML anterior, mantido em /antigo na transição.
 _STATIC = os.path.realpath(os.path.join(os.path.dirname(__file__), "static"))
-_ANTIGO = os.path.join(os.path.dirname(__file__), "static_antigo")
-
-app.mount("/antigo", StaticFiles(directory=_ANTIGO, html=True), name="antigo")
-
 
 @app.get("/{caminho:path}", include_in_schema=False)
 def painel(caminho: str):
@@ -396,7 +401,7 @@ def painel(caminho: str):
         return FileResponse(arquivo)
     index = os.path.join(_STATIC, "index.html")
     if not os.path.isfile(index):
-        return HTMLResponse("<p>Painel não compilado. Rode <code>npm run build</code> em server/frontend "
-                            "ou use o <a href='/antigo/'>painel antigo</a>.</p>", status_code=503)
+        return HTMLResponse("<p>Painel não compilado. Rode <code>npm run build</code> em server/frontend.</p>",
+                            status_code=503)
     # index.html sem cache: um build novo aparece no próximo carregamento
     return FileResponse(index, headers={"Cache-Control": "no-store"})

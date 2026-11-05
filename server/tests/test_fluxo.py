@@ -302,10 +302,20 @@ def test_painel_nao_serve_arquivos_fora_da_pasta(c):
     assert "from app.main import app" not in r.text
 
 
-def test_painel_antigo_continua_disponivel(c):
+def test_painel_antigo_foi_aposentado(c):
+    # /antigo/ agora cai no painel React como qualquer outra rota
     r = c.get("/antigo/")
-    assert r.status_code == 200
-    assert "MatheCafé" in r.text
+    assert "static_antigo" not in r.text
+    from pathlib import Path
+    assert not (Path(__file__).resolve().parent.parent / "app" / "static_antigo").exists()
+
+
+def test_main_da_raiz_so_reexporta_o_app():
+    # server/main.py ja voltou a ser uma copia velha do app inteiro (upload pelo
+    # GitHub): quem subisse com `uvicorn main:app` rodaria o codigo antigo
+    import main as raiz
+    from app.main import app
+    assert raiz.app is app
 
 
 # ── Nome da estação ──────────────────────────────────────────────────────────
@@ -918,3 +928,95 @@ def test_backup_pelo_painel(c, admin, operador, tmp_path, monkeypatch):
     # só nomes de backup: nada de sair da pasta
     for ruim in ("..%2F.env", "cybercafe.db", "outro-2026-11-05-0001.db"):
         assert c.get(f"/api/config/backup/{ruim}", headers=admin).status_code == 404
+
+
+# ── 4.7 Piso adulto / infantil ───────────────────────────────────────────────
+
+def _estacao_infantil(c, admin):
+    """Estação nova num grupo do piso infantil."""
+    r = c.post("/api/estacoes/grupos?nome=Sala%20Infantil&piso=infantil", headers=admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["piso"] == "infantil"
+    nome = f"INF-{next(_contador):02d}"
+    r = c.post(f"/api/estacoes/?nome={nome}&grupo_id={r.json()['id']}", headers=admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["piso"] == "infantil"
+    return nome
+
+
+def _cliente_infantil(c, admin):
+    n = next(_contador)
+    cliente = {"login": f"crianca{n}", "nome": f"Crianca {n}", "senha": "senha-crianca", "piso": "infantil"}
+    r = c.post("/api/clientes/", headers=admin, json=cliente)
+    assert r.status_code == 200, r.text
+    assert r.json()["piso"] == "infantil"
+    return cliente, r.json()["id"]
+
+
+def test_cliente_e_estacao_sem_piso_sao_do_adulto(c, admin, cenario):
+    cliente = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()
+    assert cliente["piso"] == "adulto"
+    estacoes = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+    assert estacoes[cenario["estacao"]]["piso"] == "adulto"  # sem grupo
+
+
+def test_piso_invalido_e_recusado(c, admin, cenario):
+    r = c.put(f"/api/clientes/{cenario['cliente_id']}", headers=admin, json={"piso": "terreo"})
+    assert r.status_code == 422
+    r = c.post("/api/estacoes/grupos?nome=X&piso=terreo", headers=admin)
+    assert r.status_code == 422
+
+
+def test_trocar_piso_registra_quem_trocou(c, operador, cenario):
+    cid = cenario["cliente_id"]
+    r = c.put(f"/api/clientes/{cid}", headers=operador, json={"nome": "Outro nome"})
+    assert r.json()["piso_alterado_por"] is None  # editar outra coisa nao conta
+    r = c.put(f"/api/clientes/{cid}", headers=operador, json={"piso": "infantil"})
+    assert r.status_code == 200, r.text
+    dados = r.json()
+    assert dados["piso"] == "infantil"
+    assert dados["piso_alterado_por"] == "Operador"
+    assert dados["piso_alterado_em"]
+
+
+def test_grupo_troca_de_piso(c, admin):
+    nome = _estacao_infantil(c, admin)
+    estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    r = c.put(f"/api/estacoes/grupos/{estacao['grupo_id']}", headers=admin, json={"piso": "adulto"})
+    assert r.status_code == 200 and r.json()["piso"] == "adulto"
+    estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    assert estacao["piso"] == "adulto"
+
+
+def test_crianca_nao_loga_no_pc_do_adulto(c, admin, cenario):
+    cliente, cid = _cliente_infantil(c, admin)
+    c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+    fila = {a["cliente_id"]: a for a in c.get("/api/estacoes/fila", headers=admin).json()}
+    assert fila[cid]["cliente_piso"] == "infantil"
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        dados = _logar_no_pc(ws, cliente)
+        assert not dados["ok"]
+        assert "Infantil" in dados["motivo"]
+    # a liberacao continua valendo para um PC do piso certo
+    with c.websocket_connect(f"/ws/estacao/{_estacao_infantil(c, admin)}") as ws:
+        dados = _logar_no_pc(ws, cliente)
+        assert dados["ok"], dados
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+
+
+def test_adulto_nao_loga_no_pc_do_infantil(c, admin, cenario):
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{_estacao_infantil(c, admin)}") as ws:
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert not dados["ok"]
+        assert "Adulto" in dados["motivo"]
+
+
+def test_iniciar_direto_recusa_outro_piso(c, admin, cenario):
+    _, cid = _cliente_infantil(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}"):
+        r = c.post(f"/api/estacoes/{cenario['estacao']}/iniciar_direto", headers=admin, json={"cliente_id": cid})
+        assert r.status_code == 400
+        assert "Infantil" in r.json()["detail"]
+        estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+        assert estacao["status"] == "livre"

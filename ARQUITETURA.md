@@ -37,10 +37,10 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `cli.py` | `python -m app.cli` cria um administrador |
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
 | `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
+| `pisos.py` | piso adulto / infantil: o do cliente (cadastro) e o da estação (grupo; sem grupo ou sem piso = adulto); `recusa_de_piso` dá o motivo da recusa |
 | `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
-| `static_antigo/index.html` | painel HTML anterior, em `/antigo` durante a transição |
 
 `server/main.py` só reexporta `app.main:app`, para o start command antigo do Render continuar valendo.
 
@@ -65,10 +65,10 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Tabela | Guarda |
 |---|---|
-| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou) |
+| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou), `piso` (adulto / infantil) com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
 | `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
 | `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
-| `grupos_estacao` | grupos de PCs (abas do Mapa), com cor (o `tempo_padrao_segundos` do grupo não é mais usado) |
+| `grupos_estacao` | grupos de PCs (abas do Mapa), com cor e `piso` (adulto / infantil; vazio = adulto). O `tempo_padrao_segundos` do grupo não é mais usado |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo |
@@ -79,7 +79,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 1. Operador clica em **Liberar** (ou arrasta o cliente para uma estação) → a `autorizacao` do cliente é criada ou reativada → evento `fila_atualizada`.
 2. Cliente digita login e senha no agente → `login_cliente` pelo WebSocket.
-3. Servidor confere: senha certa? está na fila? estação livre? Se não, responde o motivo.
+3. Servidor confere: senha certa? está na fila? estação livre? o piso do cliente é o da estação? Se não, responde o motivo. Recusado pelo piso, o cliente continua na fila e pode entrar num PC do piso dele. O **iniciar direto** (arrastar para a estação) faz a mesma checagem do piso.
 4. Se sim: tempo = o que o cliente ainda tem hoje (`reservar_tempo`); se acabou, recusa até amanhã. Cria a `sessao`, marca a autorização como usada, estação vira `ocupada`, manda tempo, apps permitidos e `reiniciar_ao_encerrar` ao agente, avisa os painéis (`sessao_iniciada`).
 5. O agente mostra o launcher em tela cheia e conta o tempo; o painel conta junto.
 6. Fim da sessão, de quatro jeitos:

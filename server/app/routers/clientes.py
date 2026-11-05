@@ -13,6 +13,7 @@ from app.database import _eh_sqlite, get_db, sem_acento
 from app.imagens import ler_imagem
 from app.tempo_diario import cota_diaria, hoje_br, saldo_do_dia, saldo_do_dia_sql
 from app.models import FotoCliente, Usuario, Sessao
+from app.pisos import PISO_PADRAO, Piso, piso_do_cliente
 from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
@@ -24,6 +25,7 @@ class ClienteCreate(BaseModel):
     observacao: Optional[str] = None
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
+    piso: Piso = PISO_PADRAO
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -34,6 +36,7 @@ class ClienteUpdate(BaseModel):
     # documento e nascimento: o que vier (mesmo vazio/null) substitui; o que nao vier fica
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
+    piso: Optional[Piso] = None
 
 class FotoBody(BaseModel):
     imagem: str  # data URL (o painel reduz a imagem antes de enviar)
@@ -68,6 +71,9 @@ def serializar(u: Usuario, db: Session = None, cota: Optional[int] = None):
         "observacao": u.observacao,
         "documento": u.documento,
         "data_nascimento": u.data_nascimento.isoformat() if u.data_nascimento else None,
+        "piso": piso_do_cliente(u),
+        "piso_alterado_por": u.piso_alterado_por,
+        "piso_alterado_em": u.piso_alterado_em.isoformat() if u.piso_alterado_em else None,
         "tem_foto": u.foto_em is not None,
         "foto_em": u.foto_em.isoformat() if u.foto_em else None,
         "criado_em": u.criado_em.isoformat() if u.criado_em else None,
@@ -138,6 +144,7 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
         senha_hash=hash_senha(data.senha),
         perfil="cliente", observacao=data.observacao,
         documento=(data.documento or "").strip() or None, data_nascimento=data.data_nascimento,
+        piso=data.piso,
     )
     db.add(cliente)
     db.commit()
@@ -145,7 +152,8 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
     return serializar(cliente, db)
 
 @router.put("/{id}")
-def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db),
+              quem=Depends(requer_perfil("admin", "operador"))):
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
@@ -155,6 +163,12 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db), _=Dep
     if data.observacao is not None: cliente.observacao = data.observacao
     if "documento" in data.model_fields_set: cliente.documento = (data.documento or "").strip() or None
     if "data_nascimento" in data.model_fields_set: cliente.data_nascimento = data.data_nascimento
+    if data.piso and data.piso != piso_do_cliente(cliente):
+        # quem trocou fica na ficha (o painel pede confirmacao antes)
+        operador = db.get(Usuario, int(quem["sub"]))
+        cliente.piso = data.piso
+        cliente.piso_alterado_por = operador.nome if operador else None
+        cliente.piso_alterado_em = datetime.utcnow()
     if data.saldo_segundos is not None:
         # vale para hoje: e assim que o operador da tempo extra
         cliente.saldo_segundos = data.saldo_segundos

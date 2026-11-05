@@ -21,7 +21,6 @@ server/            FastAPI — rodar de dentro desta pasta
   app/main.py      app + WebSockets (/ws/painel, /ws/estacao/{nome}) + serve static/
   app/routers/     auth, clientes, estacoes (+grupos, fila), sessoes, apps, operadores, config, relatorios
   app/static/      BUILD do painel React — gerado por `npm run build`, commitado (Render não tem Node)
-  app/static_antigo/  painel HTML anterior, em /antigo durante a transição
   tests/           pytest
   frontend/        painel React + Vite + Tailwind (molde do Banners)
   main.py          só reexporta app.main:app (start command antigo do Render)

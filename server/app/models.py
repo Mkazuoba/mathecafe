@@ -19,6 +19,10 @@ class Usuario(Base):
     documento = Column(String(30), nullable=True)
     data_nascimento = Column(Date, nullable=True)
     foto_em = Column(DateTime, nullable=True)  # quando a foto mudou; None = sem foto (fotos_clientes)
+    # Piso adulto | infantil (app/pisos.py); a troca registra o nome de quem trocou e quando
+    piso = Column(String(10), default="adulto")
+    piso_alterado_por = Column(String(100), nullable=True)
+    piso_alterado_em = Column(DateTime, nullable=True)
 
     sessoes = relationship("Sessao", back_populates="cliente", foreign_keys="Sessao.cliente_id")
     autorizacao = relationship("Autorizacao", back_populates="cliente", uselist=False,
@@ -31,6 +35,7 @@ class GrupoEstacao(Base):
     nome = Column(String(50), nullable=False)
     tempo_padrao_segundos = Column(Integer, default=7200)
     cor = Column(String(7), default="#6366f1")  # hex, ex: "#6366f1"
+    piso = Column(String(10), nullable=True)  # adulto | infantil; vazio conta como adulto (app/pisos.py)
     ativo = Column(Boolean, default=True)
     estacoes = relationship("Estacao", back_populates="grupo")
 

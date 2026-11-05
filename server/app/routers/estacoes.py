@@ -8,6 +8,7 @@ from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
+from app.pisos import PISO_PADRAO, Piso, piso_da_estacao, piso_do_cliente, recusa_de_piso
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
 
@@ -34,6 +35,7 @@ def serial_estacao(e: Estacao):
         "grupo_id": e.grupo_id,
         "grupo_nome": e.grupo.nome if e.grupo else None,
         "grupo_cor": (e.grupo.cor or "#6366f1") if e.grupo else None,
+        "piso": piso_da_estacao(e),
         "status": status,
         "online": online,
         "ip": e.ip,
@@ -49,6 +51,7 @@ def serial_autorizacao(a: Autorizacao):
         "cliente_id": a.cliente_id,
         "cliente_login": a.cliente.login,
         "cliente_nome": a.cliente.nome,
+        "cliente_piso": piso_do_cliente(a.cliente),
         "saldo_segundos": saldo_do_dia(a.cliente),
         "autorizado_em": a.autorizado_em.isoformat(),
         "autorizado_por": a.autorizado_por.nome,
@@ -61,6 +64,7 @@ def serial_grupo(g: GrupoEstacao):
         "nome": g.nome,
         "tempo_padrao_segundos": g.tempo_padrao_segundos,
         "cor": g.cor or "#6366f1",
+        "piso": g.piso or PISO_PADRAO,
     }
 
 @router.get("/grupos")
@@ -68,9 +72,9 @@ def listar_grupos(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"
     return [serial_grupo(g) for g in db.query(GrupoEstacao).filter(GrupoEstacao.ativo == True).all()]
 
 @router.post("/grupos")
-def criar_grupo(nome: str, tempo_padrao_segundos: int = 7200, cor: str = "#6366f1",
+def criar_grupo(nome: str, tempo_padrao_segundos: int = 7200, cor: str = "#6366f1", piso: Piso = PISO_PADRAO,
                 db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
-    g = GrupoEstacao(nome=nome, tempo_padrao_segundos=tempo_padrao_segundos, cor=cor)
+    g = GrupoEstacao(nome=nome, tempo_padrao_segundos=tempo_padrao_segundos, cor=cor, piso=piso)
     db.add(g); db.commit(); db.refresh(g)
     return serial_grupo(g)
 
@@ -78,6 +82,7 @@ class GrupoUpdate(BaseModel):
     nome: Optional[str] = None
     tempo_padrao_segundos: Optional[int] = None
     cor: Optional[str] = None
+    piso: Optional[Piso] = None
 
 @router.put("/grupos/{grupo_id}")
 def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
@@ -87,6 +92,7 @@ def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
     if data.nome is not None: g.nome = data.nome
     if data.tempo_padrao_segundos is not None: g.tempo_padrao_segundos = data.tempo_padrao_segundos
     if data.cor is not None: g.cor = data.cor
+    if data.piso is not None: g.piso = data.piso
     db.commit()
     return serial_grupo(g)
 
@@ -301,6 +307,9 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
         Usuario.id == body.cliente_id, Usuario.perfil == "cliente", Usuario.ativo == True).first()
     if not cliente:
         raise HTTPException(404, "Cliente não encontrado")
+    motivo_piso = recusa_de_piso(cliente, e)
+    if motivo_piso:
+        raise HTTPException(400, motivo_piso)
 
     # Sessao ja ativa?
     sessao_existente = db.query(SessaoModel).filter(
