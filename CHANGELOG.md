@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-05 — Importação do VSCyber do piso infantil (Ciclo 4, tarefa 4.7c)
+
+- **`server/importar_infantil.py`**: importa os 8.660 clientes do VSCyber do infantil e completa o nascimento dos 42 mil do adulto. Sem `--aplicar` só simula; com `--aplicar` faz um backup antes e grava.
+- Regras decididas com o Matheus: todos entram no piso Infantil; o mesmo login nos dois VSCyber, com o mesmo primeiro nome e nascimento, vira um cadastro só (menor de 18 passa para o Infantil); os logins repetidos com nome ou nascimento diferente não entram e vão para uma planilha de conferência. Rodar de novo não duplica.
+- `exportar_fdb.py` aceita outro arquivo e outra pasta de saída (`python exportar_fdb.py ARQUIVO.FDB export_infantil`).
+- Numa cópia do banco: 8.349 novos no Infantil, 3 que já existiam passaram ao Infantil, 211 ficaram como estavam, 97 para conferir, 42.253 nascimentos preenchidos.
+
 ## 2026-11-05 — Piso adulto / infantil no servidor (Ciclo 4, tarefa 4.7a)
 
 - **Piso do cliente**: o cadastro ganhou o piso (Adulto ou Infantil). Quem já está no banco ficou no Adulto. A troca do piso registra quem trocou e quando (`piso_alterado_por`, `piso_alterado_em`); a confirmação fica no painel (4.7b).

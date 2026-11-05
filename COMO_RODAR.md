@@ -119,6 +119,28 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
 - Erros fatais do agente ficam em `C:\MatheCafe\agente_erro.log`.
 
+## Importar clientes do VSCyber
+
+Os bancos do VSCyber (Firebird) ficam em `Arquivos VSCyber/`, fora do git: têm dados pessoais dos clientes. O do adulto se chama `VSCYBER.FDB` e o do infantil, `VSCYBER_INFANTIL.FDB`.
+
+1. **Exportar para CSV** (nesta máquina, que tem o Firebird 2.5 embutido em `fb25_embed`). O Firebird grava no cabeçalho do arquivo ao abrir, então exporte de uma **cópia**:
+   - adulto: `python exportar_fdb.py` → `export/`
+   - infantil: `python exportar_fdb.py CAMINHO\DA\COPIA.FDB export_infantil` → `export_infantil/`
+2. **Levar para o servidor**: copie `export/clientes_importacao.csv` e `export_infantil/clientes_importacao.csv` para as mesmas pastas em `Arquivos VSCyber/` na máquina do servidor, ao lado da pasta `server`.
+3. **Importar o infantil** (na pasta `server`, com o venv ativo):
+   - `python importar_infantil.py` só **simula**: mostra quantos entram e não grava nada.
+   - `python importar_infantil.py --aplicar` faz um backup do banco e grava.
+
+O que o `importar_infantil.py` faz:
+- preenche o nascimento dos clientes do adulto que estão sem;
+- cria os clientes novos no piso Infantil, com o nascimento e a senha `1234`;
+- login que já existe e é a mesma pessoa (mesmo primeiro nome e mesmo nascimento): um cadastro só, e quem tem menos de 18 anos passa para o Infantil;
+- login que já existe com nome ou nascimento diferente: não importa e lista em `export_infantil/conferir_logins_repetidos.csv`, para o atendimento conferir.
+
+Rodar de novo não duplica ninguém. Se o VSCyber do infantil continuar em uso depois da exportação, exporte e importe de novo no dia da troca: entram só os cadastros novos.
+
+(O `importar_vscyber.py` foi a importação do adulto, em 2026; não precisa rodar de novo.)
+
 ## 5. Testes automáticos
 
 ```bash
