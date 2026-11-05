@@ -35,9 +35,9 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `tempo_diario.py` | tempo de uso por dia de cada cliente: cota, reset à meia-noite de Brasília, reservar o tempo da sessão |
 | `websocket_manager.py` | guarda quem está conectado (painéis e estações) e envia mensagens |
 | `cli.py` | `python -m app.cli` cria um administrador |
-| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
+| `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `pisos`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
 | `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
-| `pisos.py` | piso adulto / infantil: o do cliente (cadastro) e o da estação (grupo; sem grupo ou sem piso = adulto); `recusa_de_piso` dá o motivo da recusa |
+| `pisos.py` | pisos cadastrados (tabela `pisos`): o do cliente (cadastro) e o da estação (o do mapa; sem mapa ou mapa antigo sem piso = o piso padrão); `recusa_de_piso` dá o motivo da recusa; `garantir_pisos` cria Adulto (padrão) e Infantil na primeira subida e converte os pisos que eram texto (4.7a) |
 | `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
@@ -52,8 +52,9 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 |---|---|
 | `src/App.tsx` | rotas: `/login`, `/` (Painel), `/clientes`, `/mapa`, `/historicos`, `/configuracoes` (só admin) |
 | `src/lib/api.ts` | chamadas à API com o token; 401 leva de volta ao login |
-| `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens |
-| `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`) e os filtros, os mesmos no Painel e na aba Clientes |
+| `src/lib/dados.tsx` | dados compartilhados entre as telas (estações, fila, sessões, grupos), WebSocket `/ws/painel` com reconexão e o relógio das contagens. Carrega os **pisos** e guarda o escolhido (cabeçalho ou abas da tela Clientes, lembrado no navegador); entrega estações, mapas, fila e sessões só desse piso. `todosGrupos` é para configurar mapas e mover estações |
+| `src/lib/piso.tsx` | piso escolhido no navegador, cor do piso (`--color-piso` no `:root`; `index.css` deriva `piso-fundo` e `piso-borda`), idade pela data de nascimento, `AbasPiso` e `EtiquetaPiso` |
+| `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`, só do piso escolhido) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
 | `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente`, `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
@@ -65,10 +66,11 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Tabela | Guarda |
 |---|---|
-| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou), `piso` (adulto / infantil) com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
+| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou), `piso_id` com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
 | `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
 | `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
-| `grupos_estacao` | grupos de PCs (abas do Mapa), com cor e `piso` (adulto / infantil; vazio = adulto). O `tempo_padrao_segundos` do grupo não é mais usado |
+| `pisos` | pisos da biblioteca (nome, cor, `padrao`), cadastrados em Configurações → Pisos |
+| `grupos_estacao` | mapas (abas do Mapa), com cor e `piso_id` (obrigatório ao criar; vazio só em mapas antigos, que o painel aponta e contam como o padrão). O `tempo_padrao_segundos` do grupo não é mais usado |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo |

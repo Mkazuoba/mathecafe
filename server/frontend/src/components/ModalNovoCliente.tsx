@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
+import { EtiquetaPiso } from "@/lib/piso"
 import { lerTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,7 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
   aoCriar: (c: Cliente) => void
 }) {
   const avisar = useAvisos()
-  const { recarregarClientes } = useDados()
+  const { recarregarClientes, piso } = useDados()
   const [login, setLogin] = useState("")
   const [nome, setNome] = useState("")
   const [senha, setSenha] = useState("")
@@ -56,6 +57,7 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
         documento: documento.trim() || null,
         data_nascimento: nascimento || null,
         observacao: obs.trim() || null,
+        piso_id: piso?.id, // nasce no piso escolhido no cabeçalho
       })
       if (saldoSegundos > 0) criado = await Api.put<Cliente>(`/api/clientes/${criado.id}`, { saldo_segundos: saldoSegundos })
       avisar("Cliente criado")
@@ -69,6 +71,10 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
   return (
     <Modal titulo="Novo cliente" aberto={aberto} aoFechar={aoFechar} className="max-w-lg">
       <form onSubmit={salvar} className="flex flex-col gap-4">
+        <p className="-mt-1 flex items-center gap-2 text-sm text-texto-suave">
+          Cadastro no piso <EtiquetaPiso nome={piso?.nome ?? null} cor={piso?.cor ?? null} className="text-xs" />
+          <span className="text-texto-fraco">(troque no topo da tela, se for o caso)</span>
+        </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo rotulo="Login" id="cli-login">
             <Input id="cli-login" autoComplete="off" value={login} onChange={(e) => setLogin(e.target.value)} />

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-05 — Pisos cadastráveis, mapas por piso e painel separado por piso (Ciclo 4, tarefa 4.7b)
+
+- **Pisos cadastrados no sistema** (Configurações → **Pisos**, só admin): nome e cor de cada piso, um deles o padrão. Adulto (padrão) e Infantil são criados sozinhos; criar outro (ex.: Juvenil) é pela tela. Piso com clientes ou mapas, ou o padrão, não se exclui.
+- **Todo mapa pertence a um piso** (Configurações → **Mapas**, antes "Grupos"): obrigatório ao criar. Mapas antigos sem piso aparecem em vermelho com um aviso até alguém escolher (o mapa "Infantil" criado antes ficava no Adulto sem ninguém perceber).
+- **Seletor de piso no cabeçalho**, com os pisos cadastrados, lembrado em cada navegador. Estações, mapas, fila, sessões e a busca de clientes mostram só o piso escolhido; o cabeçalho, o Controle de sessões e as colunas de clientes e fila ficam na cor do piso.
+- **Tela Clientes com uma aba por piso** ("Clientes do Adulto", "Clientes do Infantil"...), a mesma escolha do cabeçalho, e a tabela na cor do piso; coluna **Idade**. A busca do Painel mostra a idade.
+- **Cadastro novo** nasce no piso escolhido. **Ficha do cliente**: etiqueta do piso e troca por uma lista, com confirmação (com a idade) e "trocado por ... em ...".
+- **Servidor**: tabela `pisos`, `usuarios.piso_id` e `grupos_estacao.piso_id`; API `/api/pisos/`; `GET /api/clientes/?piso_id=`. Os pisos que o 4.7a gravou como texto (inclusive os da importação do infantil já feita no servidor) viram `piso_id` sozinhos ao subir.
+- `importar_infantil.py --piso NOME` escolhe o piso de destino (padrão: Infantil).
+
 ## 2026-11-05 — Importação do VSCyber do piso infantil (Ciclo 4, tarefa 4.7c)
 
 - **`server/importar_infantil.py`**: importa os 8.660 clientes do VSCyber do infantil e completa o nascimento dos 42 mil do adulto. Sem `--aplicar` só simula; com `--aplicar` faz um backup antes e grava.

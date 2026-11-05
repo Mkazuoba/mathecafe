@@ -1,8 +1,17 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { IconChevronDown, IconChevronUp, IconId, IconMessageCircle, IconPencil, IconSelector } from "@tabler/icons-react"
+import {
+  IconChevronDown,
+  IconChevronUp,
+  IconId,
+  IconMessageCircle,
+  IconPencil,
+  IconSelector,
+} from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
+import { useDados } from "@/lib/dados"
+import { AbasPiso, textoIdade } from "@/lib/piso"
 import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { CabecalhoTela } from "@/components/Layout"
@@ -19,6 +28,7 @@ const LIMITE = 200
 const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
   { titulo: "Login", ordem: "login" },
   { titulo: "Nome", ordem: "nome" },
+  { titulo: "Idade" },
   { titulo: "Tempo de hoje", ordem: "saldo" },
   { titulo: "Status" },
   { titulo: "Criado em", ordem: "criado" },
@@ -28,6 +38,7 @@ const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
 export default function Clientes() {
   const navigate = useNavigate()
   const admin = Api.ehAdmin()
+  const { pisos, piso, trocarPiso } = useDados()
   const [busca, setBusca] = useState("")
   const [filtros, setFiltros] = useState(() => lerFiltros("clientes.busca", FILTROS_PADRAO))
   const [novo, setNovo] = useState(false)
@@ -43,7 +54,12 @@ export default function Clientes() {
   function ordenar(ordem: FiltrosClientes["ordem"]) {
     mudarFiltros({ ...filtros, ordem, desc: filtros.ordem === ordem ? !filtros.desc : false })
   }
-  const dica = filtros.campo === "login" ? "Buscar por login..." : filtros.campo === "nome" ? "Buscar por nome..." : "Buscar por nome ou login..."
+  const dica =
+    filtros.campo === "login"
+      ? "Buscar por login..."
+      : filtros.campo === "nome"
+        ? "Buscar por nome..."
+        : "Buscar por nome ou login..."
 
   return (
     <>
@@ -84,10 +100,14 @@ export default function Clientes() {
         </Button>
       </CabecalhoTela>
 
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="text-left text-xs tracking-wide text-texto-fraco uppercase">
+      {/* Abas por piso, e a tabela na cor dele (cadastrada em Configurações → Pisos) */}
+      <div className="shrink-0 border-b border-borda bg-superficie px-6 pt-3">
+        <AbasPiso pisos={pisos} piso={piso} aoTrocar={trocarPiso} rotulo="Clientes" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto bg-piso-fundo/40 px-6 py-5">
+        <table className="w-full border-collapse overflow-hidden rounded-lg border border-piso-borda text-sm">
+          <thead className="bg-piso-fundo">
+            <tr className="text-left text-xs tracking-wide text-piso uppercase">
               {COLUNAS.map(({ titulo, ordem }) => {
                 const ativa = ordem && filtros.ordem === ordem
                 return (
@@ -101,11 +121,17 @@ export default function Clientes() {
                         type="button"
                         title="Ordenar"
                         onClick={() => ordenar(ordem)}
-                        className={"inline-flex items-center gap-0.5 uppercase hover:text-texto " + (ativa ? "text-texto" : "")}
+                        className={
+                          "inline-flex items-center gap-0.5 uppercase hover:text-texto " + (ativa ? "text-texto" : "")
+                        }
                       >
                         {titulo}
                         {ativa ? (
-                          filtros.desc ? <IconChevronDown size={13} /> : <IconChevronUp size={13} />
+                          filtros.desc ? (
+                            <IconChevronDown size={13} />
+                          ) : (
+                            <IconChevronUp size={13} />
+                          )
                         ) : (
                           <IconSelector size={13} className="opacity-40" />
                         )}
@@ -126,7 +152,7 @@ export default function Clientes() {
                 title="Abrir a ficha do cliente"
                 onClick={() => setFicha(c.id)}
                 onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && setFicha(c.id)}
-                className="cursor-pointer hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none"
+                className="cursor-pointer hover:bg-piso-fundo focus-visible:bg-piso-fundo focus-visible:outline-none"
               >
                 <td className="border-b border-borda px-2.5 py-2.5">{c.login}</td>
                 <td className="border-b border-borda px-2.5 py-2.5">
@@ -136,6 +162,9 @@ export default function Clientes() {
                       <IconMessageCircle size={11} /> {c.observacao}
                     </div>
                   )}
+                </td>
+                <td className="border-b border-borda px-2.5 py-2.5 whitespace-nowrap text-texto-suave">
+                  {textoIdade(c.data_nascimento) ?? "—"}
                 </td>
                 <td className="border-b border-borda px-2.5 py-2.5">
                   <button

@@ -8,11 +8,12 @@ import { useAvisos } from "@/lib/avisos"
 import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
 import { useDados } from "@/lib/dados"
 import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "@/lib/tempo"
-import type { Cliente, Estacao, Grupo, Sessao, StatusEstacao } from "@/lib/tipos"
+import type { Cliente, Estacao, Grupo, Piso, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Select } from "@/components/ui/campos"
 import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
 import { FichaCliente } from "@/components/FichaCliente"
+import { textoIdade } from "@/lib/piso"
 import { FiltrosBusca } from "@/components/FiltrosBusca"
 import { ModalNovoCliente } from "@/components/ModalNovoCliente"
 
@@ -111,6 +112,7 @@ function Coluna({
   children,
   topo,
   controles,
+  piso,
   ...props
 }: {
   titulo: string
@@ -118,12 +120,22 @@ function Coluna({
   children: React.ReactNode
   topo?: React.ReactNode
   controles?: React.ReactNode
+  /** Colunas de clientes e fila: cabeçalho e fundo na cor do piso escolhido. */
+  piso?: Piso | null
 } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden" {...props}>
-      <div className="flex shrink-0 items-center gap-2 border-b border-borda bg-superficie-2 px-3.5 py-2">
-        <h2 className="truncate text-xs font-semibold tracking-wider text-texto-suave uppercase">{titulo}</h2>
-        <span className="rounded-full bg-destaque px-2 text-xs font-semibold text-white">{total}</span>
+    <section className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", piso && "bg-piso-fundo/40")} {...props}>
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-2 border-b px-3.5 py-2",
+          piso ? "border-piso-borda bg-piso-fundo" : "border-borda bg-superficie-2",
+        )}
+      >
+        <h2 className={cn("truncate text-xs font-semibold tracking-wider uppercase", piso ? "text-piso" : "text-texto-suave")}>
+          {titulo}
+          {piso && <> · {piso.nome}</>}
+        </h2>
+        <span className={cn("rounded-full px-2 text-xs font-semibold text-white", piso ? "bg-piso" : "bg-destaque")}>{total}</span>
         {controles && <span className="ml-auto">{controles}</span>}
       </div>
       {topo}
@@ -207,7 +219,7 @@ function compararLinhas(a: LinhaTabela, b: LinhaTabela, coluna: ColunaOrdem): nu
 }
 
 function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
-  const { estacoes, grupos, sessaoDaEstacao, agora, carregado } = useDados()
+  const { estacoes, grupos, sessaoDaEstacao, agora, carregado, piso } = useDados()
   const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
   const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
   const [abertaId, setAbertaId] = useState<number | null>(null)
@@ -250,10 +262,15 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   const temSemGrupo = estacoes.some((e) => e.grupo_id == null)
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-borda bg-superficie-2 px-3.5 py-1.5">
-        <h2 className="text-xs font-semibold tracking-wider whitespace-nowrap text-texto-suave uppercase">Controle de sessões</h2>
-        <span className="rounded-full bg-destaque px-2 text-xs font-semibold text-white">{linhas.length}</span>
+    // só as estações do piso escolhido (dados.tsx), na cor dele, como as outras colunas
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-piso-fundo/40">
+      <div className="flex shrink-0 items-center gap-2 border-b border-piso-borda bg-piso-fundo px-3.5 py-1.5">
+        <h2 className="text-xs font-semibold tracking-wider whitespace-nowrap text-piso uppercase">
+          Controle de sessões{piso && <> · {piso.nome}</>}
+        </h2>
+        <span className="rounded-full bg-piso px-2 text-xs font-semibold text-white">
+          {linhas.length}
+        </span>
         <Select
           aria-label="Grupo de estações"
           className="ml-auto h-8 w-auto max-w-[45%] py-0 text-sm"
@@ -463,7 +480,7 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
       >
         <option value="">Sem grupo</option>
         {grupos.map((g) => (
-          <option key={g.id} value={g.id}>{g.nome}</option>
+          <option key={g.id} value={g.id}>{g.nome}{g.piso_nome ? ` (piso ${g.piso_nome})` : " (sem piso)"}</option>
         ))}
       </select>
       <input
@@ -487,7 +504,7 @@ function FormEditarEstacao({ estacao, grupos, aoSalvar, aoCancelar }: {
 // Modal da estacao com abas: Geral | Comandos | Historico
 // ---------------------------------------------------------------------------
 function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
-  const { sessaoDaEstacao, agora, grupos, recarregarEstacoes } = useDados()
+  const { sessaoDaEstacao, agora, todosGrupos: grupos, recarregarEstacoes } = useDados()
   const { encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto } = useAcoes()
   const avisar = useAvisos()
   const [aba, setAba] = useState<AbaEstacao>("geral")
@@ -1125,7 +1142,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
   aoNovoCliente: () => void
   controles?: React.ReactNode
 }) {
-  const { fila, sessoes } = useDados()
+  const { fila, sessoes, piso } = useDados()
   const { liberar } = useAcoes()
   const [busca, setBusca] = useState("")
   const [filtros, setFiltros] = useState(() => lerFiltros("painel.busca", FILTROS_PADRAO))
@@ -1153,6 +1170,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
   return (
     <Coluna
       titulo="Clientes"
+      piso={piso}
       total={lista.length}
       controles={controles}
       topo={
@@ -1200,7 +1218,10 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-texto-fraco">{c.login}</div>
+                <div className="text-xs text-texto-fraco">
+                  {c.login}
+                  {textoIdade(c.data_nascimento) && <> · {textoIdade(c.data_nascimento)}</>}
+                </div>
                 <div className="mt-0.5 flex items-center gap-1 text-xs">
                   {emUso ? (
                     <span className="font-semibold text-ocupada">Em uso no {emUso}</span>
@@ -1241,12 +1262,13 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
   aoSoltarCliente: (id: number) => void
   controles?: React.ReactNode
 }) {
-  const { fila, agora } = useDados()
+  const { fila, agora, piso } = useDados()
   const { removerDaFila } = useAcoes()
 
   return (
     <Coluna
       titulo="Fila de espera"
+      piso={piso}
       total={total}
       controles={controles}
       onDragOver={(ev) => ev.dataTransfer.types.includes(TIPO_ARRASTO) && ev.preventDefault()}

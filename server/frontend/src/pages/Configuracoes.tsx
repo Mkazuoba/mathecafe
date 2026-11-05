@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SecaoBanco } from "@/components/SecaoBanco"
+import { SecaoPisos } from "@/components/SecaoPisos"
 import { SecaoProgramacao } from "@/components/SecaoProgramacao"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
@@ -17,7 +18,8 @@ import { SeloAtivo, Vazio } from "@/components/ui/status"
 const SECOES = [
   { id: "operadores", rotulo: "Operadores" },
   { id: "comportamento", rotulo: "Comportamento" },
-  { id: "grupos", rotulo: "Grupos" },
+  { id: "pisos", rotulo: "Pisos" },
+  { id: "grupos", rotulo: "Mapas" },
   { id: "apps", rotulo: "Apps permitidos" },
   { id: "programacao", rotulo: "Programação" },
   { id: "relatorios", rotulo: "Relatórios" },
@@ -54,6 +56,7 @@ export default function Configuracoes() {
         <div className="max-w-2xl">
           {secao === "operadores" && <SecaoOperadores />}
           {secao === "comportamento" && <SecaoComportamento />}
+          {secao === "pisos" && <SecaoPisos />}
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
           {secao === "programacao" && <SecaoProgramacao />}
@@ -328,7 +331,7 @@ function SecaoComportamento() {
 
 function SecaoApps() {
   const avisar = useAvisos()
-  const { grupos } = useDados()
+  const { todosGrupos: grupos } = useDados()
   const [apps, setApps] = useState<AppPermitido[] | null>(null)
   const [form, setForm] = useState({ nome: "", processo: "", grupo: "", caminho: "", imagem: "" })
   const [editando, setEditando] = useState<AppPermitido | null>(null)
@@ -533,15 +536,19 @@ function ModalApp({
 
 // ── Grupos ──────────────────────────────────────────────────────────────────
 
-interface EditGrupo { nome: string; cor: string }
+interface EditGrupo { nome: string; cor: string; piso_id: number }
 
 function SecaoGrupos() {
   const avisar = useAvisos()
-  const { grupos, recarregar } = useDados()
+  const { todosGrupos: grupos, pisos, piso: pisoAtivo, recarregar } = useDados()
   const [novoNome, setNovoNome] = useState("")
   const [novaCor, setNovaCor] = useState("#6366f1")
+  // piso do mapa novo: obrigatório; começa no piso escolhido no topo
+  const [novoPiso, setNovoPiso] = useState<number | "">(pisoAtivo?.id ?? "")
   const [criando, setCriando] = useState(false)
   const [editando, setEditando] = useState<Record<number, Partial<EditGrupo>>>({})
+  const semPiso = grupos.filter((g) => g.piso_id == null)
+  const nomeDoPiso = (id: number | null | undefined) => pisos.find((p) => p.id === id)?.nome ?? "?"
 
   function setEdit(id: number, campo: Partial<EditGrupo>) {
     setEditando((prev) => ({ ...prev, [id]: { ...prev[id], ...campo } }))
@@ -550,11 +557,12 @@ function SecaoGrupos() {
   async function criarGrupo(ev: React.FormEvent) {
     ev.preventDefault()
     if (!novoNome.trim()) return
+    if (novoPiso === "") return avisar("Escolha o piso do mapa", "erro")
     setCriando(true)
     try {
-      const params = new URLSearchParams({ nome: novoNome.trim(), cor: novaCor })
+      const params = new URLSearchParams({ nome: novoNome.trim(), cor: novaCor, piso_id: String(novoPiso) })
       await Api.post(`/api/estacoes/grupos?${params}`, {})
-      avisar("Grupo criado")
+      avisar("Mapa criado")
       setNovoNome("")
       setNovaCor("#6366f1")
       await recarregar()
@@ -567,12 +575,23 @@ function SecaoGrupos() {
 
   async function salvarGrupo(g: Grupo) {
     const ed = editando[g.id] ?? {}
+    const pisoId = ed.piso_id ?? g.piso_id
+    if (pisoId == null) return avisar("Escolha o piso do mapa", "erro")
+    if (
+      pisoId !== g.piso_id &&
+      !window.confirm(
+        `Colocar o mapa ${g.nome} no piso ${nomeDoPiso(pisoId)}?\n\nOs computadores dele passam a aceitar só ` +
+          `clientes do piso ${nomeDoPiso(pisoId)}.`,
+      )
+    )
+      return
     try {
       await Api.put(`/api/estacoes/grupos/${g.id}`, {
         nome: ed.nome ?? g.nome,
         cor: ed.cor ?? g.cor,
+        piso_id: pisoId,
       })
-      avisar("Grupo atualizado")
+      avisar("Mapa atualizado")
       setEditando((prev) => { const n = { ...prev }; delete n[g.id]; return n })
       await recarregar()
     } catch (e) {
@@ -582,34 +601,68 @@ function SecaoGrupos() {
 
   return (
     <div>
-      <Titulo>Grupos de estacoes</Titulo>
+      <Titulo>Mapas (grupos de estações)</Titulo>
       <p className="mb-4 text-sm text-texto-fraco">
-        Nome e cor de cada grupo (sala). A cor aparece no mapa e nas abas. O tempo de uso por dia é um só para todos, em
-        Comportamento.
+        Cada mapa (sala) pertence a um piso, cadastrado em Pisos: os computadores dele só aceitam clientes desse piso.
+        A cor do mapa aparece no Mapa e nas abas. O tempo de uso por dia é um só para todos, em Comportamento.
       </p>
+      {semPiso.length > 0 && (
+        <div role="alert" className="mb-4 rounded-lg border border-perigo-borda bg-perigo-fundo px-4 py-3 text-sm">
+          <strong className="text-perigo">
+            {semPiso.length === 1 ? "1 mapa sem piso" : `${semPiso.length} mapas sem piso`}:
+          </strong>{" "}
+          {semPiso.map((g) => g.nome).join(", ")}. Até escolher, os computadores deles contam como o piso{" "}
+          {pisos.find((p) => p.padrao)?.nome ?? "padrão"}. Escolha o piso de cada um abaixo e salve.
+        </div>
+      )}
       <div className="mb-4 flex flex-col gap-2">
         {grupos.map((g) => {
           const ed = editando[g.id] ?? {}
           const nomeAtual = ed.nome ?? g.nome
           const corAtual = ed.cor ?? g.cor
-          const alterado = ed.nome !== undefined || ed.cor !== undefined
+          const pisoAtual = ed.piso_id ?? g.piso_id
+          const alterado =
+            ed.nome !== undefined || ed.cor !== undefined || (ed.piso_id !== undefined && ed.piso_id !== g.piso_id)
           return (
-            <div key={g.id} className="flex items-center gap-3 rounded-lg border border-borda bg-superficie-2 px-4 py-2.5">
+            <div
+              key={g.id}
+              className={cn(
+                "flex items-center gap-3 rounded-lg border bg-superficie-2 px-4 py-2.5",
+                g.piso_id == null ? "border-perigo-borda" : "border-borda",
+              )}
+            >
               {/* bolinha de cor */}
               <input
                 type="color"
                 value={corAtual}
                 onChange={(ev) => setEdit(g.id, { cor: ev.target.value })}
                 className="size-7 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
-                title="Cor do grupo"
+                title="Cor do mapa"
               />
               {/* nome */}
               <input
                 type="text"
+                aria-label={`Nome do mapa ${g.nome}`}
                 value={nomeAtual}
                 onChange={(ev) => setEdit(g.id, { nome: ev.target.value })}
                 className="min-w-0 flex-1 rounded-md border border-borda bg-superficie px-2 py-1 text-sm outline-none focus:border-destaque"
               />
+              <select
+                aria-label={`Piso do mapa ${g.nome}`}
+                value={pisoAtual ?? ""}
+                onChange={(ev) => setEdit(g.id, { piso_id: Number(ev.target.value) })}
+                className={cn(
+                  "rounded-md border bg-superficie px-2 py-1 text-sm outline-none focus:border-destaque",
+                  pisoAtual == null ? "border-perigo text-perigo" : "border-borda",
+                )}
+              >
+                {pisoAtual == null && <option value="">Sem piso: escolha</option>}
+                {pisos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Piso {p.nome}
+                  </option>
+                ))}
+              </select>
               {alterado && (
                 <Button size="sm" onClick={() => salvarGrupo(g)}>Salvar</Button>
               )}
@@ -617,7 +670,7 @@ function SecaoGrupos() {
           )
         })}
         {grupos.length === 0 && (
-          <p className="text-sm text-texto-fraco">Nenhum grupo cadastrado.</p>
+          <p className="text-sm text-texto-fraco">Nenhum mapa cadastrado.</p>
         )}
       </div>
       <form onSubmit={criarGrupo} className="flex items-end gap-2">
@@ -626,15 +679,29 @@ function SecaoGrupos() {
           value={novaCor}
           onChange={(e) => setNovaCor(e.target.value)}
           className="size-9 shrink-0 cursor-pointer rounded-md border border-borda bg-transparent p-0.5"
-          title="Cor do grupo"
+          title="Cor do mapa"
         />
         <div className="flex-1">
-          <Campo rotulo="Nome" id="novo-grupo-nome">
-            <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Infantil" />
+          <Campo rotulo="Nome do mapa novo" id="novo-grupo-nome">
+            <Input id="novo-grupo-nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex: Sala de leitura" />
           </Campo>
         </div>
-        <Button type="submit" disabled={criando || !novoNome.trim()}>
-          {criando ? "..." : "+ Criar grupo"}
+        <select
+          aria-label="Piso do mapa novo"
+          required
+          value={novoPiso}
+          onChange={(ev) => setNovoPiso(ev.target.value === "" ? "" : Number(ev.target.value))}
+          className="h-9 rounded-md border border-borda bg-superficie-2 px-2 text-sm outline-none focus:border-destaque"
+        >
+          <option value="">Piso...</option>
+          {pisos.map((p) => (
+            <option key={p.id} value={p.id}>
+              Piso {p.nome}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" disabled={criando || !novoNome.trim() || novoPiso === ""}>
+          {criando ? "..." : "+ Criar mapa"}
         </Button>
       </form>
     </div>

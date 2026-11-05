@@ -13,7 +13,8 @@ from app.database import _eh_sqlite, get_db, sem_acento
 from app.imagens import ler_imagem
 from app.tempo_diario import cota_diaria, hoje_br, saldo_do_dia, saldo_do_dia_sql
 from app.models import FotoCliente, Usuario, Sessao
-from app.pisos import PISO_PADRAO, Piso, piso_do_cliente
+from app.models import Piso
+from app.pisos import piso_do_cliente, piso_padrao, resumo
 from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
@@ -25,7 +26,7 @@ class ClienteCreate(BaseModel):
     observacao: Optional[str] = None
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
-    piso: Piso = PISO_PADRAO
+    piso_id: Optional[int] = None  # vazio: o piso padrao
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -36,7 +37,7 @@ class ClienteUpdate(BaseModel):
     # documento e nascimento: o que vier (mesmo vazio/null) substitui; o que nao vier fica
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
-    piso: Optional[Piso] = None
+    piso_id: Optional[int] = None
 
 class FotoBody(BaseModel):
     imagem: str  # data URL (o painel reduz a imagem antes de enviar)
@@ -71,7 +72,7 @@ def serializar(u: Usuario, db: Session = None, cota: Optional[int] = None):
         "observacao": u.observacao,
         "documento": u.documento,
         "data_nascimento": u.data_nascimento.isoformat() if u.data_nascimento else None,
-        "piso": piso_do_cliente(u),
+        **resumo(piso_do_cliente(u)),
         "piso_alterado_por": u.piso_alterado_por,
         "piso_alterado_em": u.piso_alterado_em.isoformat() if u.piso_alterado_em else None,
         "tem_foto": u.foto_em is not None,
@@ -111,6 +112,7 @@ def listar(
     ordem: Literal["nome", "login", "saldo", "criado"] = "nome",
     desc: bool = False,
     tudo: bool = False,
+    piso_id: Optional[int] = None,
     limite: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     _=Depends(requer_perfil("admin", "operador"))
@@ -125,6 +127,11 @@ def listar(
         consulta = consulta.filter(_filtro_texto(q, campo, modo))
     if status != "todos":
         consulta = consulta.filter(Usuario.ativo == (status == "ativos"))
+    if piso_id:
+        # piso vazio conta como o padrao (app/pisos.py)
+        padrao = piso_padrao(db)
+        consulta = consulta.filter(or_(Usuario.piso_id == piso_id, Usuario.piso_id == None)
+                                   if padrao and padrao.id == piso_id else Usuario.piso_id == piso_id)
     cota = cota_diaria(db)
     saldo_hoje = saldo_do_dia_sql(cota)
     if saldo == "com":
@@ -135,6 +142,14 @@ def listar(
     consulta = consulta.order_by(coluna.desc() if desc else coluna, Usuario.nome)
     return [serializar(c, db, cota) for c in consulta.limit(limite).all()]
 
+def _piso_existente(db: Session, piso_id: Optional[int]) -> Piso:
+    """O piso pedido (vazio: o padrao); 400 se nao existe."""
+    piso = db.get(Piso, piso_id) if piso_id is not None else piso_padrao(db)
+    if piso is None:
+        raise HTTPException(status_code=400, detail="Piso não encontrado")
+    return piso
+
+
 @router.post("/")
 def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
     if db.query(Usuario).filter(Usuario.login == data.login).first():
@@ -144,7 +159,7 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
         senha_hash=hash_senha(data.senha),
         perfil="cliente", observacao=data.observacao,
         documento=(data.documento or "").strip() or None, data_nascimento=data.data_nascimento,
-        piso=data.piso,
+        piso_id=_piso_existente(db, data.piso_id).id,
     )
     db.add(cliente)
     db.commit()
@@ -163,10 +178,10 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db),
     if data.observacao is not None: cliente.observacao = data.observacao
     if "documento" in data.model_fields_set: cliente.documento = (data.documento or "").strip() or None
     if "data_nascimento" in data.model_fields_set: cliente.data_nascimento = data.data_nascimento
-    if data.piso and data.piso != piso_do_cliente(cliente):
+    if data.piso_id is not None and data.piso_id != cliente.piso_id:
         # quem trocou fica na ficha (o painel pede confirmacao antes)
         operador = db.get(Usuario, int(quem["sub"]))
-        cliente.piso = data.piso
+        cliente.piso_id = _piso_existente(db, data.piso_id).id
         cliente.piso_alterado_por = operador.nome if operador else None
         cliente.piso_alterado_em = datetime.utcnow()
     if data.saldo_segundos is not None:

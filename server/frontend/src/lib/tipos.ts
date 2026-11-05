@@ -1,11 +1,31 @@
 export type StatusEstacao = "livre" | "ocupada" | "desligada" | "manutencao"
 
-export interface Estacao {
+/** Piso da biblioteca, cadastrado em Configurações → Pisos (app/pisos.py). */
+export interface Piso {
+  id: number
+  nome: string
+  /** #rrggbb: seletor, abas e colunas do painel ficam nesta cor */
+  cor: string
+  /** Vale para estação sem grupo, mapa antigo sem piso e cliente sem piso */
+  padrao: boolean
+  grupos: number
+  clientes: number
+}
+
+/** Piso que vem junto de clientes, estações e grupos. */
+export interface PisoDe {
+  piso_id: number | null
+  piso_nome: string | null
+  piso_cor: string | null
+}
+
+export interface Estacao extends PisoDe {
   id: number
   nome: string
   grupo_id: number | null
   grupo_nome: string | null
   grupo_cor: string | null
+  // piso: o do grupo; sem grupo ou mapa sem piso = o piso padrão
   status: StatusEstacao
   online: boolean
   ip: string | null
@@ -15,14 +35,15 @@ export interface Estacao {
   mac_address: string | null
 }
 
-export interface Grupo {
+/** Mapa (sala). piso_id vazio: mapa antigo ainda sem piso, o painel avisa. */
+export interface Grupo extends PisoDe {
   id: number
   nome: string
   tempo_padrao_segundos: number
   cor: string
 }
 
-export interface Cliente {
+export interface Cliente extends PisoDe {
   id: number
   login: string
   nome: string
@@ -32,6 +53,9 @@ export interface Cliente {
   documento: string | null
   /** AAAA-MM-DD */
   data_nascimento: string | null
+  /** Quem trocou o piso por último e quando (null se nunca trocou). */
+  piso_alterado_por: string | null
+  piso_alterado_em: string | null
   tem_foto: boolean
   /** Quando a foto mudou (vai na URL da foto para o navegador não usar a antiga). */
   foto_em: string | null
@@ -45,6 +69,7 @@ export interface ItemFila {
   cliente_id: number
   cliente_login: string
   cliente_nome: string
+  cliente_piso_id: number
   saldo_segundos: number
   autorizado_em: string
   autorizado_por: string

@@ -5,12 +5,13 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { reduzirImagem } from "@/lib/imagens"
+import { EtiquetaPiso, textoIdade } from "@/lib/piso"
 import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Interruptor, MensagemErro, Textarea } from "@/components/ui/campos"
+import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
@@ -64,6 +65,7 @@ export function FichaCliente({ clienteId, aoFechar, abaInicial = "geral" }: {
               <div className="flex items-center gap-2">
                 <span className="truncate text-base font-semibold">{cliente.nome}</span>
                 <SeloAtivo ativo={cliente.ativo} />
+                <EtiquetaPiso nome={cliente.piso_nome} cor={cliente.piso_cor} />
               </div>
               <div className="text-sm text-texto-fraco">{cliente.login}</div>
             </div>
@@ -193,14 +195,6 @@ function EditorFoto({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cli
 
 // ── Aba Geral ────────────────────────────────────────────────────────────────
 
-function idade(nascimento: string): number {
-  const [a, m, d] = nascimento.split("-").map(Number)
-  const hoje = new Date()
-  let anos = hoje.getFullYear() - a
-  if (hoje.getMonth() + 1 < m || (hoje.getMonth() + 1 === m && hoje.getDate() < d)) anos--
-  return anos
-}
-
 function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cliente) => void }) {
   const avisar = useAvisos()
   const [nome, setNome] = useState(cliente.nome)
@@ -257,7 +251,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
             <Input id="ficha-nasc" type="date" value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
           </Campo>
           <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave">
-            {nascimento ? `${idade(nascimento)} anos` : ""}
+            {textoIdade(nascimento || null) ?? ""}
           </div>
         </div>
         <Campo rotulo="Observações" id="ficha-obs">
@@ -278,6 +272,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
             <dt className="text-xs text-texto-fraco">Cadastrado em</dt>
             <dd className="font-semibold">{cliente.criado_em ? dataDoServidor(cliente.criado_em).toLocaleDateString("pt-BR") : "—"}</dd>
           </div>
+          <PisoDoCliente cliente={cliente} aoSalvar={aoSalvar} />
         </dl>
 
         <MensagemErro>{erro}</MensagemErro>
@@ -293,6 +288,65 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
           Api.get<Cliente>(`/api/clientes/${cliente.id}`).then(aoSalvar).catch(() => {})
         }}
       />
+    </div>
+  )
+}
+
+/**
+ * Piso do cliente: o servidor recusa o login num PC do outro piso. Trocar pede
+ * confirmação (com a idade, quando houver) e fica registrado quem trocou.
+ */
+function PisoDoCliente({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cliente) => void }) {
+  const avisar = useAvisos()
+  const { pisos } = useDados()
+  const [trocando, setTrocando] = useState(false)
+  const anos = textoIdade(cliente.data_nascimento)
+
+  async function trocar(id: number) {
+    const novo = pisos.find((p) => p.id === id)
+    if (!novo || id === cliente.piso_id) return
+    const pergunta =
+      `Passar ${cliente.nome}${anos ? ` (${anos})` : ""} do piso ${cliente.piso_nome ?? "-"} para o piso ` +
+      `${novo.nome}?\n\nDepois disso o cliente só entra nos computadores do piso ${novo.nome}.`
+    if (!window.confirm(pergunta)) return
+    setTrocando(true)
+    try {
+      aoSalvar(await Api.put<Cliente>(`/api/clientes/${cliente.id}`, { piso_id: id }))
+      avisar(`Agora no piso ${novo.nome}`)
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setTrocando(false)
+    }
+  }
+
+  return (
+    <div className="col-span-2 flex items-center gap-3 rounded-md bg-superficie-2 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <dt className="text-xs text-texto-fraco">Piso</dt>
+        <dd className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <EtiquetaPiso nome={cliente.piso_nome} cor={cliente.piso_cor} className="text-xs" />
+          {cliente.piso_alterado_por && (
+            <span className="text-xs text-texto-fraco">
+              trocado por {cliente.piso_alterado_por}
+              {cliente.piso_alterado_em && <> em {dataDoServidor(cliente.piso_alterado_em).toLocaleDateString("pt-BR")}</>}
+            </span>
+          )}
+        </dd>
+      </div>
+      <Select
+        aria-label="Trocar o piso do cliente"
+        className="h-8 w-auto py-0 text-sm"
+        disabled={trocando}
+        value={cliente.piso_id ?? ""}
+        onChange={(ev) => trocar(Number(ev.target.value))}
+      >
+        {pisos.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.id === cliente.piso_id ? `Piso ${p.nome}` : `Passar para o ${p.nome}`}
+          </option>
+        ))}
+      </Select>
     </div>
   )
 }

@@ -119,6 +119,12 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\
 - **Rede com proxy**: com o servidor num IP interno (10.x, 172.16-31.x, 192.168.x) ou num nome sem ponto, o agente conecta direto e ignora o proxy do Windows. O log do agente mostra "Conectando a ... (direto, sem proxy)".
 - Erros fatais do agente ficam em `C:\MatheCafe\agente_erro.log`.
 
+## Pisos e mapas
+
+Configurações → **Pisos**: os pisos da biblioteca (nascem Adulto, o padrão, e Infantil). Cada um tem nome e cor; a cor marca o seletor do topo, as abas da tela Clientes e as colunas do Painel. Configurações → **Mapas**: cada mapa (sala) pertence a um piso, obrigatório ao criar. O cliente só entra nos computadores do piso dele (login no PC e arrastar para a estação).
+
+Depois de atualizar um servidor que já tinha mapas, abra Configurações → Mapas: os mapas antigos aparecem em vermelho ("sem piso") até alguém escolher o piso de cada um. Até lá, contam como o piso padrão.
+
 ## Importar clientes do VSCyber
 
 Os bancos do VSCyber (Firebird) ficam em `Arquivos VSCyber/`, fora do git: têm dados pessoais dos clientes. O do adulto se chama `VSCYBER.FDB` e o do infantil, `VSCYBER_INFANTIL.FDB`.
@@ -133,7 +139,7 @@ Os bancos do VSCyber (Firebird) ficam em `Arquivos VSCyber/`, fora do git: têm 
 
 O que o `importar_infantil.py` faz:
 - preenche o nascimento dos clientes do adulto que estão sem;
-- cria os clientes novos no piso Infantil, com o nascimento e a senha `1234`;
+- cria os clientes novos no piso Infantil (ou no que vier em `--piso NOME`, como cadastrado em Configurações → Pisos), com o nascimento e a senha `1234`;
 - login que já existe e é a mesma pessoa (mesmo primeiro nome e mesmo nascimento): um cadastro só, e quem tem menos de 18 anos passa para o Infantil;
 - login que já existe com nome ou nascimento diferente: não importa e lista em `export_infantil/conferir_logins_repetidos.csv`, para o atendimento conferir.
 

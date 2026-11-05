@@ -49,21 +49,22 @@ export function filtrosAtivos(f: FiltrosClientes, padrao: FiltrosClientes, campo
 /**
  * Busca no servidor (são ~43k clientes), com 300ms de espera enquanto digita.
  * Sem termo devolve vazio, a não ser com `tudo` (lista pela ordem escolhida).
- * Refaz a consulta quando alguém chama recarregarClientes.
+ * Refaz a consulta quando alguém chama recarregarClientes. Só traz o piso do cabeçalho.
  */
 export function useBuscaClientes(
   busca: string,
   filtros: Partial<FiltrosClientes> = {},
   { tudo = false, limite = 50 }: { tudo?: boolean; limite?: number } = {},
 ) {
-  const { versaoClientes } = useDados()
+  const { versaoClientes, piso } = useDados()
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [carregando, setCarregando] = useState(false)
   const chaveFiltros = JSON.stringify(filtros)
 
   useEffect(() => {
     const q = busca.trim()
-    if (!q && !tudo) {
+    // sem o piso carregado ainda, nao busca: viriam os clientes de todos os pisos misturados
+    if ((!q && !tudo) || !piso) {
       setClientes([])
       return
     }
@@ -71,6 +72,7 @@ export function useBuscaClientes(
     const params = new URLSearchParams({ busca: q, limite: String(limite) })
     for (const [k, v] of Object.entries(JSON.parse(chaveFiltros) as Partial<FiltrosClientes>)) params.set(k, String(v))
     if (tudo) params.set("tudo", "true")
+    if (piso) params.set("piso_id", String(piso.id))  // só os clientes do piso escolhido no cabeçalho
     const timer = setTimeout(async () => {
       setCarregando(true)
       try {
@@ -86,7 +88,7 @@ export function useBuscaClientes(
       cancelado = true
       clearTimeout(timer)
     }
-  }, [busca, chaveFiltros, tudo, limite, versaoClientes])
+  }, [busca, chaveFiltros, tudo, limite, versaoClientes, piso?.id])
 
   return { clientes, carregando }
 }

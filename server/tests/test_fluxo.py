@@ -379,7 +379,8 @@ def test_banco_antigo_ganha_colunas_novas(c, admin):
     from sqlalchemy import text
     from app.database import engine, _migrar_colunas_faltantes
 
-    r = c.post("/api/estacoes/grupos", headers=admin, params={"nome": "Sala antiga"})
+    piso = c.get("/api/pisos/", headers=admin).json()[0]["id"]
+    r = c.post("/api/estacoes/grupos", headers=admin, params={"nome": "Sala antiga", "piso_id": piso})
     assert r.status_code == 200, r.text
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE grupos_estacao DROP COLUMN cor"))
@@ -930,69 +931,133 @@ def test_backup_pelo_painel(c, admin, operador, tmp_path, monkeypatch):
         assert c.get(f"/api/config/backup/{ruim}", headers=admin).status_code == 404
 
 
-# ── 4.7 Piso adulto / infantil ───────────────────────────────────────────────
+# ── 4.7 Pisos (cadastrados no sistema; o mapa/grupo e o cliente pertencem a um) ──
+
+def _pisos(c, admin):
+    return {p["nome"]: p for p in c.get("/api/pisos/", headers=admin).json()}
+
+
+def _id_piso(c, admin, nome):
+    return _pisos(c, admin)[nome]["id"]
+
 
 def _estacao_infantil(c, admin):
-    """Estação nova num grupo do piso infantil."""
-    r = c.post("/api/estacoes/grupos?nome=Sala%20Infantil&piso=infantil", headers=admin)
+    """Estação nova num grupo do piso Infantil."""
+    infantil = _id_piso(c, admin, "Infantil")
+    r = c.post(f"/api/estacoes/grupos?nome=Sala%20Infantil&piso_id={infantil}", headers=admin)
     assert r.status_code == 200, r.text
-    assert r.json()["piso"] == "infantil"
+    assert r.json()["piso_id"] == infantil
     nome = f"INF-{next(_contador):02d}"
     r = c.post(f"/api/estacoes/?nome={nome}&grupo_id={r.json()['id']}", headers=admin)
     assert r.status_code == 200, r.text
-    assert r.json()["piso"] == "infantil"
+    assert r.json()["piso_id"] == infantil
     return nome
 
 
 def _cliente_infantil(c, admin):
     n = next(_contador)
-    cliente = {"login": f"crianca{n}", "nome": f"Crianca {n}", "senha": "senha-crianca", "piso": "infantil"}
+    cliente = {"login": f"crianca{n}", "nome": f"Crianca {n}", "senha": "senha-crianca",
+               "piso_id": _id_piso(c, admin, "Infantil")}
     r = c.post("/api/clientes/", headers=admin, json=cliente)
     assert r.status_code == 200, r.text
-    assert r.json()["piso"] == "infantil"
+    assert r.json()["piso_nome"] == "Infantil"
     return cliente, r.json()["id"]
 
 
-def test_cliente_e_estacao_sem_piso_sao_do_adulto(c, admin, cenario):
+def test_adulto_e_infantil_ja_existem_e_adulto_e_o_padrao(c, admin):
+    pisos = _pisos(c, admin)
+    assert pisos["Adulto"]["padrao"] and not pisos["Infantil"]["padrao"]
+    assert pisos["Adulto"]["cor"].startswith("#")
+
+
+def test_cliente_e_estacao_sem_grupo_ficam_no_piso_padrao(c, admin, cenario):
+    adulto = _id_piso(c, admin, "Adulto")
     cliente = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()
-    assert cliente["piso"] == "adulto"
+    assert cliente["piso_id"] == adulto  # gravado no cadastro, nao so "vazio = padrao"
     estacoes = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
-    assert estacoes[cenario["estacao"]]["piso"] == "adulto"  # sem grupo
+    assert estacoes[cenario["estacao"]]["piso_id"] == adulto  # sem grupo
 
 
-def test_piso_invalido_e_recusado(c, admin, cenario):
-    r = c.put(f"/api/clientes/{cenario['cliente_id']}", headers=admin, json={"piso": "terreo"})
-    assert r.status_code == 422
-    r = c.post("/api/estacoes/grupos?nome=X&piso=terreo", headers=admin)
-    assert r.status_code == 422
+def test_criar_renomear_e_excluir_piso(c, admin, operador):
+    assert c.post("/api/pisos/", headers=operador, json={"nome": "Juvenil", "cor": "#22c55e"}).status_code == 403
+    r = c.post("/api/pisos/", headers=admin, json={"nome": "Juvenil", "cor": "#22c55e"})
+    assert r.status_code == 200, r.text
+    pid = r.json()["id"]
+    assert c.post("/api/pisos/", headers=admin, json={"nome": "juvenil", "cor": "#000000"}).status_code == 400
+    assert c.post("/api/pisos/", headers=admin, json={"nome": "Cor ruim", "cor": "verde"}).status_code == 422
+    r = c.put(f"/api/pisos/{pid}", headers=admin, json={"nome": "Juvenil 2"})
+    assert r.status_code == 200 and r.json()["nome"] == "Juvenil 2"
+    assert c.delete(f"/api/pisos/{pid}", headers=admin).status_code == 200
+    assert "Juvenil 2" not in _pisos(c, admin)
 
 
-def test_trocar_piso_registra_quem_trocou(c, operador, cenario):
+def test_piso_em_uso_ou_padrao_nao_se_exclui(c, admin):
+    _cliente_infantil(c, admin)
+    r = c.delete(f"/api/pisos/{_id_piso(c, admin, 'Infantil')}", headers=admin)
+    assert r.status_code == 400 and "cliente" in r.json()["detail"]
+    r = c.delete(f"/api/pisos/{_id_piso(c, admin, 'Adulto')}", headers=admin)
+    assert r.status_code == 400
+
+
+def test_trocar_o_piso_padrao(c, admin):
+    r = c.post("/api/pisos/", headers=admin, json={"nome": "Temporario", "cor": "#123456"})
+    pid = r.json()["id"]
+    assert c.put(f"/api/pisos/{pid}", headers=admin, json={"padrao": True}).status_code == 200
+    pisos = _pisos(c, admin)
+    assert pisos["Temporario"]["padrao"] and not pisos["Adulto"]["padrao"]  # so um padrao
+    c.put(f"/api/pisos/{pisos['Adulto']['id']}", headers=admin, json={"padrao": True})
+    assert c.delete(f"/api/pisos/{pid}", headers=admin).status_code == 200
+
+
+def test_mapa_novo_exige_piso(c, admin):
+    assert c.post("/api/estacoes/grupos?nome=Sem%20piso", headers=admin).status_code == 422
+    assert c.post("/api/estacoes/grupos?nome=X&piso_id=99999", headers=admin).status_code == 400
+
+
+def test_mapa_antigo_sem_piso_aparece_como_sem_piso(c, admin):
+    from app.models import GrupoEstacao
+    db = SessionLocal()
+    g = GrupoEstacao(nome="Mapa antigo")  # como os grupos criados antes dos pisos
+    db.add(g)
+    db.commit()
+    gid = g.id
+    db.close()
+    grupo = next(x for x in c.get("/api/estacoes/grupos", headers=admin).json() if x["id"] == gid)
+    assert grupo["piso_id"] is None  # o painel avisa: escolha o piso deste mapa
+
+
+def test_piso_inexistente_e_recusado_no_cliente(c, admin, cenario):
+    r = c.put(f"/api/clientes/{cenario['cliente_id']}", headers=admin, json={"piso_id": 99999})
+    assert r.status_code == 400
+
+
+def test_trocar_piso_registra_quem_trocou(c, admin, operador, cenario):
     cid = cenario["cliente_id"]
     r = c.put(f"/api/clientes/{cid}", headers=operador, json={"nome": "Outro nome"})
     assert r.json()["piso_alterado_por"] is None  # editar outra coisa nao conta
-    r = c.put(f"/api/clientes/{cid}", headers=operador, json={"piso": "infantil"})
+    r = c.put(f"/api/clientes/{cid}", headers=operador, json={"piso_id": _id_piso(c, admin, "Infantil")})
     assert r.status_code == 200, r.text
     dados = r.json()
-    assert dados["piso"] == "infantil"
+    assert dados["piso_nome"] == "Infantil"
     assert dados["piso_alterado_por"] == "Operador"
     assert dados["piso_alterado_em"]
 
 
 def test_grupo_troca_de_piso(c, admin):
     nome = _estacao_infantil(c, admin)
+    adulto = _id_piso(c, admin, "Adulto")
     estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
-    r = c.put(f"/api/estacoes/grupos/{estacao['grupo_id']}", headers=admin, json={"piso": "adulto"})
-    assert r.status_code == 200 and r.json()["piso"] == "adulto"
+    r = c.put(f"/api/estacoes/grupos/{estacao['grupo_id']}", headers=admin, json={"piso_id": adulto})
+    assert r.status_code == 200 and r.json()["piso_id"] == adulto
     estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
-    assert estacao["piso"] == "adulto"
+    assert estacao["piso_id"] == adulto
 
 
 def test_crianca_nao_loga_no_pc_do_adulto(c, admin, cenario):
     cliente, cid = _cliente_infantil(c, admin)
     c.post(f"/api/estacoes/fila/{cid}", headers=admin)
     fila = {a["cliente_id"]: a for a in c.get("/api/estacoes/fila", headers=admin).json()}
-    assert fila[cid]["cliente_piso"] == "infantil"
+    assert fila[cid]["cliente_piso_id"] == _id_piso(c, admin, "Infantil")
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
         dados = _logar_no_pc(ws, cliente)
         assert not dados["ok"]
@@ -1020,3 +1085,35 @@ def test_iniciar_direto_recusa_outro_piso(c, admin, cenario):
         assert "Infantil" in r.json()["detail"]
         estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
         assert estacao["status"] == "livre"
+
+
+def test_busca_de_clientes_filtra_pelo_piso(c, admin):
+    cliente, cid = _cliente_infantil(c, admin)
+    def ids(piso_id):
+        r = c.get(f"/api/clientes/?busca={cliente['login']}&piso_id={piso_id}", headers=admin)
+        assert r.status_code == 200, r.text
+        return [x["id"] for x in r.json()]
+    assert ids(_id_piso(c, admin, "Infantil")) == [cid]
+    assert ids(_id_piso(c, admin, "Adulto")) == []
+    r = c.get(f"/api/clientes/?busca={cliente['login']}", headers=admin)  # sem piso: todos
+    assert [x["id"] for x in r.json()] == [cid]
+
+
+def test_piso_de_texto_do_4_7a_vira_piso_id(c, admin, cenario):
+    # o 4.7a gravava o piso como texto (usuarios.piso = "infantil"); ao subir, vira piso_id
+    from sqlalchemy import text
+    from app.database import engine
+    from app.pisos import garantir_pisos
+    with engine.connect() as conn:
+        colunas = {r[1] for r in conn.execute(text("PRAGMA table_info(usuarios)"))}
+        if "piso" not in colunas:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN piso VARCHAR(10)"))
+        conn.execute(text("UPDATE usuarios SET piso = 'infantil', piso_id = NULL WHERE id = :id"),
+                     {"id": cenario["cliente_id"]})
+        conn.commit()
+    db = SessionLocal()
+    garantir_pisos(db)
+    db.commit()
+    db.close()
+    cliente = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()
+    assert cliente["piso_nome"] == "Infantil"

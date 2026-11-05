@@ -35,7 +35,7 @@ function lerExpandida() {
 
 export function Layout() {
   const [expandida, setExpandida] = useState(lerExpandida)
-  const { tempoReal } = useDados()
+  const { tempoReal, pisos, piso, trocarPiso } = useDados()
   const admin = Api.ehAdmin()
   const { tema, alternar: alternarTema } = useTema()
 
@@ -92,11 +92,43 @@ export function Layout() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[52px] shrink-0 items-center gap-4 border-b border-borda bg-superficie px-5">
+        <header
+          className={cn(
+            "flex h-[52px] shrink-0 items-center gap-4 border-b border-borda bg-superficie px-5",
+            piso && "border-t-[3px] border-t-piso", // faixa na cor do piso escolhido
+          )}
+        >
           <span className="text-[1.05rem] font-bold tracking-wide text-destaque">MatheCafé</span>
           <span className="rounded-md border border-borda bg-superficie-3 px-2.5 py-0.5 text-xs text-texto-suave uppercase">
             {Api.perfil()}
           </span>
+          <div
+            role="radiogroup"
+            aria-label="Piso"
+            className="flex rounded-lg border border-borda bg-superficie-2 p-0.5"
+          >
+            {pisos.map((p) => {
+              const ativo = piso?.id === p.id
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={ativo}
+                  onClick={() => trocarPiso(p.id)}
+                  title={`Mostrar só as estações, a fila e os clientes do piso ${p.nome}`}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                    ativo ? "text-white" : "text-texto-suave hover:text-texto",
+                  )}
+                  style={ativo ? { background: p.cor } : undefined}
+                >
+                  {!ativo && <span className="size-2 rounded-full" style={{ background: p.cor }} />}
+                  Piso {p.nome}
+                </button>
+              )
+            })}
+          </div>
           <div className="flex-1" />
           <span className="flex items-center gap-1.5 text-xs text-texto-fraco">
             <span className={cn("size-2 rounded-full", tempoReal ? "bg-livre" : "bg-desligada")} />

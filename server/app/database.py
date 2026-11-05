@@ -108,6 +108,10 @@ def init_db():
 
         if not db.query(GrupoEstacao).filter(GrupoEstacao.nome == "Padrao").first():
             db.add(GrupoEstacao(nome="Padrao", tempo_padrao_segundos=7200))
+        db.flush()
+
+        from app.pisos import garantir_pisos
+        garantir_pisos(db)
 
         configs_padrao = {
             "reiniciar_ao_encerrar": "false",

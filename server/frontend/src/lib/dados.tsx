@@ -1,13 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { Api } from "@/lib/api"
-import type { Estacao, Grupo, ItemFila, Sessao } from "@/lib/tipos"
+import type { Estacao, Grupo, ItemFila, Piso, Sessao } from "@/lib/tipos"
+import { aplicarCorDoPiso, gravarPiso, lerPiso } from "@/lib/piso"
 import { restanteDaSessao } from "@/lib/tempo"
 
 interface Dados {
+  /** Pisos cadastrados (Configurações → Pisos). */
+  pisos: Piso[]
+  /** Piso do seletor do cabeçalho. Estações, grupos, fila, sessões e buscas de clientes vêm só dele. */
+  piso: Piso | null
+  trocarPiso: (id: number) => void
+  recarregarPisos: () => Promise<void>
   estacoes: Estacao[]
   fila: ItemFila[]
   sessoes: Sessao[]
   grupos: Grupo[]
+  /** Todos os grupos, de todos os pisos: para configurar grupos e mover estações entre eles. */
+  todosGrupos: Grupo[]
   carregado: boolean
   tempoReal: boolean
   /** Muda a cada recarregarClientes: as buscas de clientes abertas refazem a consulta. */
@@ -24,6 +33,18 @@ interface Dados {
 const DadosContext = createContext<Dados | null>(null)
 
 export function ProvedorDados({ children }: { children: React.ReactNode }) {
+  const [pisos, setPisos] = useState<Piso[]>([])
+  const [pisoId, setPisoId] = useState<number | null>(lerPiso)
+  const trocarPiso = useCallback((id: number) => {
+    gravarPiso(id)
+    setPisoId(id)
+  }, [])
+  // o escolhido; se foi excluído (ou nunca escolheu), o padrão
+  const piso = useMemo(
+    () => pisos.find((p) => p.id === pisoId) ?? pisos.find((p) => p.padrao) ?? pisos[0] ?? null,
+    [pisos, pisoId],
+  )
+  useEffect(() => aplicarCorDoPiso(piso?.cor), [piso])
   const [estacoes, setEstacoes] = useState<Estacao[]>([])
   const [versaoClientes, setVersaoClientes] = useState(0)
   const [fila, setFila] = useState<ItemFila[]>([])
@@ -47,6 +68,9 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const recarregarSessoes = useCallback(async () => {
     setSessoes(await Api.get<Sessao[]>("/api/sessoes/ativas"))
   }, [])
+  const recarregarPisos = useCallback(async () => {
+    setPisos(await Api.get<Piso[]>("/api/pisos/"))
+  }, [])
   const recarregarGrupos = useCallback(async () => {
     setGrupos(await Api.get<Grupo[]>("/api/estacoes/grupos"))
   }, [])
@@ -58,9 +82,10 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarFila(),
       recarregarSessoes(),
       recarregarGrupos(),
+      recarregarPisos(),
     ])
     setCarregado(true)
-  }, [recarregarEstacoes, recarregarClientes, recarregarFila, recarregarSessoes, recarregarGrupos])
+  }, [recarregarEstacoes, recarregarClientes, recarregarFila, recarregarSessoes, recarregarGrupos, recarregarPisos])
 
   // Carga inicial + atualização de segurança a cada 30s
   useEffect(() => {
@@ -128,13 +153,32 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     }
   }, [agora, sessoes, recarregar])
 
+  // Tudo o que aparece nas telas é do piso escolhido
+  const doPiso = useMemo(() => {
+    const id = piso?.id
+    const estacoesDoPiso = estacoes.filter((e) => e.piso_id === id)
+    const nomes = new Set(estacoesDoPiso.map((e) => e.nome))
+    return {
+      estacoes: estacoesDoPiso,
+      // mapa antigo sem piso conta como o padrão (e Configurações → Grupos avisa)
+      grupos: grupos.filter((g) => g.piso_id === id || (g.piso_id == null && !!piso?.padrao)),
+      fila: fila.filter((f) => f.cliente_piso_id === id),
+      sessoes: sessoes.filter((s) => nomes.has(s.estacao_nome)),
+    }
+  }, [piso, estacoes, grupos, fila, sessoes])
+
   const valor = useMemo<Dados>(
     () => ({
-      estacoes,
+      pisos,
+      piso,
+      trocarPiso,
+      recarregarPisos,
+      estacoes: doPiso.estacoes,
       versaoClientes,
-      fila,
-      sessoes,
-      grupos,
+      fila: doPiso.fila,
+      sessoes: doPiso.sessoes,
+      grupos: doPiso.grupos,
+      todosGrupos: grupos,
       carregado,
       tempoReal,
       agora,
@@ -144,7 +188,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarEstacoes,
       sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
     }),
-    [estacoes, versaoClientes, fila, sessoes, grupos, carregado, tempoReal, agora, recarregar,
+    [pisos, piso, trocarPiso, recarregarPisos, doPiso, versaoClientes, sessoes, grupos, carregado, tempoReal, agora, recarregar,
      recarregarClientes, recarregarFila, recarregarEstacoes],
   )
 

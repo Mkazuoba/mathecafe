@@ -11,7 +11,7 @@ from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
 from app.pisos import recusa_de_piso
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
-from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, agente as agente_router
+from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
 
@@ -29,6 +29,7 @@ app.include_router(operadores.router, prefix="/api")
 app.include_router(config.router, prefix="/api")
 app.include_router(relatorios.router, prefix="/api")
 app.include_router(programacao.router, prefix="/api")
+app.include_router(pisos_router.router, prefix="/api")
 app.include_router(agente_router.router, prefix="/api")
 
 # A cada minuto o servidor grava que esta vivo. Ao subir de novo, isso diz
@@ -235,7 +236,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     }))
                     continue
 
-                # Piso adulto/infantil: recusa sempre; a liberacao continua
+                # Piso (app/pisos.py): recusa sempre; a liberacao continua
                 # valendo para um PC do piso certo
                 motivo_piso = recusa_de_piso(cliente, estacao)
                 if motivo_piso:

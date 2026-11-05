@@ -5,12 +5,13 @@ nascimento dos clientes do adulto ja importados.
 Rode dentro da pasta server/ com o venv ativo, na maquina do servidor:
   python importar_infantil.py              simula: so mostra o que faria
   python importar_infantil.py --aplicar    faz backup do banco e grava
+  --piso NOME                              piso de destino (padrao: Infantil, cadastrado no painel)
 
 Os CSV vem do exportar_fdb.py (Arquivos VSCyber/export e export_infantil).
 
 Regras (decididas com o Matheus em 05/11/2026):
 - nascimento do adulto: preenche so onde esta vazio;
-- login novo: entra no piso infantil, com o nascimento e a senha padrao 1234;
+- login novo: entra no piso de destino (Infantil), com o nascimento e a senha padrao 1234;
 - login que ja existe e e a mesma pessoa (mesmo primeiro nome e mesmo
   nascimento): um cadastro so; menor de 18 hoje passa para o infantil, os
   outros ficam onde estao (ninguem sai do infantil, entao rodar de novo nao muda nada);
@@ -26,7 +27,7 @@ from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.models import Usuario
+from app.models import Piso, Usuario
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 PASTA_VSCYBER = os.path.join(AQUI, "..", "Arquivos VSCyber")
@@ -91,7 +92,7 @@ def preencher_nascimento(db, linhas) -> int:
     return preenchidos
 
 
-def importar_infantil(db, linhas, hoje: date, senha_hash: str) -> dict:
+def importar_infantil(db, linhas, hoje: date, senha_hash: str, destino: Piso) -> dict:
     """Aplica as regras do topo na sessao (quem chama faz o commit)."""
     clientes = _clientes_por_login(db)
     resultado = {"novos": 0, "para_infantil": 0, "mantidos": 0, "conferir": []}
@@ -104,7 +105,7 @@ def importar_infantil(db, linhas, hoje: date, senha_hash: str) -> dict:
         existente = clientes.get(login.lower())
         if existente is None:
             novo = Usuario(login=login, nome=_nome_completo(linha), senha_hash=senha_hash, perfil="cliente",
-                           ativo=True, saldo_segundos=0, piso="infantil", data_nascimento=nascimento)
+                           ativo=True, saldo_segundos=0, piso_id=destino.id, data_nascimento=nascimento)
             db.add(novo)
             clientes[login.lower()] = novo
             resultado["novos"] += 1
@@ -129,8 +130,8 @@ def importar_infantil(db, linhas, hoje: date, senha_hash: str) -> dict:
             })
             continue
 
-        if existente.piso != "infantil" and idade(nascimento, hoje) < MAIORIDADE:
-            existente.piso = "infantil"
+        if existente.piso_id != destino.id and idade(nascimento, hoje) < MAIORIDADE:
+            existente.piso_id = destino.id
             existente.piso_alterado_por = QUEM_TROCOU
             existente.piso_alterado_em = agora
             resultado["para_infantil"] += 1
@@ -168,6 +169,7 @@ def main(argv=None):
     p.add_argument("--adulto", default=CSV_ADULTO)
     p.add_argument("--infantil", default=CSV_INFANTIL)
     p.add_argument("--conferir", default=CSV_CONFERIR)
+    p.add_argument("--piso", default="Infantil", help="nome do piso de destino, como no painel")
     args = p.parse_args(argv)
 
     from app.database import SessionLocal, init_db
@@ -181,14 +183,19 @@ def main(argv=None):
         _backup_antes()
     db = SessionLocal()
     try:
+        destino = db.query(Piso).filter(Piso.nome.ilike(args.piso.strip())).first()
+        if destino is None:
+            nomes = ", ".join(p.nome for p in db.query(Piso))
+            raise SystemExit(f"Piso '{args.piso}' nao existe. Pisos cadastrados: {nomes}")
+        print(f"Piso de destino: {destino.nome}")
         antes = db.query(Usuario).filter(Usuario.perfil == "cliente").count()
         preenchidos = preencher_nascimento(db, adulto)
         print("Calculando o hash da senha padrao...")
-        r = importar_infantil(db, infantil, hoje_br(), hash_senha(SENHA_PADRAO))
+        r = importar_infantil(db, infantil, hoje_br(), hash_senha(SENHA_PADRAO), destino)
         print(f"Clientes no MatheCafe antes: {antes}")
         print(f"  nascimento preenchido (adulto): {preenchidos}")
-        print(f"  novos no piso infantil:          {r['novos']}")
-        print(f"  ja existiam, passaram ao infantil (menores de 18): {r['para_infantil']}")
+        print(f"  novos no piso {destino.nome}:          {r['novos']}")
+        print(f"  ja existiam, passaram ao piso {destino.nome} (menores de 18): {r['para_infantil']}")
         print(f"  ja existiam, ficaram como estavam: {r['mantidos']}")
         print(f"  logins repetidos para conferir (nao importados): {len(r['conferir'])}")
         gravar_conferir(args.conferir, r["conferir"])

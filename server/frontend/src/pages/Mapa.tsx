@@ -233,7 +233,7 @@ function Pino({
 }
 
 function PainelDetalhe({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
-  const { sessaoDaEstacao, agora, grupos, recarregarEstacoes } = useDados()
+  const { sessaoDaEstacao, agora, todosGrupos: grupos, recarregarEstacoes } = useDados()
   const { encerrarSessao } = useAcoes()
   const avisar = useAvisos()
   const sessao = sessaoDaEstacao(e.nome)
@@ -268,7 +268,7 @@ function PainelDetalhe({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: (
             {e.grupo_id === null && <option value="">Sem grupo</option>}
             {grupos.map((g) => (
               <option key={g.id} value={g.id}>
-                {g.nome}
+                {g.nome}{g.piso_nome ? ` (piso ${g.piso_nome})` : " (sem piso)"}
               </option>
             ))}
           </Select>

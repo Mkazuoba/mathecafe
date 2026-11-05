@@ -34,6 +34,12 @@
   --color-perigo: #ef4444;
   --color-perigo-fundo: #2c0a0a;
   --color-perigo-borda: #7f1d1d;
+
+  /* Piso escolhido no cabeçalho: --color-piso recebe a cor cadastrada do piso
+     (lib/piso.tsx, aplicarCorDoPiso); o fundo e a borda saem dela. */
+  --color-piso: #6366f1;
+  --color-piso-fundo: color-mix(in srgb, var(--color-piso) 16%, var(--color-superficie));
+  --color-piso-borda: color-mix(in srgb, var(--color-piso) 55%, var(--color-borda));
 }
 
 :root {
@@ -74,6 +80,9 @@
   --color-perigo: #dc2626;
   --color-perigo-fundo: #fee2e2;
   --color-perigo-borda: #f5a3a3;
+
+  --color-piso-fundo: color-mix(in srgb, var(--color-piso) 12%, var(--color-superficie));
+  --color-piso-borda: color-mix(in srgb, var(--color-piso) 45%, var(--color-borda));
 }
 
 html,

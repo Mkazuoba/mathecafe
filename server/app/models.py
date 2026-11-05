@@ -19,14 +19,26 @@ class Usuario(Base):
     documento = Column(String(30), nullable=True)
     data_nascimento = Column(Date, nullable=True)
     foto_em = Column(DateTime, nullable=True)  # quando a foto mudou; None = sem foto (fotos_clientes)
-    # Piso adulto | infantil (app/pisos.py); a troca registra o nome de quem trocou e quando
-    piso = Column(String(10), default="adulto")
+    # Piso do cliente (app/pisos.py): so entra nos PCs do mesmo piso. Vazio = piso padrao.
+    # A troca registra o nome de quem trocou e quando.
+    piso_id = Column(Integer, ForeignKey("pisos.id"), nullable=True, index=True)
     piso_alterado_por = Column(String(100), nullable=True)
     piso_alterado_em = Column(DateTime, nullable=True)
 
+    piso = relationship("Piso")
     sessoes = relationship("Sessao", back_populates="cliente", foreign_keys="Sessao.cliente_id")
     autorizacao = relationship("Autorizacao", back_populates="cliente", uselist=False,
                                foreign_keys="Autorizacao.cliente_id")
+
+
+class Piso(Base):
+    """Piso da biblioteca (Adulto, Infantil...), cadastrado pelo admin. Cada mapa
+    (grupo) e cada cliente pertence a um; um deles e o padrao (app/pisos.py)."""
+    __tablename__ = "pisos"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(40), nullable=False, unique=True)
+    cor = Column(String(7), nullable=False, default="#6366f1")
+    padrao = Column(Boolean, default=False)
 
 
 class GrupoEstacao(Base):
@@ -35,8 +47,11 @@ class GrupoEstacao(Base):
     nome = Column(String(50), nullable=False)
     tempo_padrao_segundos = Column(Integer, default=7200)
     cor = Column(String(7), default="#6366f1")  # hex, ex: "#6366f1"
-    piso = Column(String(10), nullable=True)  # adulto | infantil; vazio conta como adulto (app/pisos.py)
+    # Piso do mapa: obrigatorio ao criar; vazio so em grupos antigos (o painel avisa)
+    # e, ate escolher, conta como o piso padrao
+    piso_id = Column(Integer, ForeignKey("pisos.id"), nullable=True)
     ativo = Column(Boolean, default=True)
+    piso = relationship("Piso")
     estacoes = relationship("Estacao", back_populates="grupo")
 
 
