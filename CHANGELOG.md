@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-06 — Dock sem pisca e sininho junto da hora (tarefa 9.4; agente 1.9.2)
+
+- **Dock parou de piscar**: o efeito de crescer redesenhava o dock inteiro (e recolocava o bloco da hora) a cada 16 ms com o mouse em cima. Agora não há animação: o mouse só contorna o ícone e mostra o nome, e o dock é redesenhado apenas quando abre/fecha um app, muda o foco ou o tema.
+- **Sininho pequeno ao lado da hora**, fora do dock, com o número das não lidas. O dock ficou com o Início e os apps abertos.
+
 ## 2026-11-06 — Dock menor e notificações em pilha (tarefa 9.4; agente 1.9.1)
 
 - **Dock na faixa da barra do Windows** (48 px): mostra só o Início, **os apps abertos** (aparecem ao abrir, somem ao fechar; ponto no app em uso) e o sininho. Na 1.9.0 ele era alto, mostrava todos os apps liberados e cobria parte do navegador.

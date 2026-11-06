@@ -452,7 +452,7 @@ def test_dock_e_notificacoes_do_agente():
     # notificacoes no canto: a mensagem do operador na sessao vira notificacao
     src = _fonte()
     dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
-    assert "-transparentcolor" in dock and '"sininho"' in dock and "lbl_relogio" in dock
+    assert "-transparentcolor" in dock and "self.sininho" in dock and "lbl_relogio" in dock
     msg = src[src.index('elif evento == "mensagem_tela":'):]
     msg = msg[:msg.index("elif evento ==", 10)]
     assert "self.notificacoes.notificar(" in msg and 'dados.get("origem") == "horario"' in msg
@@ -461,6 +461,20 @@ def test_dock_e_notificacoes_do_agente():
     # nada passa para o proximo cliente
     voltar = src[src.index("def _voltar_login"):src.index("def _countdown_encerramento")]
     assert "self.notificacoes.limpar()" in voltar
+
+
+def test_dock_nao_pisca_e_sininho_junto_da_hora():
+    # 1.9.1 piscava: redesenhava o dock inteiro a cada 16 ms com o mouse em cima.
+    # Agora o mouse so troca o contorno do icone e o sininho fica no bloco da hora.
+    src = _fonte()
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert "after(16" not in dock
+    mover = dock[dock.index("def _ao_mover"):dock.index("def _ao_sair")]
+    assert "desenhar(" not in mover
+    assert "tk.Canvas(self.bloco" in dock  # sininho dentro do bloco, ao lado do relogio
+    montar = dock[dock.index("def _montar_itens"):dock.index("def atualizar_apps")]
+    assert "sininho" not in montar  # fora do dock
+    assert dock.count("create_window(") == 1 and "_janela_bloco is None" in dock
 
 
 def test_cor_do_piso_no_agente():

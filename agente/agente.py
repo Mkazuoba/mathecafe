@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.9.1"
+VERSAO = "1.9.2"
 
 import asyncio
 import json
@@ -404,15 +404,18 @@ class BarraSessao:
     """Dock do MatheCafé na sessão, no lugar da barra do Windows (9.4).
 
     Ocupa só a faixa da barra do Windows (a que os apps maximizados já
-    respeitam), sem invadir a tela. No meio, o dock: Início, os apps liberados
-    que estão abertos (o em foco com bolinha) e o sininho das notificações; o
-    ícone cresce um pouco com o mouse e o nome aparece num balão. À direita,
-    um bloco com relógio, tempo restante, tema e Encerrar. Fora do desenho a
-    janela é transparente.
+    respeitam), sem invadir a tela. No meio, o dock: Início e os apps
+    liberados que estão abertos (o em foco com bolinha); com o mouse em cima o
+    ícone ganha um contorno e o nome aparece num balão. À direita, um bloco com
+    o sininho das notificações, relógio, tempo restante, tema e Encerrar. Fora
+    do desenho a janela é transparente.
+
+    Sem animação: o canvas só é redesenhado quando algo muda (redesenhar a cada
+    quadro fazia o dock piscar na estação).
     """
     CHAVE = "#010203"  # cor que vira transparente
     ALTURA = 48  # sem a barra do Windows para copiar
-    BASE, MAXIMO, ALCANCE = 32, 38, 90  # px: ícone parado, sob o mouse, raio do efeito
+    ICONE = 32  # px
     ESPACO = 8
     CORES_APPS = ("#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6")
 
@@ -444,17 +447,21 @@ class BarraSessao:
         self.lbl_balao.pack()
 
         self._itens = []  # [{"chave", "nome", "letra", "cor", "acao"}]
-        self._tamanhos = []  # tamanho atual de cada ícone (anima até o alvo)
-        self._mouse_x = None
+        self._sobre = None  # índice do ícone sob o mouse
         self._janelas = {}  # processo -> [hwnd] (só apps liberados abertos)
         self._foco = None
-        self._animando = False
+        self._janela_bloco = None  # item do canvas com o bloco (criado uma vez só)
 
         # bloco da direita (widgets de verdade, sobre um retângulo arredondado do canvas)
         self.bloco = tk.Frame(self.canvas, bg=p["superficie"])
+        # sininho pequeno, colado na hora (clicar mostra/esconde as notificações)
+        self.sininho = tk.Canvas(self.bloco, width=26, height=26, bg=p["superficie"], highlightthickness=0,
+                                 bd=0, cursor="hand2")
+        self.sininho.pack(side="left", padx=(8, 0))
+        self.sininho.bind("<Button-1>", lambda _e: self._sininho())
         self.lbl_relogio = tk.Label(self.bloco, text="--:--", font=("Segoe UI", 12, "bold"),
                                     fg=p["texto"], bg=p["superficie"])
-        self.lbl_relogio.pack(side="left", padx=(10, 6))
+        self.lbl_relogio.pack(side="left", padx=(2, 6))
         self.lbl_tempo = tk.Label(self.bloco, text="00:00:00", font=("Consolas", 12, "bold"),
                                   fg="#22c55e", bg=p["superficie"])
         self.lbl_tempo.pack(side="left", padx=6)
@@ -524,11 +531,9 @@ class BarraSessao:
             itens.append({"chave": processo, "nome": nome, "letra": nome.strip()[:1].upper(),
                           "cor": self.CORES_APPS[i % len(self.CORES_APPS)],
                           "acao": lambda p=processo: self._trazer(p)})
-        itens.append({"chave": "sininho", "nome": "Notificações", "letra": "🔔", "cor": "#334155",
-                      "acao": self._sininho})
-        tamanhos = {it["chave"]: t for it, t in zip(self._itens, self._tamanhos)}
         self._itens = itens
-        self._tamanhos = [tamanhos.get(it["chave"], self.BASE) for it in itens]
+        self._sobre = None
+        self.balao.withdraw()
 
     def atualizar_apps(self, janelas):
         """janelas: [(hwnd, titulo, processo)] dos apps liberados abertos agora."""
@@ -556,83 +561,58 @@ class BarraSessao:
         contar = getattr(self.app, "notificacoes_nao_lidas", None)
         return contar() if contar else 0
 
-    # ── desenho e animação ──
-    def _alvos(self):
-        """Tamanho de cada ícone pela distância do mouse (efeito do dock, contido na faixa)."""
-        if self._mouse_x is None:
-            return [self.BASE] * len(self._itens)
-        alvos = []
-        for x in self._centros(self._tamanhos):
-            perto = max(0.0, 1 - abs(self._mouse_x - x) / self.ALCANCE)
-            alvos.append(self.BASE + (self.MAXIMO - self.BASE) * perto)
-        return alvos
-
-    def _centros(self, tamanhos):
+    # ── mouse ──
+    def _centros(self):
         largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
-        total = sum(tamanhos) + self.ESPACO * (len(tamanhos) - 1)
-        x = (largura - total) / 2
-        centros = []
-        for t in tamanhos:
-            centros.append(x + t / 2)
-            x += t + self.ESPACO
-        return centros
+        n = len(self._itens)
+        passo = self.ICONE + self.ESPACO
+        x = (largura - (n * passo - self.ESPACO)) / 2 + self.ICONE / 2
+        return [x + k * passo for k in range(n)]
 
-    def _animar(self):
-        alvos = self._alvos()
-        mudou = False
-        for i, alvo in enumerate(alvos):
-            atual = self._tamanhos[i]
-            if abs(alvo - atual) > 0.5:
-                self._tamanhos[i] = atual + (alvo - atual) * 0.35
-                mudou = True
-            else:
-                self._tamanhos[i] = alvo
-        self.desenhar()
-        if mudou:
-            self.top.after(16, self._animar)
-        else:
-            self._animando = False
-
-    def _iniciar_animacao(self):
-        if not self._animando:
-            self._animando = True
-            self.top.after(16, self._animar)
-
-    def _ao_mover(self, ev):
-        self._mouse_x = ev.x
-        self._iniciar_animacao()
-        self._mostrar_balao(self._item_em(ev.x, ev.y))
-
-    def _ao_sair(self, _ev):
-        self._mouse_x = None
-        self.balao.withdraw()
-        self._iniciar_animacao()
-
-    def _item_em(self, x, _y):
-        for item, centro, t in zip(self._itens, self._centros(self._tamanhos), self._tamanhos):
-            if centro - t / 2 - self.ESPACO / 2 <= x <= centro + t / 2 + self.ESPACO / 2:
-                return item, centro
+    def _item_em(self, x):
+        for k, centro in enumerate(self._centros()):
+            if abs(x - centro) <= (self.ICONE + self.ESPACO) / 2:
+                return k
         return None
 
-    def _mostrar_balao(self, achado):
-        if not achado:
+    def _ao_mover(self, ev):
+        k = self._item_em(ev.x)
+        if k == self._sobre:
+            return  # nada mudou: não mexe em nada (é o que evita o pisca)
+        self._sobre = k
+        self._marcar_sobre()
+        self._mostrar_balao(k)
+
+    def _ao_sair(self, _ev):
+        if self._sobre is not None:
+            self._sobre = None
+            self._marcar_sobre()
+        self.balao.withdraw()
+
+    def _marcar_sobre(self):
+        cor = self.app.paleta["texto"]
+        for k in range(len(self._itens)):
+            self.canvas.itemconfig(f"icone{k}", outline=cor if k == self._sobre else "")
+
+    def _mostrar_balao(self, k):
+        if k is None:
             self.balao.withdraw()
             return
-        item, centro = achado
-        self.lbl_balao.config(text=item["nome"])
+        self.lbl_balao.config(text=self._itens[k]["nome"])
         self.balao.update_idletasks()
         w, h = self.lbl_balao.winfo_reqwidth(), self.lbl_balao.winfo_reqheight()
-        x = int(self.top.winfo_rootx() + centro - w / 2)
+        x = int(self.top.winfo_rootx() + self._centros()[k] - w / 2)
         y = self.top.winfo_rooty() - h - 4
         self.balao.geometry(f"+{x}+{y}")
         self.balao.deiconify()
         self.balao.lift()
 
     def _ao_clicar(self, ev):
-        achado = self._item_em(ev.x, ev.y)
-        if achado:
-            achado[0]["acao"]()
+        k = self._item_em(ev.x)
+        if k is not None:
+            self._itens[k]["acao"]()
 
+    # ── desenho ──
     @staticmethod
     def _retangulo(c, x1, y1, x2, y2, r, **opcoes):
         """Retângulo de cantos arredondados no canvas."""
@@ -642,36 +622,46 @@ class BarraSessao:
         return c.create_polygon(pontos, smooth=True, **opcoes)
 
     def desenhar(self):
+        """Redesenha tudo (só quando algo muda: apps abertos, foco, tema)."""
         c, p = self.canvas, self.app.paleta
-        c.delete("all")
-        if not self._itens:
-            return
+        c.delete("desenho")
         largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
-        h = self.altura
+        h, t = self.altura, self.ICONE
         meio = h / 2
-        centros = self._centros(self._tamanhos)
-        # fundo do dock: a faixa toda de altura, arredondado
-        esquerda = centros[0] - self._tamanhos[0] / 2 - 8
-        direita = centros[-1] + self._tamanhos[-1] / 2 + 8
-        self._retangulo(c, esquerda, 3, direita, h - 3, 14, fill=p["superficie"], outline=p["superficie3"])
-        for item, x, t in zip(self._itens, centros, self._tamanhos):
-            topo = meio - t / 2 - 2
-            self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"], outline="")
-            c.create_text(x, topo + t / 2, text=item["letra"], fill="white", font=("Segoe UI", int(t * 0.4), "bold"))
-            if item["chave"] == self._foco:
-                c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="")
-            if item["chave"] == "sininho":
-                n = self.contagem_notificacoes()
-                if n:
-                    bx, by = x + t / 2 - 3, topo + 3
-                    c.create_oval(bx - 7, by - 7, bx + 7, by + 7, fill="#ef4444", outline=p["superficie"], width=2)
-                    c.create_text(bx, by, text=str(min(n, 9)) + ("+" if n > 9 else ""), fill="white",
-                                  font=("Segoe UI", 7, "bold"))
-        # bloco separado à direita: relógio, tempo, tema e Encerrar
+        if self._itens:
+            centros = self._centros()
+            self._retangulo(c, centros[0] - t / 2 - 8, 3, centros[-1] + t / 2 + 8, h - 3, 14,
+                            fill=p["superficie"], outline=p["superficie3"], tags="desenho")
+            for k, (item, x) in enumerate(zip(self._itens, centros)):
+                topo = meio - t / 2 - 2
+                self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"],
+                                outline=p["texto"] if k == self._sobre else "", width=2,
+                                tags=("desenho", f"icone{k}"))
+                c.create_text(x, topo + t / 2, text=item["letra"], fill="white",
+                              font=("Segoe UI", int(t * 0.4), "bold"), tags="desenho")
+                if item["chave"] == self._foco:
+                    c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="", tags="desenho")
+        # bloco separado à direita: sininho, relógio, tempo, tema e Encerrar
+        self.atualizar_sininho()
         self.bloco.update_idletasks()
         bw = self.bloco.winfo_reqwidth()
-        self._retangulo(c, largura - bw - 18, 3, largura - 6, h - 3, 12, fill=p["superficie"], outline=p["superficie3"])
-        c.create_window(largura - 12, meio, window=self.bloco, anchor="e")
+        self._retangulo(c, largura - bw - 18, 3, largura - 6, h - 3, 12, fill=p["superficie"],
+                        outline=p["superficie3"], tags="desenho")
+        if self._janela_bloco is None:
+            self._janela_bloco = c.create_window(largura - 12, meio, window=self.bloco, anchor="e")
+        else:
+            c.coords(self._janela_bloco, largura - 12, meio)
+
+    def atualizar_sininho(self):
+        """Só o sininho (número de não lidas), sem tocar no resto do dock."""
+        s, p = self.sininho, self.app.paleta
+        s.delete("all")
+        s.config(bg=p["superficie"])
+        n = self.contagem_notificacoes()
+        s.create_text(12, 14, text="🔔", font=("Segoe UI Emoji", 11), fill=p["texto" if n else "texto2"])
+        if n:
+            s.create_oval(14, 1, 26, 13, fill="#ef4444", outline="")
+            s.create_text(20, 7, text=str(n) if n < 10 else "9+", fill="white", font=("Segoe UI", 6, "bold"))
 
 
 class Notificacoes:
@@ -732,7 +722,7 @@ class Notificacoes:
         if not self.fixa:
             self._agendar_sumir()
         self._mostrar()
-        self.app.barra.desenhar()  # número do sininho
+        self.app.barra.atualizar_sininho()
 
     def nao_lidas(self):
         return sum(1 for i in self.itens if not i["lida"])
@@ -775,7 +765,7 @@ class Notificacoes:
                 self._timer = None
             for i in self.itens:
                 i["lida"] = True
-            self.app.barra.desenhar()
+            self.app.barra.atualizar_sininho()
         elif not self.fixa:
             self._agendar_sumir()
         if not self._animando:
@@ -800,13 +790,13 @@ class Notificacoes:
         if not self.itens:
             self._alvo = self._aberta = 0.0
         self._mostrar()
-        self.app.barra.desenhar()
+        self.app.barra.atualizar_sininho()
 
     def _limpar_tudo(self):
         self.itens = []
         self._alvo = self._aberta = 0.0
         self._mostrar()
-        self.app.barra.desenhar()
+        self.app.barra.atualizar_sininho()
 
     def _ao_clicar(self, ev):
         for x1, y1, x2, y2, acao in reversed(self._alvos):
