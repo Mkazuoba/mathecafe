@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.10.0"
+VERSAO = "1.10.1"
 
 import asyncio
 import json
@@ -33,6 +33,7 @@ import ctypes
 import atexit
 import hashlib
 import re
+import math
 import hmac
 from datetime import datetime
 from io import BytesIO
@@ -95,7 +96,7 @@ import websockets
 import psutil
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageFilter
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -642,6 +643,13 @@ class BarraSessao:
         if janelas:
             trazer_para_frente(janelas[0])
 
+    def centro_do_item(self, chave):
+        """x na tela do centro de um ícone do dock (para abrir a pasta em cima dele)."""
+        for item, x in zip(self._itens, self._centros()):
+            if item["chave"] == chave:
+                return self.top.winfo_rootx() + x
+        return None
+
     def _meus_arquivos(self):
         abrir = getattr(self.app, "abrir_meus_arquivos", None)
         if abrir:
@@ -998,119 +1006,206 @@ class Notificacoes:
         return texto if len(texto) <= cabe else texto[: cabe - 1].rstrip() + "…"
 
 
+def _fonte_pil(arquivo, tamanho):
+    try:
+        return ImageFont.truetype(os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", arquivo), tamanho)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _curva_s(x1, y1, x2, y2, passos=16):
+    """Pontos de uma curva suave (smoothstep) de (x1, y1) a (x2, y2): o degrau da aba da pasta."""
+    pontos = []
+    for i in range(passos + 1):
+        t = i / passos
+        pontos.append((x1 + (x2 - x1) * t, y1 + (y2 - y1) * (3 * t * t - 2 * t * t * t)))
+    return pontos
+
+
 class MeusArquivos:
-    """Janela "Meus arquivos" (9.5): o que o cliente baixou nesta sessão, com
-    Abrir (só documentos e imagens, e só se o programa que abre o tipo estiver
-    liberado) e Excluir. O Explorador continua bloqueado; a pasta é esvaziada
-    quando a sessão termina."""
-    LARGURA, ALTURA = 520, 440
+    """"Meus arquivos" (9.5) como uma pasta: os arquivos baixados na sessão saem
+    dela em cartões inclinados (as fotos com miniatura). Mouse em cima levanta o
+    cartão, clicar abre (só documentos e imagens, e só no programa liberado), o
+    × exclui (com confirmação) e clicar fora fecha. O Explorador continua
+    bloqueado; a pasta é esvaziada quando a sessão termina.
+
+    A pasta é desenhada com o Pillow numa imagem só (2x e reduzida, bordas
+    suaves) e trocada inteira quando muda: nada de redesenhar item a item."""
+    L, A = 460, 410
+    S = 2  # escala do desenho
+    CARTAO_L, CARTAO_A = 260, 172
+    MAX_CARTOES = 4
+    X0, X1, BASE = 22, 438, 396  # laterais e base da pasta
+    TRAS, FRENTE = 170, 230  # topo da parte de trás e da frente
+    TOPO_FRENTE = 112  # topo do cartão da frente
+    LEVANTA = 24
+    CHAVE = "#010203"
+    CORES_TIPO = {"pdf": (239, 68, 68), "doc": (59, 130, 246), "docx": (59, 130, 246), "odt": (59, 130, 246),
+                  "rtf": (59, 130, 246), "txt": (100, 116, 139), "xls": (34, 197, 94), "xlsx": (34, 197, 94),
+                  "ods": (34, 197, 94), "csv": (34, 197, 94), "ppt": (249, 115, 22), "pptx": (249, 115, 22),
+                  "odp": (249, 115, 22)}
+    IMAGENS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
     def __init__(self, app):
         self.app = app
         self.top = None
-        self._lista = None  # assinatura da última lista (só remonta se mudar)
-        self._confirmar = None  # caminho esperando o segundo clique em Excluir
+        self.arquivos = []
+        self._assinatura = None
+        self._pagina = 0
+        self._sobre = None  # caminho do cartão sob o mouse
+        self._confirmar = None  # caminho esperando o segundo clique no ×
+        self._aviso = ""
+        self._fechou_em = 0.0
+        self._solto = False  # o botão do mouse já foi solto desde que abriu
+        self._miniaturas = {}
+        self._camadas = {}  # tema -> (trás, frente, máscara da sombra): não mudam com o mouse
+        self._prontos = {}  # cartões já desenhados e girados
+        self._cartoes = []  # [{"caminho", "repouso", "levantado", "fechar"}] da frente para trás
+        self._botao = None  # retângulo do botão ⋯ (mais arquivos)
+        self._foto = None
 
+    # ── abrir e fechar ──
     def abrir(self):
-        if self.top and self.top.winfo_exists():
-            self.top.deiconify()
-            self.top.lift()
+        if self.top:
+            self.fechar()  # clicar no ícone de novo fecha
             return
-        p = self.app.paleta
+        if time.monotonic() - self._fechou_em < 0.4 or not PIL_AVAILABLE:
+            return  # foi o próprio clique no ícone que acabou de fechar
+        tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
+        centro = self.app.barra.centro_do_item("arquivos") or tela_l // 2
+        x = int(min(max(8, centro - self.L / 2), tela_l - self.L - 8))
+        y = tela_a - self.app.barra.altura - self.A + 6
         self.top = tk.Toplevel(self.app.root)
         self.top.overrideredirect(True)
         self.top.attributes("-topmost", True)
-        self.top.configure(bg=p["superficie3"])
-        tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
-        x = (tela_l - self.LARGURA) // 2
-        y = tela_a - self.app.barra.altura - self.ALTURA - 10
-        self.top.geometry(f"{self.LARGURA}x{self.ALTURA}+{x}+{y}")
-        caixa = tk.Frame(self.top, bg=p["superficie"])
-        caixa.pack(fill="both", expand=True, padx=1, pady=1)
-        topo = tk.Frame(caixa, bg=p["superficie"])
-        topo.pack(fill="x", padx=16, pady=(14, 2))
-        tk.Label(topo, text="📁  Meus arquivos", font=("Segoe UI", 13, "bold"), fg=p["texto"],
-                 bg=p["superficie"]).pack(side="left")
-        tk.Button(topo, text="✕", font=("Segoe UI", 10), fg=p["texto2"], bg=p["superficie"], relief="flat",
-                  activebackground=p["superficie3"], cursor="hand2", command=self.fechar).pack(side="right")
-        tk.Label(caixa, text="Arquivos baixados nesta sessão. Eles são apagados quando a sessão termina.",
-                 font=("Segoe UI", 9), fg=p["texto2"], bg=p["superficie"], anchor="w").pack(fill="x", padx=16)
-        self.lbl_aviso = tk.Label(caixa, text="", font=("Segoe UI", 9, "bold"), fg="#f59e0b", bg=p["superficie"],
-                                  anchor="w", wraplength=self.LARGURA - 32, justify="left")
-        self.lbl_aviso.pack(fill="x", padx=16, pady=(4, 0))
-        self.corpo = tk.Frame(caixa, bg=p["superficie"])
-        self.corpo.pack(fill="both", expand=True, padx=12, pady=(6, 12))
-        self._lista = None
-        self._atualizar()
+        self.top.configure(bg=self.CHAVE)
+        try:
+            self.top.attributes("-transparentcolor", self.CHAVE)
+        except tk.TclError:
+            pass
+        self.top.geometry(f"{self.L}x{self.A}+{x}+{y}")
+        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0, width=self.L, height=self.A)
+        self.canvas.pack(fill="both", expand=True)
+        self._item = self.canvas.create_image(0, 0, anchor="nw")
+        self.canvas.bind("<Motion>", self._ao_mover)
+        self.canvas.bind("<Leave>", lambda _e: self._marcar(None))
+        self.canvas.bind("<Button-1>", self._ao_clicar)
+        self.top.bind("<Escape>", lambda _e: self.fechar())
+        self._sobre = self._confirmar = None
+        self._aviso, self._pagina, self._assinatura, self._solto = "", 0, None, False
+        self._recarregar()
+        self.top.focus_force()
+        self._vigiar(0)
 
     def fechar(self):
-        if self.top and self.top.winfo_exists():
-            self.top.destroy()
+        if self.top:
+            try:
+                self.top.destroy()
+            except tk.TclError:
+                pass
+            self._fechou_em = time.monotonic()
         self.top = None
 
-    def _atualizar(self):
-        if not (self.top and self.top.winfo_exists()):
+    def _vigiar(self, n):
+        """Clicar fora fecha (a janela não recebe esse clique, então se confere o
+        botão do mouse); a cada 2 s relê a pasta (um download pode terminar)."""
+        if not self.top:
             return
-        arquivos = listar_arquivos(pasta_downloads())
-        assinatura = [(a["nome"], a["tamanho"], a["quando"]) for a in arquivos] + [self._confirmar]
-        if assinatura != self._lista:
-            self._lista = assinatura
-            self._montar(arquivos)
-        self.top.after(2000, self._atualizar)  # o download pode terminar com a janela aberta
+        try:
+            apertado = ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000 or \
+                ctypes.windll.user32.GetAsyncKeyState(0x02) & 0x8000
+        except Exception:
+            apertado = False
+        if not apertado:
+            self._solto = True
+        elif self._solto:
+            px, py = self.top.winfo_pointerxy()
+            x, y = self.top.winfo_rootx(), self.top.winfo_rooty()
+            if not (x <= px < x + self.L and y <= py < y + self.A):
+                self.fechar()
+                return
+        if n and n % 25 == 0:
+            self._recarregar()
+        self.top.after(80, lambda: self._vigiar(n + 1))
 
-    def _montar(self, arquivos):
-        p = self.app.paleta
-        for w in self.corpo.winfo_children():
-            w.destroy()
-        if not arquivos:
-            tk.Label(self.corpo, text="Nenhum arquivo baixado ainda.\nO que você baixar no navegador aparece aqui.",
-                     font=("Segoe UI", 10), fg=p["texto2"], bg=p["superficie"], justify="center").pack(expand=True)
+    # ── dados ──
+    def _recarregar(self):
+        self.arquivos = listar_arquivos(pasta_downloads())
+        assinatura = [(a["nome"], a["tamanho"], a["quando"]) for a in self.arquivos]
+        if assinatura != self._assinatura:
+            self._assinatura = assinatura
+            if self._pagina * self.MAX_CARTOES >= len(self.arquivos):
+                self._pagina = 0
+            self._desenhar()
+
+    def _visiveis(self):
+        i = self._pagina * self.MAX_CARTOES
+        return self.arquivos[i:i + self.MAX_CARTOES]
+
+    # ── mouse ──
+    @staticmethod
+    def _dentro(px, py, poligono):
+        dentro = False
+        j = len(poligono) - 1
+        for i, (xi, yi) in enumerate(poligono):
+            xj, yj = poligono[j]
+            if (yi > py) != (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi:
+                dentro = not dentro
+            j = i
+        return dentro
+
+    def _cartao_em(self, x, y):
+        if y >= self.FRENTE + (20 if x > self.X0 + 200 else 0):
+            return None  # atrás do painel da frente
+        for c in self._cartoes:  # da frente para trás
+            if self._dentro(x, y, c["levantado"]) or (c["caminho"] == self._sobre and self._dentro(x, y, c["repouso"])):
+                return c
+        return None
+
+    def _ao_mover(self, ev):
+        c = self._cartao_em(ev.x, ev.y)
+        self._marcar(c["caminho"] if c else None)
+
+    def _marcar(self, caminho):
+        if caminho != self._sobre:
+            self._sobre = caminho
+            self._desenhar()
+
+    def _ao_clicar(self, ev):
+        if self._botao and self._botao[0] <= ev.x <= self._botao[2] and self._botao[1] <= ev.y <= self._botao[3]:
+            self._pagina = (self._pagina + 1) % ((len(self.arquivos) - 1) // self.MAX_CARTOES + 1)
+            self._confirmar, self._aviso = None, ""
+            self._desenhar()
             return
-        for a in arquivos[:7]:
-            linha = tk.Frame(self.corpo, bg=p["superficie2"])
-            linha.pack(fill="x", pady=3)
-            documento = pode_abrir_arquivo(a["nome"])
-            tk.Label(linha, text="📄" if documento else "⛔", font=("Segoe UI Emoji", 14), fg=p["texto"],
-                     bg=p["superficie2"]).pack(side="left", padx=(10, 6), pady=6)
-            textos = tk.Frame(linha, bg=p["superficie2"])
-            textos.pack(side="left", fill="x", expand=True)
-            nome = a["nome"] if len(a["nome"]) <= 38 else a["nome"][:36] + "…"
-            tk.Label(textos, text=nome, font=("Segoe UI", 10, "bold"), fg=p["texto"], bg=p["superficie2"],
-                     anchor="w").pack(fill="x")
-            detalhe = f"{tamanho_legivel(a['tamanho'])} · {time.strftime('%H:%M', time.localtime(a['quando']))}"
-            if not documento:
-                detalhe += " · este tipo não pode ser aberto"
-            tk.Label(textos, text=detalhe, font=("Segoe UI", 8), fg=p["texto2"], bg=p["superficie2"],
-                     anchor="w").pack(fill="x")
-            confirmando = self._confirmar == a["caminho"]
-            tk.Button(linha, text="Confirmar" if confirmando else "Excluir", font=("Segoe UI", 9),
-                      fg="white" if confirmando else p["texto2"], bg="#ef4444" if confirmando else p["superficie3"],
-                      activebackground="#dc2626", relief="flat", padx=8, cursor="hand2",
-                      command=lambda c=a["caminho"]: self._excluir(c)).pack(side="right", padx=(4, 10))
-            if documento:
-                tk.Button(linha, text="Abrir", font=("Segoe UI", 9, "bold"), fg="white", bg=p["destaque"],
-                          activebackground=p["destaque"], relief="flat", padx=12, cursor="hand2",
-                          command=lambda c=a["caminho"]: self._abrir_arquivo(c)).pack(side="right")
-        if len(arquivos) > 7:
-            tk.Label(self.corpo, text=f"e mais {len(arquivos) - 7} arquivo(s)", font=("Segoe UI", 8),
-                     fg=p["texto2"], bg=p["superficie"]).pack(pady=(4, 0))
+        c = self._cartao_em(ev.x, ev.y)
+        if c and c["caminho"] == self._sobre and math.dist((ev.x, ev.y), c["fechar"]) <= 14:
+            self._excluir(c["caminho"])
+            return
+        self._confirmar = None
+        if c:
+            self._abrir_arquivo(c["caminho"])
+        else:
+            self._aviso = ""
+        if self.top:
+            self._desenhar()
 
     def _abrir_arquivo(self, caminho):
-        self.lbl_aviso.config(text="")
+        self._aviso = ""
         if not pode_abrir_arquivo(caminho):
+            self._aviso = "Este tipo de arquivo não pode ser aberto aqui."
             return
         programa = programa_que_abre(caminho)
         liberados = self.app.whitelist_procs
         if not programa or (liberados and os.path.basename(programa).lower() not in liberados):
-            self.lbl_aviso.config(text="Nenhum programa liberado neste computador abre este arquivo. "
-                                       "Peça ajuda ao atendimento.")
+            self._aviso = "Nenhum programa liberado abre este arquivo."
             return
         try:
-            os.startfile(caminho)
+            # direto no programa: abrindo pelo Windows vinha o aviso de segurança
+            subprocess.Popen([programa, caminho])
             self.app._log(f"Abrindo arquivo: {os.path.basename(caminho)}")
             self.fechar()
         except OSError as e:
-            self.lbl_aviso.config(text=f"Não foi possível abrir: {e}")
+            self._aviso = f"Não foi possível abrir: {e}"
 
     def _excluir(self, caminho):
         if self._confirmar != caminho:
@@ -1120,14 +1215,223 @@ class MeusArquivos:
             try:
                 os.remove(caminho)
             except OSError:
-                self.lbl_aviso.config(text="Não foi possível excluir (o arquivo está aberto em outro programa?).")
-        self._lista = None
-        self._atualizar_agora()
+                self._aviso = "Não foi possível excluir (está aberto em outro programa?)."
+            self._assinatura = None
+            self._recarregar()
+            return
+        self._desenhar()
 
-    def _atualizar_agora(self):
-        arquivos = listar_arquivos(pasta_downloads())
-        self._lista = [(a["nome"], a["tamanho"], a["quando"]) for a in arquivos] + [self._confirmar]
-        self._montar(arquivos)
+    # ── desenho ──
+    def _cores(self):
+        if self.app.tema == "claro":
+            return {"tras": (203, 208, 216), "frente": ((255, 255, 255), (232, 235, 240)), "borda": (214, 218, 225),
+                    "texto": (17, 24, 39), "texto2": (107, 114, 128), "botao": (17, 17, 17)}
+        return {"tras": (40, 45, 56), "frente": ((70, 77, 92), (34, 38, 48)), "borda": (88, 96, 112),
+                "texto": (243, 244, 246), "texto2": (163, 170, 184), "botao": (12, 12, 14)}
+
+    def _miniatura(self, a, w, h):
+        chave = (a["caminho"], a["quando"])
+        if chave not in self._miniaturas:
+            try:
+                with Image.open(a["caminho"]) as im:
+                    im.draft("RGB", (w, h))
+                    im = im.convert("RGB")
+                    escala = max(w / im.width, h / im.height)
+                    im = im.resize((max(w, int(im.width * escala)), max(h, int(im.height * escala))), Image.LANCZOS)
+                    x, y = (im.width - w) // 2, (im.height - h) // 2
+                    self._miniaturas[chave] = im.crop((x, y, x + w, y + h))
+            except Exception:
+                self._miniaturas[chave] = None
+        return self._miniaturas[chave]
+
+    def _caber(self, d, texto, fonte, largura):
+        if d.textlength(texto, font=fonte) <= largura:
+            return texto
+        while texto and d.textlength(texto + "…", font=fonte) > largura:
+            texto = texto[:-1]
+        return texto.rstrip() + "…"
+
+    def _cartao(self, a, sobre):
+        S = self.S
+        w, h = self.CARTAO_L * S, self.CARTAO_A * S
+        ext = os.path.splitext(a["nome"])[1].lower()
+        tipo = ext[1:].upper() or "ARQUIVO"
+        abre = pode_abrir_arquivo(a["nome"])
+        mini = self._miniatura(a, w, h) if ext in self.IMAGENS else None
+        mascara = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(mascara).rounded_rectangle([0, 0, w - 1, h - 1], radius=18 * S, fill=255)
+        if mini:
+            base = mini.convert("RGBA")
+            sombra = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            ds = ImageDraw.Draw(sombra)
+            for i in range(70 * S):  # escurece o alto para o nome aparecer
+                ds.line([(0, i), (w, i)], fill=(0, 0, 0, int(170 * (1 - i / (70 * S)))))
+            base = Image.alpha_composite(base, sombra)
+            cor_nome, cor_info = (255, 255, 255), (235, 235, 240)
+        elif abre:
+            base = Image.new("RGBA", (w, h), (250, 250, 252, 255))
+            cor_nome, cor_info = (17, 24, 39), (120, 126, 138)
+        else:
+            base = Image.new("RGBA", (w, h), (52, 56, 68, 255))
+            cor_nome, cor_info = (243, 244, 246), (252, 165, 165)
+        d = ImageDraw.Draw(base)
+        if not mini:
+            d.rounded_rectangle([0, 0, w - 1, h - 1], radius=18 * S, outline=(210, 214, 222) if abre else (80, 86, 100),
+                                width=S)
+        if not mini and abre:  # "linhas de texto" do documento
+            for y, fr in ((56, 0.82), (76, 0.94), (94, 0.62), (112, 0.88)):
+                d.rounded_rectangle([18 * S, y * S, (18 + (self.CARTAO_L - 36) * fr) * S, (y + 8) * S], radius=4 * S,
+                                    fill=(228, 231, 236))
+        f_nome, f_info = _fonte_pil("seguisb.ttf", 15 * S), _fonte_pil("consola.ttf", 11 * S)
+        info = f"{tipo} · {tamanho_legivel(a['tamanho'])}" if abre else "não abre aqui"
+        direita = w - 16 * S
+        if sobre:  # × para excluir (ou a confirmação)
+            if self._confirmar == a["caminho"]:
+                f_conf = _fonte_pil("seguisb.ttf", 11 * S)
+                tw = d.textlength("Excluir?", font=f_conf)
+                d.rounded_rectangle([direita - tw - 16 * S, 10 * S, direita + 4 * S, 34 * S], radius=12 * S,
+                                    fill=(239, 68, 68))
+                d.text((direita - tw - 6 * S, 22 * S), "Excluir?", font=f_conf, fill="white", anchor="lm")
+                direita -= tw + 26 * S
+            else:
+                cx, cy = w - 24 * S, 22 * S
+                d.ellipse([cx - 12 * S, cy - 12 * S, cx + 12 * S, cy + 12 * S], fill=(17, 17, 17, 210))
+                d.text((cx, cy), "×", font=_fonte_pil("segoeui.ttf", 16 * S), fill="white", anchor="mm")
+                direita = cx - 18 * S
+        else:
+            tw = d.textlength(info, font=f_info)
+            if abre and not mini:
+                d.ellipse([direita - tw - 14 * S, 18 * S, direita - tw - 6 * S, 26 * S],
+                          fill=self.CORES_TIPO.get(tipo.lower(), (148, 163, 184)))
+            d.text((direita, 22 * S), info, font=f_info, fill=cor_info, anchor="rm")
+            direita -= tw + 20 * S
+        d.text((18 * S, 22 * S), self._caber(d, a["nome"], f_nome, direita - 18 * S), font=f_nome, fill=cor_nome,
+               anchor="lm")
+        base.putalpha(mascara)
+        return base
+
+    def _forma(self, desenho, x1, y1, x2, y2, aba_x1, aba_x2, aba_y, esquerda):
+        """Corpo da pasta com uma aba (à esquerda na frente, à direita atrás)."""
+        S = self.S
+        desenho.rounded_rectangle([x1 * S, y1 * S, x2 * S, y2 * S], radius=26 * S, fill=255)
+        if esquerda:
+            desenho.rounded_rectangle([x1 * S, aba_y * S, aba_x2 * S, (y1 + 40) * S], radius=22 * S, fill=255,
+                                      corners=(True, False, False, True))
+            curva = _curva_s(aba_x2 - 4, aba_y, aba_x2 + 40, y1)
+        else:
+            desenho.rounded_rectangle([aba_x1 * S, aba_y * S, x2 * S, (y1 + 40) * S], radius=22 * S, fill=255,
+                                      corners=(False, True, False, False))
+            curva = _curva_s(aba_x1 + 4, aba_y, aba_x1 - 40, y1)
+        pontos = [(x * S, y * S) for x, y in curva]
+        pontos += [(pontos[-1][0], (y1 + 30) * S), (pontos[0][0], (y1 + 30) * S)]
+        desenho.polygon(pontos, fill=255)
+
+    def _desenhar(self):
+        if not self.top:
+            return
+        S, L, A = self.S, self.L, self.A
+        cores = self._cores()
+        tras, frente, sombra = self._camadas_fixas(cores)
+        img = tras.copy()
+        # cartões, de trás para a frente (o mais novo na frente)
+        visiveis = self._visiveis()
+        n = len(visiveis)
+        self._cartoes = []
+        meio = (self.X0 + self.X1) / 2
+        for k in range(n):
+            a = visiveis[n - 1 - k]
+            sobre = a["caminho"] == self._sobre
+            angulo = (n - 1 - k) * 6
+            cx = meio + (k - (n - 1) / 2) * 30
+            cy = self.TOPO_FRENTE - (n - 1 - k) * 22 + self.CARTAO_A / 2
+            chave = (a["caminho"], a["quando"], sobre, self._confirmar == a["caminho"], angulo, self.app.tema)
+            if chave not in self._prontos:
+                if len(self._prontos) > 40:
+                    self._prontos.clear()
+                self._prontos[chave] = self._cartao(a, sobre).rotate(angulo, resample=Image.BICUBIC, expand=True)
+            cartao = self._prontos[chave]
+            cy_agora = cy - (self.LEVANTA if sobre else 0)
+            img.alpha_composite(cartao, (int(cx * S - cartao.width / 2), int(cy_agora * S - cartao.height / 2)))
+            self._cartoes.insert(0, {
+                "caminho": a["caminho"],
+                "repouso": self._cantos(cx, cy, angulo),
+                "levantado": self._cantos(cx, cy - self.LEVANTA, angulo) if sobre else self._cantos(cx, cy, angulo),
+                "fechar": self._girar(cx, cy_agora, self.CARTAO_L / 2 - 24, -(self.CARTAO_A / 2 - 22), angulo)})
+        # sombra da frente só sobre o que já está desenhado, e a frente por cima
+        tem = img.getchannel("A").point(lambda v: 255 if v > 0 else 0)
+        sombra_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        sombra_img.putalpha(Image.composite(sombra, Image.new("L", img.size, 0), tem))
+        img = Image.alpha_composite(img, sombra_img)
+        img = Image.alpha_composite(img, frente)
+        # textos da frente
+        d = ImageDraw.Draw(img)
+        tx, ty = (self.X0 + 28) * S, (self.BASE - 84) * S
+        d.text((tx, ty), "Meus arquivos", font=_fonte_pil("seguisb.ttf", 23 * S), fill=cores["texto"], anchor="ls")
+        total = len(self.arquivos)
+        if self._aviso:
+            sub, cor = self._aviso, (245, 158, 11)
+        elif not total:
+            sub, cor = "nenhum arquivo ainda", cores["texto2"]
+        else:
+            sub = f"{total} {'item' if total == 1 else 'itens'}"
+            if total > self.MAX_CARTOES:
+                i = self._pagina * self.MAX_CARTOES
+                sub += f" · {i + 1}–{i + n}"
+            cor = cores["texto2"]
+        d.text((tx, ty + 26 * S), sub, font=_fonte_pil("consola.ttf", 13 * S), fill=cor, anchor="ls")
+        dica = "clique num arquivo para abrir" if total else "o que você baixar aparece aqui"
+        d.text((tx, ty + 52 * S), dica, font=_fonte_pil("segoeui.ttf", 11 * S), fill=cores["texto2"], anchor="ls")
+        self._botao = None
+        if total > self.MAX_CARTOES:  # botão ⋯: os próximos
+            bx2, by2 = self.X1 - 24, self.BASE - 24
+            bx1, by1 = bx2 - 56, by2 - 56
+            d.rounded_rectangle([bx1 * S, by1 * S, bx2 * S, by2 * S], radius=16 * S, fill=cores["botao"])
+            mx, my = (bx1 + bx2) / 2 * S, (by1 + by2) / 2 * S
+            for dx in (-9, 0, 9):  # três pontinhos (a fonte não tem o ⋯)
+                d.ellipse([mx + (dx - 2.5) * S, my - 2.5 * S, mx + (dx + 2.5) * S, my + 2.5 * S], fill="white")
+            self._botao = (bx1, by1, bx2, by2)
+        # reduz (bordas suaves) e corta a transparência parcial (a cor-chave não pode aparecer)
+        img = img.resize((L, A), Image.LANCZOS)
+        img.putalpha(img.getchannel("A").point(lambda v: 255 if v >= 128 else 0))
+        self._foto = ImageTk.PhotoImage(img)
+        self.canvas.itemconfig(self._item, image=self._foto)
+
+    def _camadas_fixas(self, cores):
+        """Trás, frente (degradê e borda) e a sombra da frente, feitas uma vez por tema."""
+        if self.app.tema in self._camadas:
+            return self._camadas[self.app.tema]
+        S, L, A = self.S, self.L, self.A
+        tamanho = (L * S, A * S)
+        mascara = Image.new("L", tamanho, 0)
+        self._forma(ImageDraw.Draw(mascara), self.X0, self.TRAS, self.X1, self.BASE, self.X1 - 170, self.X1,
+                    self.TRAS - 26, esquerda=False)
+        tras = Image.new("RGBA", tamanho, (0, 0, 0, 0))
+        tras.paste(Image.new("RGBA", tamanho, cores["tras"] + (255,)), (0, 0), mascara)
+        mascara = Image.new("L", tamanho, 0)
+        self._forma(ImageDraw.Draw(mascara), self.X0, self.FRENTE + 20, self.X1, self.BASE, self.X0, self.X0 + 156,
+                    self.FRENTE, esquerda=True)
+        cima, baixo = cores["frente"]
+        degrade = Image.new("RGBA", (1, A * S))
+        for y in range(A * S):
+            t = min(1.0, max(0.0, (y / S - self.FRENTE) / (self.BASE - self.FRENTE)))
+            degrade.putpixel((0, y), tuple(int(cima[i] + (baixo[i] - cima[i]) * t) for i in range(3)) + (255,))
+        frente = Image.new("RGBA", tamanho, (0, 0, 0, 0))
+        frente.paste(degrade.resize(tamanho), (0, 0), mascara)
+        borda = mascara.filter(ImageFilter.FIND_EDGES).point(lambda v: 160 if v > 40 else 0)
+        frente.paste(Image.new("RGBA", tamanho, cores["borda"] + (255,)), (0, 0), borda)
+        sombra = Image.new("L", tamanho, 0)
+        sombra.paste(mascara.filter(ImageFilter.GaussianBlur(12 * S)).point(lambda v: v * 90 // 255), (0, -8 * S))
+        self._camadas[self.app.tema] = (tras, frente, sombra)
+        return self._camadas[self.app.tema]
+
+    @staticmethod
+    def _girar(cx, cy, dx, dy, angulo):
+        r = math.radians(angulo)
+        return (cx + dx * math.cos(r) + dy * math.sin(r), cy - dx * math.sin(r) + dy * math.cos(r))
+
+    def _cantos(self, cx, cy, angulo):
+        w, h = self.CARTAO_L / 2, self.CARTAO_A / 2
+        return [self._girar(cx, cy, dx, dy, angulo) for dx, dy in ((-w, -h), (w, -h), (w, h), (-w, h))]
 
 
 class Programacao:

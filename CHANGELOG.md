@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Meus arquivos como pasta e downloads presos (tarefa 9.5; agente 1.10.1)
+
+- **Visual de pasta**: os arquivos baixados saem de uma pasta em cartões inclinados (fotos com miniatura; documentos com tipo e tamanho), aberta em cima do ícone do dock. Mouse em cima levanta o cartão; clicar abre; × exclui com confirmação; ⋯ mostra os próximos 4. **Clicar fora ou Esc fecha** (antes a janela ficava por cima de tudo).
+- **Abre direto no programa liberado**, sem o aviso de segurança do Windows que aparecia antes.
+- **Downloads presos na pasta Downloads** (`politicas_cliente.ps1`): Chrome e Edge do `cliente` não perguntam mais onde salvar e bloqueiam downloads perigosos. Nas estações já instaladas, rodar o script novo como administrador (ou o `instalar.bat`).
+
 ## 2026-11-06 — Meus arquivos: downloads da sessão (Ciclo 9, tarefa 9.5; agente 1.10.0)
 
 - **Ícone "Meus arquivos" no dock** (ao lado do Início): lista o que o cliente baixou na pasta Downloads, com tamanho e hora, e se atualiza quando um download termina. O Explorador de Arquivos continua bloqueado.

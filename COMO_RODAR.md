@@ -99,7 +99,7 @@ Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.ba
 2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;
 3. grava `agente.cfg` e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e o auto-update);
 4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
-5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha (`politicas_cliente.ps1`), que aparecem no Ctrl+Alt+Del. Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
+5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha, que aparecem no Ctrl+Alt+Del, e prende os downloads do Chrome e do Edge na pasta Downloads, bloqueando os perigosos (`politicas_cliente.ps1`). Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
 6. cadastra a estação no servidor.
 
 **Atualizar uma estação**: o agente se atualiza sozinho ao abrir. Mudanças no instalador ou na tarefa agendada (como o fim do atraso de 5s no logon, de 30/10) só valem rodando o `instalar.bat` de novo, com os arquivos novos: ele substitui tudo e mantém o usuário.

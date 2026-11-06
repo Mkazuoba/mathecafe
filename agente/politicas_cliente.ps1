@@ -1,6 +1,7 @@
 # MatheCafe - desliga para o usuario "cliente" o que o agente nao consegue
 # bloquear sozinho: as opcoes da tela do Ctrl+Alt+Del (Gerenciador de Tarefas,
-# Bloquear, Alterar senha). O "cliente" nao pode gravar essas politicas no
+# Bloquear, Alterar senha) e prende os downloads do Chrome e do Edge na pasta
+# Downloads (que o agente esvazia). O "cliente" nao pode gravar essas politicas no
 # proprio perfil, entao o instalar.bat (como Administrador) grava por ele.
 #
 #   set MC_SENHA=<senha do cliente>   (so usada se o perfil ainda nao existir)
@@ -35,6 +36,15 @@ try {
     if (-not (Test-Path $chave)) { New-Item $chave -Force | Out-Null }
     foreach ($nome in "DisableTaskMgr", "DisableLockWorkstation", "DisableChangePassword") {
         New-ItemProperty $chave -Name $nome -Value 1 -PropertyType DWord -Force | Out-Null
+    }
+    # Downloads presos na pasta Downloads (o agente a esvazia no fim da sessao):
+    # sem a pergunta "salvar onde?" e sem baixar arquivos perigosos (.exe etc.)
+    foreach ($navegador in "Google\Chrome", "Microsoft\Edge") {
+        $nav = "$perfil\Software\Policies\$navegador"
+        if (-not (Test-Path $nav)) { New-Item $nav -Force | Out-Null }
+        New-ItemProperty $nav -Name "DownloadDirectory" -Value '${user_home}\Downloads' -PropertyType String -Force | Out-Null
+        New-ItemProperty $nav -Name "PromptForDownloadLocation" -Value 0 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty $nav -Name "DownloadRestrictions" -Value 1 -PropertyType DWord -Force | Out-Null
     }
     Write-Output "Politicas gravadas no perfil de $Usuario"
 } finally {

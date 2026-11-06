@@ -534,3 +534,23 @@ def test_downloads_limpos_entre_clientes(tmp_path):
     assert "self._limpar_downloads()" in inicio  # PC reiniciou no meio da sessao anterior
     dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
     assert '"arquivos"' in dock and "abrir_meus_arquivos" in dock
+
+
+def test_downloads_presos_na_pasta_downloads():
+    # 1.10.0: o navegador deixava salvar em qualquer pasta (fora da limpeza)
+    pol = _fonte(os.path.join(os.path.dirname(AGENTE), "politicas_cliente.ps1"))
+    for navegador in ("Google\Chrome", "Microsoft\Edge"):
+        assert navegador in pol
+    assert "DownloadDirectory" in pol and "'${user_home}\Downloads'" in pol
+    assert '"PromptForDownloadLocation" -Value 0' in pol
+
+
+def test_meus_arquivos_abre_direto_e_fecha_ao_clicar_fora():
+    # 1.10.0: os.startfile passava pelo aviso de seguranca do Windows; a janela
+    # ficava por cima de tudo ate fechar no x
+    src = _fonte()
+    tela = src[src.index("class MeusArquivos:"):src.index("class Programacao:")]
+    abrir = tela[tela.index("def _abrir_arquivo"):]
+    abrir = abrir[:abrir.index("\n    def ", 10)]
+    assert "subprocess.Popen([programa, caminho])" in abrir and "startfile" not in abrir
+    assert "GetAsyncKeyState" in tela and "<Escape>" in tela
