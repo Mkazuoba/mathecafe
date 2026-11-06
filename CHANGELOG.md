@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-06 — Dock menor e notificações em pilha (tarefa 9.4; agente 1.9.1)
+
+- **Dock na faixa da barra do Windows** (48 px): mostra só o Início, **os apps abertos** (aparecem ao abrir, somem ao fechar; ponto no app em uso) e o sininho. Na 1.9.0 ele era alto, mostrava todos os apps liberados e cobria parte do navegador.
+- **Notificações em pilha**, como no modelo enviado: a mais nova na frente e até duas espiando atrás; com o mouse em cima a pilha abre em lista (e marca como lidas), ao sair volta. Cabeçalho com "N novas" e Limpar tudo; cartão com ícone colorido, origem, tempo, ponto de não lida, título e mensagem numa linha; × dispensa. A nova aparece por 7 s e fica no sininho.
+
 ## 2026-11-06 — Visual do agente: dock, notificações e cor do piso (Ciclo 9, tarefa 9.4; agente 1.9.0)
 
 - **Dock** no lugar da barra de tarefas própria: centralizado embaixo, com fundo arredondado, Início, um ícone por app liberado (cada um com sua cor e a inicial) e o sininho. Os ícones crescem com o mouse por perto (os vizinhos menos), o nome aparece em cima e os apps abertos têm uma bolinha; clicar traz o app aberto para a frente ou o abre. Fora do desenho a janela é transparente e o clique passa.

@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.9.0"
+VERSAO = "1.9.1"
 
 import asyncio
 import json
@@ -403,21 +403,23 @@ class BloqueioTeclado:
 class BarraSessao:
     """Dock do MatheCafé na sessão, no lugar da barra do Windows (9.4).
 
-    Uma janela só, no rodapé e da largura da tela, com fundo transparente
-    (-transparentcolor: fora do desenho o clique passa para os apps). No meio,
-    o dock: Início, um ícone por app liberado (bolinha nos abertos) e o sininho
-    das notificações; os ícones crescem com o mouse por perto, como no macOS.
-    À direita, um bloco separado com relógio, tempo restante, tema e Encerrar.
+    Ocupa só a faixa da barra do Windows (a que os apps maximizados já
+    respeitam), sem invadir a tela. No meio, o dock: Início, os apps liberados
+    que estão abertos (o em foco com bolinha) e o sininho das notificações; o
+    ícone cresce um pouco com o mouse e o nome aparece num balão. À direita,
+    um bloco com relógio, tempo restante, tema e Encerrar. Fora do desenho a
+    janela é transparente.
     """
     CHAVE = "#010203"  # cor que vira transparente
-    ALTURA = 112  # dock + espaço para o ícone crescer e o nome aparecer
-    BASE, MAXIMO, ALCANCE = 44, 62, 150  # px: ícone parado, sob o mouse, raio do efeito
-    ESPACO, BORDA_DOCK = 10, 12
+    ALTURA = 48  # sem a barra do Windows para copiar
+    BASE, MAXIMO, ALCANCE = 32, 38, 90  # px: ícone parado, sob o mouse, raio do efeito
+    ESPACO = 8
     CORES_APPS = ("#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6")
 
     def __init__(self, app):
         self.app = app
         p = app.paleta
+        self.altura = self.ALTURA
         self.top = tk.Toplevel(app.root)
         self.top.withdraw()
         self.top.overrideredirect(True)
@@ -433,32 +435,47 @@ class BarraSessao:
         self.canvas.bind("<Leave>", self._ao_sair)
         self.canvas.bind("<Button-1>", self._ao_clicar)
 
-        self._itens = []  # [{"chave", "nome", "letra", "cor", "acao", "aberto", "contagem"}]
+        # balão com o nome, numa janelinha acima do ícone (só durante o mouse em cima)
+        self.balao = tk.Toplevel(app.root)
+        self.balao.withdraw()
+        self.balao.overrideredirect(True)
+        self.balao.attributes("-topmost", True)
+        self.lbl_balao = tk.Label(self.balao, font=("Segoe UI", 9, "bold"), fg="white", bg="#111827", padx=8, pady=3)
+        self.lbl_balao.pack()
+
+        self._itens = []  # [{"chave", "nome", "letra", "cor", "acao"}]
         self._tamanhos = []  # tamanho atual de cada ícone (anima até o alvo)
         self._mouse_x = None
-        self._janelas = {}  # processo -> [hwnd]
+        self._janelas = {}  # processo -> [hwnd] (só apps liberados abertos)
+        self._foco = None
         self._animando = False
 
         # bloco da direita (widgets de verdade, sobre um retângulo arredondado do canvas)
         self.bloco = tk.Frame(self.canvas, bg=p["superficie"])
-        self.lbl_relogio = tk.Label(self.bloco, text="--:--", font=("Segoe UI", 15, "bold"),
+        self.lbl_relogio = tk.Label(self.bloco, text="--:--", font=("Segoe UI", 12, "bold"),
                                     fg=p["texto"], bg=p["superficie"])
-        self.lbl_relogio.pack(side="left", padx=(12, 8))
-        self.lbl_tempo = tk.Label(self.bloco, text="00:00:00", font=("Consolas", 14, "bold"),
+        self.lbl_relogio.pack(side="left", padx=(10, 6))
+        self.lbl_tempo = tk.Label(self.bloco, text="00:00:00", font=("Consolas", 12, "bold"),
                                   fg="#22c55e", bg=p["superficie"])
-        self.lbl_tempo.pack(side="left", padx=8)
+        self.lbl_tempo.pack(side="left", padx=6)
         self.btn_tema = tk.Button(self.bloco, text=ROTULO_TEMA[app.tema], font=app.f_small, bg=p["superficie2"],
                                   fg=p["texto2"], activebackground=p["superficie3"], relief="flat", padx=8,
                                   command=app.alternar_tema)
-        self.btn_tema.pack(side="left", padx=4, pady=8)
+        self.btn_tema.pack(side="left", padx=3, pady=4)
         tk.Button(self.bloco, text="Encerrar sessão", font=app.f_small, bg="#ef4444", fg="white",
                   activebackground="#dc2626", activeforeground="white", relief="flat", padx=10,
-                  command=app._encerrar_sessao_cliente).pack(side="left", padx=(4, 10), pady=8)
+                  command=app._encerrar_sessao_cliente).pack(side="left", padx=(3, 6), pady=4)
 
     # ── janela ──
     def mostrar(self):
         largura, altura = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
-        self.top.geometry(f"{largura}x{self.ALTURA}+0+{altura - self.ALTURA}")
+        area = area_da_barra_do_windows()
+        if area and area[1] > altura // 2 and area[2] >= largura // 2 and area[3] >= 30:
+            x, y, w, h = area  # exatamente onde estava a do Windows (apps maximizados não cobrem)
+        else:
+            x, y, w, h = 0, altura - self.ALTURA, largura, self.ALTURA
+        self.altura = h
+        self.top.geometry(f"{w}x{h}+{x}+{y}")
         self.top.deiconify()
         self.top.attributes("-topmost", True)
         self.top.lift()
@@ -468,6 +485,7 @@ class BarraSessao:
 
     def esconder(self):
         self.top.withdraw()
+        self.balao.withdraw()
         self._janelas = {}
         barra_do_windows(True)
 
@@ -476,6 +494,7 @@ class BarraSessao:
         cobre tudo); o Windows às vezes mostra a barra dele de novo."""
         if self.app._sessao_pausada:
             self.top.withdraw()
+            self.balao.withdraw()
             return
         if self.top.state() == "withdrawn":
             self.top.deiconify()
@@ -490,37 +509,43 @@ class BarraSessao:
         self.app.root.focus_force()
         self.top.lift()
 
-    # ── itens do dock ──
-    def _montar_itens(self):
-        itens = [{"chave": "inicio", "nome": "Início", "letra": "⌂", "cor": None,
-                  "acao": self.inicio}]
+    # ── itens do dock: Início, os apps abertos e o sininho ──
+    def _app_do_processo(self, processo):
         for i, a in enumerate(self.app.whitelist_apps):
-            nome = a.get("nome") or a.get("processo") or "?"
-            itens.append({"chave": (a.get("processo") or nome).strip().lower(), "nome": nome,
-                          "letra": nome.strip()[:1].upper(), "cor": self.CORES_APPS[i % len(self.CORES_APPS)],
-                          "acao": lambda app_=a: self._abrir(app_)})
+            if (a.get("processo") or "").strip().lower() == processo:
+                return i, a
+        return 0, {"nome": processo.rsplit(".", 1)[0].title(), "processo": processo}
+
+    def _montar_itens(self):
+        itens = [{"chave": "inicio", "nome": "Início", "letra": "⌂", "cor": None, "acao": self.inicio}]
+        for processo in sorted(self._janelas):
+            i, a = self._app_do_processo(processo)
+            nome = a.get("nome") or processo
+            itens.append({"chave": processo, "nome": nome, "letra": nome.strip()[:1].upper(),
+                          "cor": self.CORES_APPS[i % len(self.CORES_APPS)],
+                          "acao": lambda p=processo: self._trazer(p)})
         itens.append({"chave": "sininho", "nome": "Notificações", "letra": "🔔", "cor": "#334155",
                       "acao": self._sininho})
+        tamanhos = {it["chave"]: t for it, t in zip(self._itens, self._tamanhos)}
         self._itens = itens
-        self._tamanhos = [self.BASE] * len(itens)
+        self._tamanhos = [tamanhos.get(it["chave"], self.BASE) for it in itens]
 
     def atualizar_apps(self, janelas):
         """janelas: [(hwnd, titulo, processo)] dos apps liberados abertos agora."""
         abertas = {}
         for hwnd, _titulo, processo in janelas:
             abertas.setdefault(processo, []).append(hwnd)
-        if abertas != self._janelas:
-            self._janelas = abertas
+        foco = janela_em_foco()
+        foco = next((p for p, hs in abertas.items() if foco in hs), None)
+        if abertas != self._janelas or foco != self._foco:
+            self._janelas, self._foco = abertas, foco
+            self._montar_itens()
             self.desenhar()
 
-    def _abrir(self, app):
-        """App aberto: traz a janela dele para a frente; fechado: abre."""
-        processo = (app.get("processo") or "").strip().lower()
+    def _trazer(self, processo):
         janelas = self._janelas.get(processo)
         if janelas:
             trazer_para_frente(janelas[0])
-        else:
-            self.app._abrir_app(app)
 
     def _sininho(self):
         alternar = getattr(self.app, "alternar_notificacoes", None)
@@ -533,7 +558,7 @@ class BarraSessao:
 
     # ── desenho e animação ──
     def _alvos(self):
-        """Tamanho que cada ícone deve ter, pela distância do mouse (efeito do dock)."""
+        """Tamanho de cada ícone pela distância do mouse (efeito do dock, contido na faixa)."""
         if self._mouse_x is None:
             return [self.BASE] * len(self._itens)
         alvos = []
@@ -574,24 +599,39 @@ class BarraSessao:
             self.top.after(16, self._animar)
 
     def _ao_mover(self, ev):
-        self._mouse_x = ev.x if ev.y > self.ALTURA - (self.MAXIMO + 2 * self.BORDA_DOCK + 8) else None
+        self._mouse_x = ev.x
         self._iniciar_animacao()
+        self._mostrar_balao(self._item_em(ev.x, ev.y))
 
     def _ao_sair(self, _ev):
         self._mouse_x = None
+        self.balao.withdraw()
         self._iniciar_animacao()
 
-    def _item_em(self, x, y):
-        base = self.ALTURA - self.BORDA_DOCK - 6
+    def _item_em(self, x, _y):
         for item, centro, t in zip(self._itens, self._centros(self._tamanhos), self._tamanhos):
-            if centro - t / 2 <= x <= centro + t / 2 and base - t <= y <= base:
-                return item
+            if centro - t / 2 - self.ESPACO / 2 <= x <= centro + t / 2 + self.ESPACO / 2:
+                return item, centro
         return None
 
+    def _mostrar_balao(self, achado):
+        if not achado:
+            self.balao.withdraw()
+            return
+        item, centro = achado
+        self.lbl_balao.config(text=item["nome"])
+        self.balao.update_idletasks()
+        w, h = self.lbl_balao.winfo_reqwidth(), self.lbl_balao.winfo_reqheight()
+        x = int(self.top.winfo_rootx() + centro - w / 2)
+        y = self.top.winfo_rooty() - h - 4
+        self.balao.geometry(f"+{x}+{y}")
+        self.balao.deiconify()
+        self.balao.lift()
+
     def _ao_clicar(self, ev):
-        item = self._item_em(ev.x, ev.y)
-        if item:
-            item["acao"]()
+        achado = self._item_em(ev.x, ev.y)
+        if achado:
+            achado[0]["acao"]()
 
     @staticmethod
     def _retangulo(c, x1, y1, x2, y2, r, **opcoes):
@@ -607,63 +647,61 @@ class BarraSessao:
         if not self._itens:
             return
         largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
-        base = self.ALTURA - self.BORDA_DOCK - 6  # linha de baixo dos ícones
+        h = self.altura
+        meio = h / 2
         centros = self._centros(self._tamanhos)
-        # fundo do dock (não cresce: os ícones saem por cima, como no macOS)
-        esquerda = centros[0] - self._tamanhos[0] / 2 - self.BORDA_DOCK
-        direita = centros[-1] + self._tamanhos[-1] / 2 + self.BORDA_DOCK
-        self._retangulo(c, esquerda, base - self.BASE - self.BORDA_DOCK, direita, self.ALTURA - 4, 20,
-                        fill=p["superficie"], outline=p["superficie3"])
-        perto = None
+        # fundo do dock: a faixa toda de altura, arredondado
+        esquerda = centros[0] - self._tamanhos[0] / 2 - 8
+        direita = centros[-1] + self._tamanhos[-1] / 2 + 8
+        self._retangulo(c, esquerda, 3, direita, h - 3, 14, fill=p["superficie"], outline=p["superficie3"])
         for item, x, t in zip(self._itens, centros, self._tamanhos):
-            self._retangulo(c, x - t / 2, base - t, x + t / 2, base, 12, fill=item["cor"] or p["destaque"],
-                            outline="")
-            c.create_text(x, base - t / 2, text=item["letra"], fill="white",
-                          font=("Segoe UI", int(t * 0.38), "bold"))
-            if self._janelas.get(item["chave"]):
-                c.create_oval(x - 2.5, base + 3, x + 2.5, base + 8, fill=p["texto"], outline="")
+            topo = meio - t / 2 - 2
+            self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"], outline="")
+            c.create_text(x, topo + t / 2, text=item["letra"], fill="white", font=("Segoe UI", int(t * 0.4), "bold"))
+            if item["chave"] == self._foco:
+                c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="")
             if item["chave"] == "sininho":
                 n = self.contagem_notificacoes()
                 if n:
-                    bx, by = x + t / 2 - 4, base - t + 4
-                    c.create_oval(bx - 9, by - 9, bx + 9, by + 9, fill="#ef4444", outline=p["superficie"], width=2)
+                    bx, by = x + t / 2 - 3, topo + 3
+                    c.create_oval(bx - 7, by - 7, bx + 7, by + 7, fill="#ef4444", outline=p["superficie"], width=2)
                     c.create_text(bx, by, text=str(min(n, 9)) + ("+" if n > 9 else ""), fill="white",
-                                  font=("Segoe UI", 8, "bold"))
-            if self._mouse_x is not None and abs(self._mouse_x - x) <= t / 2:
-                perto = (item, x, t)
-        if perto:  # nome do app em cima do ícone
-            item, x, t = perto
-            texto = c.create_text(x, base - t - 16, text=item["nome"], fill="white", font=("Segoe UI", 9, "bold"))
-            x1, y1, x2, y2 = c.bbox(texto)
-            fundo = self._retangulo(c, x1 - 8, y1 - 4, x2 + 8, y2 + 4, 8, fill="#111827", outline="")
-            c.tag_raise(texto, fundo)
+                                  font=("Segoe UI", 7, "bold"))
         # bloco separado à direita: relógio, tempo, tema e Encerrar
         self.bloco.update_idletasks()
-        bw, bh = self.bloco.winfo_reqwidth(), self.bloco.winfo_reqheight()
-        bx2, by2 = largura - 12, self.ALTURA - 8
-        self._retangulo(c, bx2 - bw - 12, by2 - bh - 8, bx2, by2, 16, fill=p["superficie"], outline=p["superficie3"])
-        c.create_window(bx2 - 6, by2 - 4, window=self.bloco, anchor="se")
+        bw = self.bloco.winfo_reqwidth()
+        self._retangulo(c, largura - bw - 18, 3, largura - 6, h - 3, 12, fill=p["superficie"], outline=p["superficie3"])
+        c.create_window(largura - 12, meio, window=self.bloco, anchor="e")
 
 
 class Notificacoes:
-    """Notificações da sessão no canto inferior direito, acima do bloco do
-    relógio (9.4): mensagem do operador, aviso de fechamento, tempo acabando,
-    conexão. Uma nova aparece sozinha por alguns segundos e fica no sininho do
-    dock; o sininho abre a lista inteira (× dispensa uma, Limpar tudo)."""
+    """Notificações da sessão no canto inferior direito (9.4), no estilo de
+    pilha: o cartão mais novo na frente e até dois "espiando" atrás; com o
+    mouse em cima a pilha se abre em lista, e fecha ao sair. Uma nova aparece
+    sozinha por alguns segundos e depois fica no sininho do dock (que mostra
+    e esconde a pilha). Cabeçalho com "N novas" e Limpar tudo; × dispensa.
+    """
     CHAVE = "#010203"
-    LARGURA, ALTURA_CARTAO, ESPACO = 360, 84, 8
+    LARGURA, ALTURA_CARTAO, ESPACO = 384, 84, 8
+    CABECALHO = 40
+    ESPIAR, MAXIMO_LISTA, ESPIANDO = 10, 4, 3  # px de deslocamento atrás, cartões na lista, na pilha
     SEGUNDOS_AVISO = 7
     MAXIMO = 20
-    CORES = {"operador": "#3b82f6", "horario": "#f59e0b", "tempo": "#ef4444", "conexao": "#14b8a6"}
+    # ícone: cor de baixo e de cima (imita o degradê da referência)
+    TONS = {"operador": ("#3b82f6", "#38bdf8"), "horario": ("#f97316", "#fbbf24"),
+            "tempo": ("#ef4444", "#fb923c"), "conexao": ("#14b8a6", "#38bdf8")}
     SIMBOLOS = {"operador": "✉", "horario": "🕒", "tempo": "⏳", "conexao": "⚡"}
 
     def __init__(self, app):
         self.app = app
         self.itens = []  # [{"id", "origem", "titulo", "mensagem", "tipo", "quando", "lida"}]
         self._proximo = 1
-        self.aberta = False  # lista inteira (pelo sininho)
-        self._aviso = None  # id da notificação mostrada sozinha agora
+        self.visivel = False
+        self.fixa = False  # aberta pelo sininho: não some sozinha
         self._timer = None
+        self._aberta = 0.0  # 0 = pilha, 1 = lista (anima)
+        self._alvo = 0.0
+        self._animando = False
         self.top = tk.Toplevel(app.root)
         self.top.withdraw()
         self.top.overrideredirect(True)
@@ -673,12 +711,16 @@ class Notificacoes:
             self.top.attributes("-transparentcolor", self.CHAVE)
         except tk.TclError:
             pass
-        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0, width=self.LARGURA)
+        altura = self.CABECALHO + self.MAXIMO_LISTA * (self.ALTURA_CARTAO + self.ESPACO)
+        self.altura = altura  # fixa: a parte transparente deixa o clique passar
+        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0,
+                                width=self.LARGURA, height=altura)
         self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Motion>", self._ao_mover)
+        self.canvas.bind("<Leave>", lambda _e: self._abrir(False))
         self.canvas.bind("<Button-1>", self._ao_clicar)
-        self.canvas.bind("<Enter>", lambda _e: self._segurar(True))
-        self.canvas.bind("<Leave>", lambda _e: self._segurar(False))
-        self._alvos = []  # [(x1, y1, x2, y2, acao)] áreas clicáveis
+        self._alvos = []  # [(x1, y1, x2, y2, acao)]
+        self._caixa = (0, 0, 0, 0)  # área desenhada (para saber se o mouse está em cima)
 
     # ── API para o agente ──
     def notificar(self, origem, titulo, mensagem, tipo="operador"):
@@ -686,9 +728,9 @@ class Notificacoes:
                 "tipo": tipo, "quando": time.time(), "lida": False}
         self._proximo += 1
         self.itens = ([item] + self.itens)[: self.MAXIMO]
-        if not self.aberta:
-            self._aviso = item["id"]
-            self._agendar_fim_do_aviso()
+        self.visivel = True
+        if not self.fixa:
+            self._agendar_sumir()
         self._mostrar()
         self.app.barra.desenhar()  # número do sininho
 
@@ -696,55 +738,81 @@ class Notificacoes:
         return sum(1 for i in self.itens if not i["lida"])
 
     def alternar(self):
-        self.aberta = not self.aberta
-        if self.aberta:
-            for i in self.itens:
-                i["lida"] = True
-            self._aviso = None
+        """Sininho: mostra (e deixa) ou esconde a pilha."""
+        self.visivel = self.fixa = not (self.visivel and self.fixa)
+        if self._timer:
+            self.top.after_cancel(self._timer)
+            self._timer = None
         self._mostrar()
-        self.app.barra.desenhar()
 
     def limpar(self):
         """Fim da sessão: nada passa para o próximo cliente."""
-        self.itens, self.aberta, self._aviso = [], False, None
+        self.itens, self.visivel, self.fixa = [], False, False
+        self._aberta = self._alvo = 0.0
         self.top.withdraw()
 
     # ── comportamento ──
-    def _agendar_fim_do_aviso(self):
+    def _agendar_sumir(self):
         if self._timer:
             self.top.after_cancel(self._timer)
-        self._timer = self.top.after(self.SEGUNDOS_AVISO * 1000, self._fim_do_aviso)
+        self._timer = self.top.after(self.SEGUNDOS_AVISO * 1000, self._sumir)
 
-    def _fim_do_aviso(self):
+    def _sumir(self):
         self._timer = None
-        if not self.aberta:
-            self._aviso = None
+        if not self.fixa and self._alvo == 0:
+            self.visivel = False
             self._mostrar()
 
-    def _segurar(self, mouse_em_cima):
-        """Com o mouse em cima, o aviso não some; saiu, conta de novo."""
-        if self.aberta or self._aviso is None:
+    def _abrir(self, sim):
+        """Mouse em cima: abre a lista (e marca como lidas); saiu: volta a pilha."""
+        alvo = 1.0 if sim and self.itens else 0.0
+        if alvo == self._alvo:
             return
-        if mouse_em_cima and self._timer:
-            self.top.after_cancel(self._timer)
-            self._timer = None
-        elif not mouse_em_cima:
-            self._agendar_fim_do_aviso()
+        self._alvo = alvo
+        if sim:
+            if self._timer:
+                self.top.after_cancel(self._timer)
+                self._timer = None
+            for i in self.itens:
+                i["lida"] = True
+            self.app.barra.desenhar()
+        elif not self.fixa:
+            self._agendar_sumir()
+        if not self._animando:
+            self._animando = True
+            self.top.after(16, self._animar)
+
+    def _animar(self):
+        self._aberta += (self._alvo - self._aberta) * 0.3
+        if abs(self._alvo - self._aberta) < 0.02:
+            self._aberta = self._alvo
+            self._animando = False
+        else:
+            self.top.after(16, self._animar)
+        self._desenhar()
+
+    def _ao_mover(self, ev):
+        x1, y1, x2, y2 = self._caixa
+        self._abrir(x1 <= ev.x <= x2 and y1 <= ev.y <= y2)
 
     def _dispensar(self, ident):
         self.itens = [i for i in self.itens if i["id"] != ident]
-        if self._aviso == ident:
-            self._aviso = None
+        if not self.itens:
+            self._alvo = self._aberta = 0.0
+        self._mostrar()
+        self.app.barra.desenhar()
+
+    def _limpar_tudo(self):
+        self.itens = []
+        self._alvo = self._aberta = 0.0
         self._mostrar()
         self.app.barra.desenhar()
 
     def _ao_clicar(self, ev):
-        for x1, y1, x2, y2, acao in self._alvos:
+        for x1, y1, x2, y2, acao in reversed(self._alvos):
             if x1 <= ev.x <= x2 and y1 <= ev.y <= y2:
                 acao()
                 return
-        if not self.aberta:  # clicar no aviso abre a lista
-            self.alternar()
 
     # ── desenho ──
     @staticmethod
@@ -753,76 +821,96 @@ class Notificacoes:
         return "agora" if s < 60 else f"{s // 60} min"
 
     def _mostrar(self):
-        if self.aberta:
-            visiveis = self.itens[:6]
-        else:
-            visiveis = [i for i in self.itens if i["id"] == self._aviso]
-        if not visiveis and not self.aberta:
+        if not self.visivel:
             self.top.withdraw()
             return
-        cabecalho = 34 if self.aberta else 0
-        n = max(1, len(visiveis))
-        # aviso sozinho: as outras não lidas aparecem como "folhas" atrás
-        atras = 0 if self.aberta else min(2, max(0, self.nao_lidas() - 1))
-        altura = cabecalho + n * (self.ALTURA_CARTAO + self.ESPACO) + atras * 8
         tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
-        y = tela_a - BarraSessao.ALTURA - altura - 4
-        self.top.geometry(f"{self.LARGURA}x{altura}+{tela_l - self.LARGURA - 16}+{y}")
-        self.canvas.config(height=altura)
-        self._desenhar(visiveis, cabecalho, atras)
+        y = tela_a - self.app.barra.altura - self.altura - 8
+        self.top.geometry(f"{self.LARGURA}x{self.altura}+{tela_l - self.LARGURA - 12}+{y}")
+        self._desenhar()
         self.top.deiconify()
         self.top.lift()
 
-    def _desenhar(self, visiveis, cabecalho, atras):
+    def _desenhar(self):
         c, p = self.canvas, self.app.paleta
+        ret = BarraSessao._retangulo
         c.delete("all")
         self._alvos = []
-        ret = BarraSessao._retangulo
-        if cabecalho:
-            ret(c, 0, 0, self.LARGURA, cabecalho - 6, 12, fill=p["superficie"], outline=p["superficie3"])
-            c.create_text(12, 14, text="Notificações", anchor="w", fill=p["texto"], font=("Segoe UI", 10, "bold"))
-            if self.itens:
-                lim = c.create_text(self.LARGURA - 12, 14, text="Limpar tudo", anchor="e", fill=p["texto2"],
-                                    font=("Segoe UI", 9, "underline"))
-                x1, y1, x2, y2 = c.bbox(lim)
-                self._alvos.append((x1, y1, x2, y2, self._limpar_tudo))
-        if not visiveis:
-            ret(c, 0, cabecalho, self.LARGURA, cabecalho + self.ALTURA_CARTAO, 16, fill=p["superficie"],
-                outline=p["superficie3"])
-            c.create_text(self.LARGURA / 2, cabecalho + self.ALTURA_CARTAO / 2, text="Nenhuma notificação",
-                          fill=p["texto2"], font=("Segoe UI", 10))
+        L, H, a = self.LARGURA, self.ALTURA_CARTAO, self._aberta
+        itens = self.itens[: self.MAXIMO_LISTA]
+        n = len(itens)
+        # altura ocupada: pilha (um cartão + espiadas) ou lista (todos)
+        pilha = H + self.ESPIAR * max(0, min(n, self.ESPIANDO) - 1)
+        lista = n * H + max(0, n - 1) * self.ESPACO
+        ocupado = pilha + (lista - pilha) * a if n else H
+        topo = self.altura - ocupado  # tudo encostado embaixo, crescendo para cima
+        # cabeçalho: título, "N novas" e Limpar tudo, numa pílula
+        hy = topo - self.CABECALHO
+        ret(c, 0, hy + 4, L, hy + self.CABECALHO - 6, 14, fill=p["superficie"], outline=p["superficie3"])
+        c.create_text(14, hy + 19, text="Notificações", anchor="w", fill=p["texto"], font=("Segoe UI", 10, "bold"))
+        novas = self.nao_lidas()
+        rotulo = f"{novas} {'nova' if novas == 1 else 'novas'}" if novas else f"{len(self.itens)} no total"
+        etiqueta = c.create_text(126, hy + 19, text=rotulo, anchor="w", fill="white", font=("Segoe UI", 8, "bold"))
+        ex1, ey1, ex2, ey2 = c.bbox(etiqueta)
+        fundo = ret(c, ex1 - 8, ey1 - 3, ex2 + 8, ey2 + 3, 10, fill=p["destaque"], outline="")
+        c.tag_raise(etiqueta, fundo)
+        if self.itens:
+            lim = c.create_text(L - 14, hy + 19, text="Limpar tudo", anchor="e", fill=p["texto2"],
+                                font=("Segoe UI", 9))
+            x1, y1, x2, y2 = c.bbox(lim)
+            self._alvos.append((x1 - 4, y1 - 4, x2 + 4, y2 + 4, self._limpar_tudo))
+        self._caixa = (0, hy, L, self.altura)
+        if not n:
+            ret(c, 0, topo, L, topo + H, 16, fill=p["superficie"], outline=p["superficie3"], dash=(4, 3))
+            c.create_text(L / 2, topo + H / 2, text="🔕  Tudo em dia", fill=p["texto2"], font=("Segoe UI", 10))
             return
-        # folhas atrás do aviso (as outras não lidas)
-        for k in range(atras, 0, -1):
-            ret(c, 10 * k, cabecalho + 8 * k, self.LARGURA - 10 * k, cabecalho + 8 * k + self.ALTURA_CARTAO, 16,
-                fill=p["superficie2"], outline=p["superficie3"])
-        for n, item in enumerate(visiveis):
-            y1 = cabecalho + n * (self.ALTURA_CARTAO + self.ESPACO)
-            y2 = y1 + self.ALTURA_CARTAO
-            ret(c, 0, y1, self.LARGURA, y2, 16, fill=p["superficie"], outline=p["superficie3"])
-            cor = self.CORES.get(item["tipo"], p["destaque"])
-            ret(c, 14, y1 + 20, 54, y1 + 60, 10, fill=cor, outline="")
-            c.create_text(34, y1 + 40, text=self.SIMBOLOS.get(item["tipo"], "•"), fill="white",
-                          font=("Segoe UI", 15))
-            c.create_text(66, y1 + 16, text=item["origem"].upper(), anchor="w", fill=p["texto2"],
-                          font=("Segoe UI", 8, "bold"))
-            c.create_text(self.LARGURA - 40, y1 + 16, text=self._quando(item["quando"]), anchor="e",
-                          fill=p["texto2"], font=("Segoe UI", 8))
-            if not item["lida"]:
-                c.create_oval(self.LARGURA - 34, y1 + 12, self.LARGURA - 26, y1 + 20, fill="#3b82f6", outline="")
-            c.create_text(66, y1 + 34, text=item["titulo"], anchor="w", fill=p["texto"],
-                          font=("Segoe UI", 10, "bold"), width=self.LARGURA - 110)
-            msg = item["mensagem"] if len(item["mensagem"]) <= 90 else item["mensagem"][:89] + "…"
-            c.create_text(66, y1 + 50, text=msg, anchor="nw", fill=p["texto2"], font=("Segoe UI", 9),
-                          width=self.LARGURA - 86)
-            fechar = c.create_text(self.LARGURA - 12, y1 + 15, text="✕", fill=p["texto2"], font=("Segoe UI", 9))
-            x1, yy1, x2, yy2 = c.bbox(fechar)
-            self._alvos.append((x1 - 6, yy1 - 6, x2 + 6, yy2 + 6, lambda i=item["id"]: self._dispensar(i)))
+        # de trás para a frente: o mais novo fica por cima
+        for pos in range(n - 1, -1, -1):
+            item = itens[pos]
+            if pos >= self.ESPIANDO and a < 0.05:
+                continue  # na pilha só aparecem três
+            y_pilha = topo + self.ESPIAR * min(pos, self.ESPIANDO - 1)
+            y_lista = topo + pos * (H + self.ESPACO)
+            y1 = y_pilha + (y_lista - y_pilha) * a
+            encolhe = (1 - 0.05 * min(pos, self.ESPIANDO - 1)) * (1 - a) + a  # atrás, um pouco mais estreito
+            m = L * (1 - encolhe) / 2
+            ret(c, m, y1, L - m, y1 + H, 16, fill=p["superficie"], outline=p["superficie3"])
+            if pos > 0 and a < 0.5:
+                continue  # atrás da pilha: só a borda espiando
+            self._cartao(c, item, m, y1, L - m)
 
-    def _limpar_tudo(self):
-        self.itens, self._aviso = [], None
-        self._mostrar()
-        self.app.barra.desenhar()
+    def _cartao(self, c, item, x1, y1, x2):
+        p = self.app.paleta
+        ret = BarraSessao._retangulo
+        H = self.ALTURA_CARTAO
+        baixo, cima = self.TONS.get(item["tipo"], (p["destaque"], p["destaque"]))
+        ix, iy = x1 + 16, y1 + (H - 40) / 2
+        ret(c, ix, iy, ix + 40, iy + 40, 11, fill=baixo, outline="")
+        ret(c, ix, iy, ix + 40, iy + 22, 11, fill=cima, outline="")  # brilho de cima
+        ret(c, ix, iy + 14, ix + 40, iy + 40, 11, fill=baixo, outline="")
+        c.create_text(ix + 20, iy + 20, text=self.SIMBOLOS.get(item["tipo"], "•"), fill="white",
+                      font=("Segoe UI", 14))
+        tx = ix + 52
+        c.create_text(tx, y1 + 22, text=item["origem"].upper(), anchor="w", fill=p["texto2"],
+                      font=("Segoe UI", 8, "bold"))
+        c.create_text(x2 - 34, y1 + 22, text=self._quando(item["quando"]), anchor="e", fill=p["texto2"],
+                      font=("Segoe UI", 8))
+        if not item["lida"]:
+            c.create_oval(x2 - 28, y1 + 18, x2 - 20, y1 + 26, fill="#3b82f6", outline="")
+        largura_texto = x2 - tx - 16
+        c.create_text(tx, y1 + 42, text=self._caber(item["titulo"], largura_texto, 10), anchor="w", fill=p["texto"],
+                      font=("Segoe UI", 10, "bold"))
+        c.create_text(tx, y1 + 62, text=self._caber(item["mensagem"], largura_texto, 9), anchor="w",
+                      fill=p["texto2"], font=("Segoe UI", 9))
+        fechar = c.create_text(x2 - 10, y1 + 22, text="✕", fill=p["texto2"], font=("Segoe UI", 8))
+        bx1, by1, bx2, by2 = c.bbox(fechar)
+        self._alvos.append((bx1 - 5, by1 - 5, bx2 + 5, by2 + 5, lambda i=item["id"]: self._dispensar(i)))
+
+    @staticmethod
+    def _caber(texto, largura_px, tamanho):
+        """Uma linha só, com reticências (como o truncate da referência)."""
+        cabe = max(4, int(largura_px / (tamanho * 0.58)))
+        return texto if len(texto) <= cabe else texto[: cabe - 1].rstrip() + "…"
 
 
 class Programacao:
