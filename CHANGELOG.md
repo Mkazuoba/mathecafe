@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Histórico de uso do VSCyber (Ciclo 8, tarefa 8.5)
+
+- **`server/importar_historico.py`**: traz os usos do VSCyber desde 2022 (adulto e infantil) como sessões encerradas, que aparecem no histórico de cada cliente e em Históricos → Uso. Sem `--aplicar` só simula; com `--aplicar` faz backup e grava; rodar de novo não duplica.
+- As estações antigas entram com o nome do VSCyber como estações inativas ("BSP-87 (VS)", "BSP-87 (VSI)"), num mapa inativo do piso de cada banco. Ficam de fora usos sem fim, com mais de 16 h, de clientes inexistentes e dos logins para conferir.
+- Relatório de uso mais rápido com muito histórico (lê só os campos usados): 5 anos em menos de 3 segundos.
+
 ## 2026-11-06 — Relatório de uso na tela (Ciclo 8, tarefa 8.2)
 
 - **Históricos → Uso** (só admin), por período (7 dias, 30 dias, este mês ou datas à escolha; padrão: últimos 30 dias) e piso:

@@ -147,6 +147,17 @@ Rodar de novo não duplica ninguém. Se o VSCyber do infantil continuar em uso d
 
 (O `importar_vscyber.py` foi a importação do adulto, em 2026; não precisa rodar de novo.)
 
+### Histórico de uso do VSCyber
+
+Depois dos clientes, `importar_historico.py` traz os usos do VSCyber (`tabelas/CON.csv` dos dois exports) como sessões encerradas: aparecem no histórico de cada cliente e em Históricos → Uso.
+
+1. Copie também a pasta `tabelas` de `export` e de `export_infantil` para o servidor (só `CON.csv` e `ESTC.csv` são usados).
+2. Na pasta `server`: `python importar_historico.py` (simula) e depois `python importar_historico.py --aplicar` (faz backup e grava). `--desde AAAA-MM-DD` muda o início (padrão: 01/01/2022).
+
+- As estações do VSCyber ficam com o nome antigo, como estações inativas ("BSP-87 (VS)" do adulto, "BSP-87 (VSI)" do infantil), num mapa inativo do piso de cada banco: não aparecem no Mapa nem no Painel.
+- Ficam de fora: usos sem horário de fim, com mais de 16 horas ou de clientes que não existem no MatheCafé, e os dos logins da planilha de conferência. Rodar de novo não duplica.
+- Numa cópia do banco (06/11/2026): 252.469 usos do adulto e 30.489 do infantil desde 2022, em uns 20 segundos; o banco ficou com 42 MB.
+
 ## 5. Testes automáticos
 
 ```bash

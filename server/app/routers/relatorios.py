@@ -246,7 +246,9 @@ def relatorio_de_uso(
     def utc(dia):
         return datetime.combine(dia, datetime.min.time()).replace(tzinfo=FUSO).astimezone(timezone.utc).replace(tzinfo=None)
 
-    q = db.query(Sessao).filter(Sessao.encerrada_em != None,
+    # so os campos usados (com o historico do VSCyber sao centenas de milhares)
+    q = db.query(Sessao.cliente_id, Sessao.estacao_id, Sessao.iniciada_em, Sessao.tempo_consumido_segundos).filter(
+                                Sessao.encerrada_em != None,
                                 Sessao.iniciada_em >= utc(inicio_local),
                                 Sessao.iniciada_em < utc(fim_local + timedelta(days=1)))
     if piso_id:
@@ -258,6 +260,7 @@ def relatorio_de_uso(
     dias = defaultdict(lambda: {"sessoes": 0, "segundos": 0, "clientes": set()})
     pico = defaultdict(int)
     estacoes = defaultdict(lambda: {"sessoes": 0, "segundos": 0})
+    nomes = dict(db.query(Estacao.id, Estacao.nome).all())
     for s in q.all():
         uso = max(0, s.tempo_consumido_segundos or 0)
         inicio = s.iniciada_em.replace(tzinfo=timezone.utc).astimezone(FUSO).replace(tzinfo=None)
@@ -268,7 +271,7 @@ def relatorio_de_uso(
         d["sessoes"] += 1
         d["segundos"] += uso
         d["clientes"].add(s.cliente_id)
-        e = estacoes[s.estacao.nome if s.estacao else "?"]
+        e = estacoes[nomes.get(s.estacao_id, "?")]
         e["sessoes"] += 1
         e["segundos"] += uso
         # o uso espalhado pelas horas em que aconteceu

@@ -76,7 +76,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `grupos_estacao` | mapas (abas do Mapa), com cor e `piso_id` (obrigatório ao criar; vazio só em mapas antigos, que o painel aponta e contam como o padrão). O `tempo_padrao_segundos` do grupo não é mais usado |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
-| `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo |
+| `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo (`vscyber` = importada do VSCyber por `importar_historico.py`, em estações inativas "... (VS)"/"(VSI)") |
 | `apps_permitidos` | programas que podem rodar (processo, caminho, imagem de capa), por grupo ou para todos |
 | `configuracoes` | chave/valor: `tempo_padrao_segundos` (tempo de uso por dia), `reiniciar_ao_encerrar` |
 
