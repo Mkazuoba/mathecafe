@@ -1320,3 +1320,25 @@ def test_acao_em_massa_invalida(c, admin, cenario):
     assert r.status_code == 422
     r = c.post("/api/estacoes/acoes", headers=admin, json={"acao": "mensagem", "estacoes": [cenario["estacao"]]})
     assert r.status_code == 400  # mensagem sem texto
+
+
+# ── 8.3 E-mail no cadastro ───────────────────────────────────────────────────
+
+def test_email_no_cadastro_do_cliente(c, admin):
+    n = next(_contador)
+    r = c.post("/api/clientes/", headers=admin, json={
+        "login": f"comemail{n}", "nome": "Com Email", "senha": "senha-x", "email": "  Leitor@Exemplo.com.br "})
+    assert r.status_code == 200, r.text
+    cid = r.json()["id"]
+    assert r.json()["email"] == "leitor@exemplo.com.br"
+    r = c.put(f"/api/clientes/{cid}", headers=admin, json={"email": "outro@exemplo.com"})
+    assert r.json()["email"] == "outro@exemplo.com"
+    r = c.put(f"/api/clientes/{cid}", headers=admin, json={"email": ""})  # vazio apaga
+    assert r.json()["email"] is None
+    r = c.put(f"/api/clientes/{cid}", headers=admin, json={"nome": "Sem mexer no email"})
+    assert r.json()["email"] is None
+
+
+def test_email_invalido_e_recusado(c, admin, cenario):
+    r = c.put(f"/api/clientes/{cenario['cliente_id']}", headers=admin, json={"email": "sem-arroba"})
+    assert r.status_code == 422

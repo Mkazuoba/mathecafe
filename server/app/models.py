@@ -17,6 +17,7 @@ class Usuario(Base):
     saldo_dia = Column(Date, nullable=True)  # dia (Brasília) do saldo; outro dia = cota cheia (tempo_diario.py)
     observacao = Column(Text, nullable=True)
     documento = Column(String(30), nullable=True)
+    email = Column(String(120), nullable=True)
     data_nascimento = Column(Date, nullable=True)
     foto_em = Column(DateTime, nullable=True)  # quando a foto mudou; None = sem foto (fotos_clientes)
     # Piso do cliente (app/pisos.py): so entra nos PCs do mesmo piso. Vazio = piso padrao.

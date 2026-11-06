@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-06 — Cadastro do cliente: e-mail e foto no cadastro novo (Ciclo 8, tarefa 8.3)
+
+- **Cadastro novo no mesmo formato da ficha**: foto à esquerda (Enviar/Trocar/Remover, com prévia) e os dados à direita. A foto vai junto ao criar; antes só dava para pôr depois, na ficha.
+- **E-mail** no cadastro novo e na ficha (opcional; guardado em minúsculas, formato conferido, vazio apaga).
+
 ## 2026-11-06 — Desligar pelo painel e ações em massa (Ciclo 7, tarefas 7.1 e 7.2; agente 1.8.1)
 
 - **Desligar o PC pelo painel**: no painel da estação, **Desligar** ao lado de Reiniciar. O servidor encerra a sessão (o tempo que sobrou volta para o cliente) e o agente desliga em 10s (`shutdown /s`). **Reiniciar** passou a encerrar a sessão do mesmo jeito.

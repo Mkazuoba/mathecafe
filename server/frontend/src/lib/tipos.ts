@@ -51,6 +51,7 @@ export interface Cliente extends PisoDe {
   saldo_segundos: number
   observacao: string | null
   documento: string | null
+  email: string | null
   /** AAAA-MM-DD */
   data_nascimento: string | null
   /** Quem trocou o piso por último e quando (null se nunca trocou). */

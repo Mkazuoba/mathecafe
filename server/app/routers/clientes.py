@@ -2,7 +2,9 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
-from pydantic import BaseModel
+import re
+
+from pydantic import BaseModel, field_validator
 from typing import Literal, Optional
 from datetime import datetime, time as dt_time
 try:
@@ -19,6 +21,19 @@ from app.security import hash_senha, requer_perfil
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _email_valido(valor: Optional[str]) -> Optional[str]:
+    """Sem espacos e em minusculas; vazio vira None; formato basico conferido."""
+    valor = (valor or "").strip().lower()
+    if not valor:
+        return None
+    if len(valor) > 120 or not EMAIL.match(valor):
+        raise ValueError("E-mail inválido")
+    return valor
+
+
 class ClienteCreate(BaseModel):
     login: str
     nome: str
@@ -27,6 +42,9 @@ class ClienteCreate(BaseModel):
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
     piso_id: Optional[int] = None  # vazio: o piso padrao
+    email: Optional[str] = None
+
+    _email = field_validator("email")(lambda v: _email_valido(v))
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -38,6 +56,10 @@ class ClienteUpdate(BaseModel):
     documento: Optional[str] = None
     data_nascimento: Optional[date] = None
     piso_id: Optional[int] = None
+    # e-mail: o que vier (vazio apaga) substitui; o que nao vier fica
+    email: Optional[str] = None
+
+    _email = field_validator("email")(lambda v: _email_valido(v))
 
 class FotoBody(BaseModel):
     imagem: str  # data URL (o painel reduz a imagem antes de enviar)
@@ -71,6 +93,7 @@ def serializar(u: Usuario, db: Session = None, cota: Optional[int] = None):
         "saldo_segundos": saldo_do_dia(u, cota),  # tempo que ainda pode usar hoje
         "observacao": u.observacao,
         "documento": u.documento,
+        "email": u.email,
         "data_nascimento": u.data_nascimento.isoformat() if u.data_nascimento else None,
         **resumo(piso_do_cliente(u)),
         "piso_alterado_por": u.piso_alterado_por,
@@ -159,6 +182,7 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
         senha_hash=hash_senha(data.senha),
         perfil="cliente", observacao=data.observacao,
         documento=(data.documento or "").strip() or None, data_nascimento=data.data_nascimento,
+        email=data.email,
         piso_id=_piso_existente(db, data.piso_id).id,
     )
     db.add(cliente)
@@ -178,6 +202,7 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db),
     if data.observacao is not None: cliente.observacao = data.observacao
     if "documento" in data.model_fields_set: cliente.documento = (data.documento or "").strip() or None
     if "data_nascimento" in data.model_fields_set: cliente.data_nascimento = data.data_nascimento
+    if "email" in data.model_fields_set: cliente.email = data.email
     if data.piso_id is not None and data.piso_id != cliente.piso_id:
         # quem trocou fica na ficha (o painel pede confirmacao antes)
         operador = db.get(Usuario, int(quem["sub"]))

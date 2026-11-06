@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { IconCamera, IconInfoCircle, IconHistory, IconLock, IconPencil, IconTrash, IconUser } from "@tabler/icons-react"
+import { IconInfoCircle, IconHistory, IconLock, IconPencil, IconTrash } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
@@ -10,6 +10,7 @@ import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
+import { LADO_FOTO, PainelFoto, QuadroFoto } from "@/components/QuadroFoto"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
@@ -103,8 +104,6 @@ export function FichaCliente({ clienteId, aoFechar, abaInicial = "geral" }: {
 
 // ── Foto ─────────────────────────────────────────────────────────────────────
 
-const LADO_FOTO = 480 // px: a foto é reduzida no navegador antes de ir ao servidor
-
 /** A foto vem com o token (uma <img src> não manda o login), então vira um blob local. */
 function useFoto(cliente: Cliente) {
   const [url, setUrl] = useState<string | null>(null)
@@ -135,26 +134,15 @@ function useFoto(cliente: Cliente) {
 }
 
 function FotoCliente({ cliente, tamanho }: { cliente: Cliente; tamanho: "pequena" | "grande" }) {
-  const url = useFoto(cliente)
-  const classe = tamanho === "grande" ? "size-40 rounded-xl" : "size-12 rounded-full"
-  return url ? (
-    <img src={url} alt={`Foto de ${cliente.nome}`} className={cn(classe, "shrink-0 border border-borda object-cover")} />
-  ) : (
-    <div className={cn(classe, "flex shrink-0 items-center justify-center border border-dashed border-borda bg-superficie-2 text-texto-fraco")}>
-      <IconUser size={tamanho === "grande" ? 56 : 22} stroke={1.4} />
-    </div>
-  )
+  return <QuadroFoto url={useFoto(cliente)} alt={`Foto de ${cliente.nome}`} tamanho={tamanho} />
 }
 
 function EditorFoto({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cliente) => void }) {
   const avisar = useAvisos()
-  const entrada = useRef<HTMLInputElement>(null)
+  const url = useFoto(cliente)
   const [enviando, setEnviando] = useState(false)
 
-  async function escolher(ev: React.ChangeEvent<HTMLInputElement>) {
-    const arquivo = ev.target.files?.[0]
-    ev.target.value = "" // permite escolher o mesmo arquivo de novo
-    if (!arquivo) return
+  async function escolher(arquivo: File) {
     setEnviando(true)
     try {
       const imagem = await reduzirImagem(arquivo, LADO_FOTO)
@@ -178,18 +166,13 @@ function EditorFoto({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cli
   }
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <FotoCliente cliente={cliente} tamanho="grande" />
-      <input ref={entrada} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={escolher} />
-      <Button type="button" variant="outline" size="sm" className="w-40 gap-1.5" disabled={enviando} onClick={() => entrada.current?.click()}>
-        <IconCamera size={14} /> {enviando ? "Enviando..." : cliente.tem_foto ? "Trocar foto" : "Enviar foto"}
-      </Button>
-      {cliente.tem_foto && (
-        <button type="button" onClick={remover} className="text-xs text-texto-fraco hover:text-perigo">
-          Remover foto
-        </button>
-      )}
-    </div>
+    <PainelFoto
+      url={cliente.tem_foto ? url : null}
+      alt={`Foto de ${cliente.nome}`}
+      ocupado={enviando}
+      aoEscolher={escolher}
+      aoRemover={remover}
+    />
   )
 }
 
@@ -199,6 +182,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
   const avisar = useAvisos()
   const [nome, setNome] = useState(cliente.nome)
   const [documento, setDocumento] = useState(cliente.documento ?? "")
+  const [email, setEmail] = useState(cliente.email ?? "")
   const [nascimento, setNascimento] = useState(cliente.data_nascimento ?? "")
   const [obs, setObs] = useState(cliente.observacao ?? "")
   const [erro, setErro] = useState("")
@@ -208,6 +192,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
   const alterado =
     nome.trim() !== cliente.nome ||
     documento.trim() !== (cliente.documento ?? "") ||
+    email.trim().toLowerCase() !== (cliente.email ?? "") ||
     nascimento !== (cliente.data_nascimento ?? "") ||
     obs.trim() !== (cliente.observacao ?? "")
 
@@ -221,6 +206,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
         await Api.put<Cliente>(`/api/clientes/${cliente.id}`, {
           nome: nome.trim(),
           documento: documento.trim(),
+          email: email.trim(),
           data_nascimento: nascimento || null,
           observacao: obs.trim(),
         }),
@@ -247,10 +233,19 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
           <Campo rotulo="Documento (CPF/RG)" id="ficha-doc">
             <Input id="ficha-doc" autoComplete="off" value={documento} onChange={(e) => setDocumento(e.target.value)} />
           </Campo>
+          <Campo rotulo="E-mail" id="ficha-email">
+            <Input
+              id="ficha-email"
+              type="email"
+              autoComplete="off"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Campo>
           <Campo rotulo="Data de nascimento" id="ficha-nasc">
             <Input id="ficha-nasc" type="date" value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
           </Campo>
-          <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave">
+          <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave sm:col-span-2">
             {textoIdade(nascimento || null) ?? ""}
           </div>
         </div>

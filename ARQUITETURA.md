@@ -57,7 +57,7 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 | `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`, só do piso escolhido) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
-| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente`, `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente` (mesmo formato da ficha, com a foto), `QuadroFoto` (foto e botões, usados pelos dois), `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
 | `src/pages/` | uma tela por arquivo |
 
 O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.
@@ -66,7 +66,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 | Tabela | Guarda |
 |---|---|
-| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, data de nascimento, `foto_em` (quando a foto mudou), `piso_id` com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
+| `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, e-mail, data de nascimento, `foto_em` (quando a foto mudou), `piso_id` com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
 | `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
 | `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
 | `pisos` | pisos da biblioteca (nome, cor, `padrao`), cadastrados em Configurações → Pisos |
