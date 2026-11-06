@@ -1342,3 +1342,84 @@ def test_email_no_cadastro_do_cliente(c, admin):
 def test_email_invalido_e_recusado(c, admin, cenario):
     r = c.put(f"/api/clientes/{cenario['cliente_id']}", headers=admin, json={"email": "sem-arroba"})
     assert r.status_code == 422
+
+
+# ── 8.4 Horario de funcionamento ─────────────────────────────────────────────
+
+def _semana(abre="08:00", fecha="20:00", aberto=True):
+    return [{"aberto": aberto, "abre": abre, "fecha": fecha} for _ in range(7)]
+
+
+def test_horario_comeca_desligado_e_se_configura(c, admin, operador):
+    r = c.get("/api/config/horario", headers=admin)
+    assert r.status_code == 200
+    assert r.json()["ativo"] is False and len(r.json()["dias"]) == 7
+    assert c.get("/api/config/horario", headers=operador).status_code == 403
+    dias = _semana()
+    dias[6] = {"aberto": False, "abre": "08:00", "fecha": "20:00"}  # domingo fechado
+    dias[5] = {"aberto": True, "abre": "09:00", "fecha": "16:00"}
+    try:
+        r = c.put("/api/config/horario", headers=admin, json={"ativo": True, "dias": dias})
+        assert r.status_code == 200, r.text
+        assert c.get("/api/config/horario", headers=admin).json() == {"ativo": True, "dias": dias}
+    finally:
+        c.put("/api/config/horario", headers=admin, json={"ativo": False, "dias": _semana()})
+
+
+def test_horario_invalido_e_recusado(c, admin):
+    ruins = [
+        {"ativo": True, "dias": _semana()[:6]},                      # faltando um dia
+        {"ativo": True, "dias": _semana(abre="20:00", fecha="08:00")},  # fecha antes de abrir
+        {"ativo": True, "dias": _semana(fecha="25:00")},
+    ]
+    for corpo in ruins:
+        assert c.put("/api/config/horario", headers=admin, json=corpo).status_code == 422, corpo
+
+
+def test_decide_avisar_e_encerrar_pelo_relogio():
+    from app.horario import decidir
+    horario = {"ativo": True, "dias": _semana(fecha="20:00")}
+    dia = datetime(2026, 11, 9)  # segunda
+    avisados = set()
+    assert decidir(horario, dia.replace(hour=15), avisados) == {"aviso": None, "encerrar": False}
+    d = decidir(horario, dia.replace(hour=19, minute=51), avisados)
+    assert d == {"aviso": 10, "encerrar": False}
+    assert decidir(horario, dia.replace(hour=19, minute=52), avisados)["aviso"] is None  # uma vez so
+    assert decidir(horario, dia.replace(hour=19, minute=55), avisados)["aviso"] == 5
+    assert decidir(horario, dia.replace(hour=20), avisados) == {"aviso": None, "encerrar": True}
+    assert decidir(horario, dia.replace(hour=7), avisados)["encerrar"] is True  # antes de abrir
+    # desligado: nunca avisa nem encerra
+    assert decidir({"ativo": False, "dias": _semana()}, dia.replace(hour=23), set())["encerrar"] is False
+    # dia fechado
+    fechado = {"ativo": True, "dias": _semana(aberto=False)}
+    assert decidir(fechado, dia.replace(hour=12), set())["encerrar"] is True
+
+
+def test_no_fechamento_encerra_e_devolve_o_tempo(c, admin, cenario):
+    from app.horario import encerrar_sessoes_do_fechamento
+    sid = _sessao_aberta(cenario, inicio_min=30)
+    db = SessionLocal()
+    encerradas = encerrar_sessoes_do_fechamento(db)
+    db.close()
+    assert cenario["estacao"] in [e for e, _ in encerradas]
+    s = _sessao(sid)
+    assert s.motivo_encerramento == "horario"
+    assert abs(s.tempo_consumido_segundos - 1800) <= 3
+    saldo = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - 5400) <= 3
+
+
+def test_biblioteca_fechada_recusa_login_e_liberar_direto(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    try:
+        assert c.put("/api/config/horario", headers=admin,
+                     json={"ativo": True, "dias": _semana(aberto=False)}).status_code == 200
+        with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+            _estado(ws)
+            c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+            dados = _logar_no_pc(ws, cenario["cliente"])
+            assert not dados["ok"] and "fechada" in dados["motivo"]
+            r = c.post(f"/api/estacoes/{cenario['estacao']}/iniciar_direto", headers=admin, json={"cliente_id": cid})
+            assert r.status_code == 400 and "fechada" in r.json()["detail"]
+    finally:
+        c.put("/api/config/horario", headers=admin, json={"ativo": False, "dias": _semana()})

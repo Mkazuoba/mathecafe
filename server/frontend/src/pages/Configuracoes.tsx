@@ -11,6 +11,7 @@ import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui
 import { Modal } from "@/components/ui/modal"
 import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoPisos } from "@/components/SecaoPisos"
+import { SecaoHorario } from "@/components/SecaoHorario"
 import { SecaoProgramacao } from "@/components/SecaoProgramacao"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
@@ -18,6 +19,7 @@ import { SeloAtivo, Vazio } from "@/components/ui/status"
 const SECOES = [
   { id: "operadores", rotulo: "Operadores" },
   { id: "comportamento", rotulo: "Comportamento" },
+  { id: "horario", rotulo: "Horário" },
   { id: "pisos", rotulo: "Pisos" },
   { id: "grupos", rotulo: "Mapas" },
   { id: "apps", rotulo: "Apps permitidos" },
@@ -56,6 +58,7 @@ export default function Configuracoes() {
         <div className="max-w-2xl">
           {secao === "operadores" && <SecaoOperadores />}
           {secao === "comportamento" && <SecaoComportamento />}
+          {secao === "horario" && <SecaoHorario />}
           {secao === "pisos" && <SecaoPisos />}
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}

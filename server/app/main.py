@@ -10,6 +10,7 @@ from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppP
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
 from app.pisos import recusa_de_piso
+from app import horario
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
 
@@ -99,6 +100,27 @@ def _fechar_sessao_sem_conexao(sessao) -> int:
     return restante
 
 
+# avisos de fechamento ja dados hoje: {(data, minutos)}
+_avisos_do_horario: set = set()
+
+
+async def _aplicar_horario(db: Session):
+    config_horario = horario.carregar(db)
+    agora = horario.agora_local()
+    decisao = horario.decidir(config_horario, agora, _avisos_do_horario)
+    if decisao["aviso"]:
+        texto = horario.texto_do_aviso(config_horario, agora, decisao["aviso"])
+        for sessao in db.query(Sessao).filter(Sessao.encerrada_em == None):
+            await manager.enviar_estacao(sessao.estacao.nome, "mensagem_tela", {"texto": texto})
+    if decisao["encerrar"]:
+        encerradas = horario.encerrar_sessoes_do_fechamento(db)
+        for nome, restante in encerradas:
+            await manager.enviar_estacao(nome, "encerrar_sessao", {"motivo": "horario", "saldo_restante": restante})
+        if encerradas:
+            print(f"Horario de funcionamento: {len(encerradas)} sessao(oes) encerrada(s)")
+            await manager.broadcast_paineis("sessao_encerrada", {"motivo": "horario"})
+
+
 async def _batimento():
     while True:
         db = SessionLocal()
@@ -116,6 +138,14 @@ async def _batimento():
                 print(f"Backup do banco: {destino}")
         except Exception as e:
             print(f"Backup do banco: erro ({e})")
+        # Horario de funcionamento: avisa antes de fechar e encerra no horario
+        db = SessionLocal()
+        try:
+            await _aplicar_horario(db)
+        except Exception as e:
+            print(f"Horario de funcionamento: erro ({e})")
+        finally:
+            db.close()
         # PC sem conexao que nao voltou ate o fim do tempo do cliente
         db = SessionLocal()
         try:
@@ -307,6 +337,13 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     await ws.send_text(json.dumps({
                         "evento": "login_resultado",
                         "dados": {"ok": False, "motivo": "Estação não está disponível"}
+                    }))
+                    continue
+
+                if horario.esta_fechada(horario.carregar(db), horario.agora_local()):
+                    await ws.send_text(json.dumps({
+                        "evento": "login_resultado",
+                        "dados": {"ok": False, "motivo": horario.FECHADA}
                     }))
                     continue
 

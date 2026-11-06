@@ -38,6 +38,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `pisos`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
 | `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
 | `pisos.py` | pisos cadastrados (tabela `pisos`): o do cliente (cadastro) e o da estação (o do mapa; sem mapa ou mapa antigo sem piso = o piso padrão); `recusa_de_piso` dá o motivo da recusa; `garantir_pisos` cria Adulto (padrão) e Infantil na primeira subida e converte os pisos que eram texto (4.7a) |
+| `horario.py` | horário de funcionamento (chave `horario_funcionamento` em `configuracoes`, um dia por linha, 0 = segunda): `decidir` diz, a cada batimento, se avisa (10 e 5 min antes de fechar) ou encerra as sessões (motivo `horario`, devolvendo o tempo); `esta_fechada` recusa o login no PC e o liberar direto |
 | `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |

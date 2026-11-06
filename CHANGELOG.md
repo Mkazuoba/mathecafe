@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Horário de funcionamento (Ciclo 8, tarefa 8.4)
+
+- **Configurações → Horário**: liga/desliga e, para cada dia da semana, se funciona e o horário de abrir e fechar (Brasília). Vários dias de uma vez: atalhos Seg a sex / Fim de semana / Todos e "Nos marcados: das ... às ... Aplicar" ou "Fechado". Começa desligado.
+- **Ligado**: 10 e 5 minutos antes de fechar os clientes recebem um aviso na tela ("A biblioteca fecha às 20:00. Sua sessão termina em 10 minutos..."); no horário as sessões são encerradas (motivo `horario`) e o tempo que sobrou volta para cada cliente; fora do horário o login no PC e o liberar direto são recusados ("A biblioteca está fechada agora."). A fila continua funcionando.
+- Não precisa de agente novo: o aviso usa a mensagem na tela que já existe.
+
 ## 2026-11-06 — Cadastro do cliente: e-mail e foto no cadastro novo (Ciclo 8, tarefa 8.3)
 
 - **Cadastro novo no mesmo formato da ficha**: foto à esquerda (Enviar/Trocar/Remover, com prévia) e os dados à direita. A foto vai junto ao criar; antes só dava para pôr depois, na ficha.

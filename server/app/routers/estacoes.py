@@ -390,6 +390,9 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     motivo_piso = recusa_de_piso(cliente, e)
     if motivo_piso:
         raise HTTPException(400, motivo_piso)
+    from app import horario
+    if horario.esta_fechada(horario.carregar(db), horario.agora_local()):
+        raise HTTPException(400, horario.FECHADA)
 
     # Sessao ja ativa?
     sessao_existente = db.query(SessaoModel).filter(

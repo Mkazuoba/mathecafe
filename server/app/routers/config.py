@@ -1,11 +1,11 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional
 from datetime import datetime
 from fastapi.responses import FileResponse
-from app import backup
+from app import backup, horario
 from app.config import _ENV_FILE, descrever_banco, get_settings, gravar_no_env, normalizar_url_banco, pasta_de_backup
 from app.database import ARQUIVO_SQLITE, _db_url, get_db
 from app.tempo_diario import FUSO, hoje_br
@@ -167,3 +167,34 @@ def baixar_backup(nome: str, _=Depends(requer_perfil("admin"))):
     if not backup.NOME_BACKUP.match(nome) or not arquivo.is_file():
         raise HTTPException(404, "Backup nao encontrado")
     return FileResponse(arquivo, filename=nome, media_type="application/octet-stream")
+
+
+# ── Horario de funcionamento (app/horario.py) ────────────────────────────────
+
+
+class HorarioDia(BaseModel):
+    aberto: bool
+    abre: str = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    fecha: str = Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+
+    @model_validator(mode="after")
+    def _fecha_depois(self):
+        if self.aberto and self.fecha <= self.abre:
+            raise ValueError("O horário de fechar tem de ser depois do de abrir")
+        return self
+
+
+class Horario(BaseModel):
+    ativo: bool
+    dias: List[HorarioDia] = Field(min_length=7, max_length=7)  # 0 = segunda
+
+
+@router.get("/horario")
+def ver_horario(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    return horario.carregar(db)
+
+
+@router.put("/horario")
+def salvar_horario(data: Horario, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+    horario.gravar(db, data.model_dump())
+    return horario.carregar(db)
