@@ -5,6 +5,7 @@ from typing import Optional
 from app.database import get_db
 from app.models import Usuario, Autorizacao
 from app.security import hash_senha, requer_perfil
+from app.registro import registrar
 
 router = APIRouter(prefix="/operadores", tags=["operadores"])
 
@@ -38,7 +39,7 @@ def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     return [serializar(o) for o in operadores]
 
 @router.post("/")
-def criar(data: OperadorCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def criar(data: OperadorCreate, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     if db.query(Usuario).filter(Usuario.login == data.login).first():
         raise HTTPException(status_code=400, detail="Login ja existe")
     perfil_val = data.perfil if data.perfil in ("admin", "operador") else "operador"
@@ -50,10 +51,11 @@ def criar(data: OperadorCreate, db: Session = Depends(get_db), _=Depends(requer_
     db.add(operador)
     db.commit()
     db.refresh(operador)
+    registrar(db, quem, "criar_operador", detalhe=f"{operador.nome} ({operador.login}, {operador.perfil})")
     return serializar(operador)
 
 @router.put("/{id}")
-def atualizar(id: int, data: OperadorUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def atualizar(id: int, data: OperadorUpdate, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     operador = db.query(Usuario).filter(Usuario.id == id).first()
     if not operador:
         raise HTTPException(status_code=404, detail="Operador nao encontrado")
@@ -62,10 +64,11 @@ def atualizar(id: int, data: OperadorUpdate, db: Session = Depends(get_db), _=De
     if data.ativo is not None: operador.ativo = data.ativo
     if data.perfil in ("admin", "operador"): operador.perfil = data.perfil
     db.commit()
+    registrar(db, quem, "editar_operador", detalhe=f"{operador.nome} ({operador.login})")
     return serializar(operador)
 
 @router.delete("/{id}")
-def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def excluir(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     operador = db.query(Usuario).filter(Usuario.id == id).first()
     if not operador:
         raise HTTPException(status_code=404, detail="Operador nao encontrado")
@@ -73,6 +76,7 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
     if db.query(Autorizacao).filter(Autorizacao.autorizado_por_id == id).first():
         raise HTTPException(status_code=409,
                             detail="Operador ja liberou clientes. Desative-o em vez de excluir.")
+    registrar(db, quem, "excluir_operador", detalhe=f"{operador.nome} ({operador.login})")
     db.delete(operador)
     db.commit()
     return {"ok": True}

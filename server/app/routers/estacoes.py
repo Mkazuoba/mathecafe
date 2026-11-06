@@ -6,6 +6,7 @@ from datetime import datetime
 from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
+from app.registro import registrar
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
@@ -161,9 +162,10 @@ def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db
 
 @router.post("/{nome}/ligar")
 async def ligar_pc(nome: str, db: Session = Depends(get_db),
-                   _=Depends(requer_perfil("admin", "operador"))):
+                   quem=Depends(requer_perfil("admin", "operador"))):
     """Envia magic packet Wake-on-LAN para a estacao."""
     _ligar(db, nome)
+    registrar(db, quem, "ligar_pc", estacao=nome)
     return {"ok": True}
 
 
@@ -242,6 +244,7 @@ async def autorizar_cliente(cliente_id: int, db: Session = Depends(get_db),
 
     db.commit()
     db.refresh(auth)
+    registrar(db, operador, "liberar", cliente=cliente)
 
     await manager.broadcast_paineis("fila_atualizada", {
         "acao": "adicionado", "cliente": serial_autorizacao(auth)
@@ -250,12 +253,14 @@ async def autorizar_cliente(cliente_id: int, db: Session = Depends(get_db),
 
 @router.delete("/fila/{cliente_id}")
 async def remover_fila(cliente_id: int, db: Session = Depends(get_db),
-                        _=Depends(requer_perfil("admin", "operador"))):
+                        quem=Depends(requer_perfil("admin", "operador"))):
     auth = db.query(Autorizacao).filter(
         Autorizacao.cliente_id == cliente_id, Autorizacao.usado == False).first()
     if not auth:
         raise HTTPException(404, "Cliente não está na fila")
+    cliente = auth.cliente
     db.delete(auth); db.commit()
+    registrar(db, quem, "tirar_da_fila", cliente=cliente)
     await manager.broadcast_paineis("fila_atualizada", {"acao": "removido", "cliente_id": cliente_id})
     return {"ok": True}
 
@@ -278,23 +283,27 @@ def _estacao_online(db: Session, nome: str) -> Estacao:
     return e
 
 
-async def _desligar_ou_reiniciar(db: Session, nome: str, comando: str):
+async def _desligar_ou_reiniciar(db: Session, nome: str, comando: str, quem: dict):
     """Encerra a sessao (o tempo que sobrou volta ao cliente) e manda o comando;
     o agente sai da sessao e desliga/reinicia depois de 10s."""
     e = _estacao_online(db, nome)
     from app.routers.sessoes import encerrar_pelo_operador
     aberta = db.query(Sessao).filter(Sessao.estacao_id == e.id, Sessao.encerrada_em == None).first()
+    cliente = aberta.cliente if aberta else None
     if aberta:
         await encerrar_pelo_operador(db, aberta, avisar_agente=False)
     await manager.enviar_estacao(nome, comando, {})
+    registrar(db, quem, comando, cliente=cliente, estacao=nome,
+              detalhe="a sessão do cliente foi encerrada" if cliente else None)
 
 
-async def _mensagem(db: Session, nome: str, texto: str):
+async def _mensagem(db: Session, nome: str, texto: str, quem: dict):
     _estacao_online(db, nome)
     await manager.enviar_estacao(nome, "mensagem_tela", {"texto": texto})
+    registrar(db, quem, "mensagem", estacao=nome, detalhe=texto)
 
 
-async def _encerrar(db: Session, nome: str):
+async def _encerrar(db: Session, nome: str, quem: dict):
     e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
@@ -302,25 +311,27 @@ async def _encerrar(db: Session, nome: str):
     if not aberta:
         raise HTTPException(400, "Sem sessão em andamento")
     from app.routers.sessoes import encerrar_pelo_operador
+    cliente = aberta.cliente
     await encerrar_pelo_operador(db, aberta)
+    registrar(db, quem, "encerrar_sessao", cliente=cliente, estacao=nome)
 
 
 @router.post("/{nome}/reiniciar")
 async def reiniciar_pc(nome: str, db: Session = Depends(get_db),
-                        _=Depends(requer_perfil("admin", "operador"))):
-    await _desligar_ou_reiniciar(db, nome, "reiniciar_pc")
+                        quem=Depends(requer_perfil("admin", "operador"))):
+    await _desligar_ou_reiniciar(db, nome, "reiniciar_pc", quem)
     return {"ok": True}
 
 @router.post("/{nome}/desligar")
 async def desligar_pc(nome: str, db: Session = Depends(get_db),
-                      _=Depends(requer_perfil("admin", "operador"))):
-    await _desligar_ou_reiniciar(db, nome, "desligar_pc")
+                      quem=Depends(requer_perfil("admin", "operador"))):
+    await _desligar_ou_reiniciar(db, nome, "desligar_pc", quem)
     return {"ok": True}
 
 @router.post("/{nome}/mensagem")
 async def enviar_mensagem(nome: str, body: MensagemBody, db: Session = Depends(get_db),
-                           _=Depends(requer_perfil("admin", "operador"))):
-    await _mensagem(db, nome, body.texto)
+                           quem=Depends(requer_perfil("admin", "operador"))):
+    await _mensagem(db, nome, body.texto, quem)
     return {"ok": True}
 
 
@@ -332,7 +343,7 @@ class AcaoEmMassa(BaseModel):
 
 @router.post("/acoes")
 async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
-                         _=Depends(requer_perfil("admin", "operador"))):
+                         quem=Depends(requer_perfil("admin", "operador"))):
     """O mesmo comando para varias estacoes; cada uma diz se deu certo ("ok") ou
     o motivo (offline, sem sessao...), sem parar as outras."""
     texto = (body.texto or "").strip()
@@ -342,13 +353,14 @@ async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
     for nome in dict.fromkeys(body.estacoes):  # sem repetir, na ordem
         try:
             if body.acao == "mensagem":
-                await _mensagem(db, nome, texto)
+                await _mensagem(db, nome, texto, quem)
             elif body.acao == "encerrar":
-                await _encerrar(db, nome)
+                await _encerrar(db, nome, quem)
             elif body.acao in ("reiniciar", "desligar"):
-                await _desligar_ou_reiniciar(db, nome, f"{body.acao}_pc")
+                await _desligar_ou_reiniciar(db, nome, f"{body.acao}_pc", quem)
             else:
                 _ligar(db, nome)
+                registrar(db, quem, "ligar_pc", estacao=nome)
             resultados[nome] = "ok"
         except HTTPException as erro:
             db.rollback()
@@ -357,7 +369,7 @@ async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
 
 @router.post("/{nome}/manutencao")
 async def alternar_manutencao(nome: str, db: Session = Depends(get_db),
-                               _=Depends(requer_perfil("admin", "operador"))):
+                               quem=Depends(requer_perfil("admin", "operador"))):
     e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
@@ -365,8 +377,10 @@ async def alternar_manutencao(nome: str, db: Session = Depends(get_db),
         raise HTTPException(400, "Estação offline")
     if e.status == "manutencao":
         await manager.enviar_estacao(nome, "desativar_manutencao", {})
+        registrar(db, quem, "manutencao", estacao=nome, detalhe="saiu da manutenção")
     else:
         await manager.enviar_estacao(nome, "ativar_manutencao", {})
+        registrar(db, quem, "manutencao", estacao=nome, detalhe="entrou em manutenção")
     return {"ok": True}
 
 @router.post("/{nome}/iniciar_direto")
@@ -431,6 +445,7 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     e.status = "ocupada"
     db.commit()
     db.refresh(sessao)
+    registrar(db, operador, "liberar_direto", cliente=cliente, estacao=nome)
     db.refresh(cliente)
 
     # Whitelist: apps do grupo da estacao + apps globais (grupo_id=None)

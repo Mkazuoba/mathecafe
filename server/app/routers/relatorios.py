@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 import csv
 import io
 from app.database import get_db
-from app.models import Sessao, Estacao, Usuario
+from app.models import AcaoOperador, Sessao, Estacao, Usuario
+from app.registro import ROTULOS
 from app.security import requer_perfil
 from app.tempo_diario import FUSO
 
@@ -148,3 +149,79 @@ def historico_da_estacao(nome: str, de: Optional[str] = None, ate: Optional[str]
         "itens": [{"cliente_id": i, "login": lg, "nome": nm, "sessoes": n, "tempo_segundos": int(t),
                    "primeira_vez": _iso(p), "ultima_vez": _iso(u)} for i, lg, nm, n, t, p, u in linhas],
     }
+
+
+# ── Acoes dos operadores (8.1) ───────────────────────────────────────────────
+
+def _acoes_filtradas(db: Session, operador_id, acao, cliente, estacao, de, ate, limite):
+    q = db.query(AcaoOperador)
+    if operador_id:
+        q = q.filter(AcaoOperador.operador_id == operador_id)
+    if acao:
+        q = q.filter(AcaoOperador.acao == acao)
+    if estacao:
+        q = q.filter(AcaoOperador.estacao == estacao)
+    if cliente:
+        termo = f"%{cliente.strip().lower()}%"
+        q = q.filter((func.lower(AcaoOperador.cliente_login).like(termo)) |
+                     (func.lower(AcaoOperador.cliente_nome).like(termo)))
+    # datas do painel sao de Brasilia; o registro guarda UTC
+    if de:
+        inicio = datetime.strptime(de, "%Y-%m-%d").replace(tzinfo=FUSO).astimezone(timezone.utc).replace(tzinfo=None)
+        q = q.filter(AcaoOperador.quando >= inicio)
+    if ate:
+        fim = (datetime.strptime(ate, "%Y-%m-%d") + timedelta(days=1)).replace(tzinfo=FUSO)
+        q = q.filter(AcaoOperador.quando < fim.astimezone(timezone.utc).replace(tzinfo=None))
+    return q.order_by(AcaoOperador.quando.desc(), AcaoOperador.id.desc()).limit(limite).all()
+
+
+def _serial_acao(a: AcaoOperador) -> dict:
+    return {
+        "id": a.id,
+        "quando": a.quando.isoformat() + "Z",
+        "operador_id": a.operador_id,
+        "operador": a.operador_nome,
+        "acao": a.acao,
+        "rotulo": ROTULOS.get(a.acao, a.acao),
+        "cliente_id": a.cliente_id,
+        "cliente_login": a.cliente_login,
+        "cliente_nome": a.cliente_nome,
+        "estacao": a.estacao,
+        "detalhe": a.detalhe,
+    }
+
+
+@router.get("/acoes")
+def acoes_dos_operadores(
+    operador_id: Optional[int] = None, acao: Optional[str] = None, cliente: Optional[str] = None,
+    estacao: Optional[str] = None, de: Optional[str] = None, ate: Optional[str] = None,
+    limite: int = 500, db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+):
+    """O que cada operador fez, do mais recente para o mais antigo."""
+    limite = max(1, min(limite, 5000))
+    return [_serial_acao(a) for a in _acoes_filtradas(db, operador_id, acao, cliente, estacao, de, ate, limite)]
+
+
+@router.get("/acoes/tipos")
+def tipos_de_acao(_=Depends(requer_perfil("admin"))):
+    return [{"acao": k, "rotulo": v} for k, v in ROTULOS.items()]
+
+
+@router.get("/acoes.csv")
+def acoes_csv(
+    operador_id: Optional[int] = None, acao: Optional[str] = None, cliente: Optional[str] = None,
+    estacao: Optional[str] = None, de: Optional[str] = None, ate: Optional[str] = None,
+    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+):
+    acoes = _acoes_filtradas(db, operador_id, acao, cliente, estacao, de, ate, 100000)
+    saida = io.StringIO()
+    saida.write("\ufeff")  # o Excel abre com acentos
+    w = csv.writer(saida, delimiter=";")
+    w.writerow(["Quando", "Operador", "Ação", "Cliente", "Login", "Estação", "Detalhe"])
+    for a in acoes:
+        quando = a.quando.replace(tzinfo=timezone.utc).astimezone(FUSO).strftime("%d/%m/%Y %H:%M:%S")
+        w.writerow([quando, a.operador_nome, ROTULOS.get(a.acao, a.acao), a.cliente_nome or "",
+                    a.cliente_login or "", a.estacao or "", a.detalhe or ""])
+    saida.seek(0)
+    return StreamingResponse(iter([saida.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": "attachment; filename=acoes_operadores.csv"})

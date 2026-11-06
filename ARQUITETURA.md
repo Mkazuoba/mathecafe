@@ -38,6 +38,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `routers/` | `auth`, `clientes`, `estacoes` (+ grupos, posição no mapa, fila), `sessoes`, `apps`, `operadores`, `config`, `pisos`, `relatorios` (CSV e históricos por cliente/estação), `programacao` (cartazes do agente), `agente` (auto-update) |
 | `imagens.py` | lê as imagens enviadas pelo painel (data URL), confere a assinatura do arquivo e o tamanho |
 | `pisos.py` | pisos cadastrados (tabela `pisos`): o do cliente (cadastro) e o da estação (o do mapa; sem mapa ou mapa antigo sem piso = o piso padrão); `recusa_de_piso` dá o motivo da recusa; `garantir_pisos` cria Adulto (padrão) e Infantil na primeira subida e converte os pisos que eram texto (4.7a) |
+| `registro.py` | `registrar(db, quem, acao, cliente, estacao, detalhe)`, chamado pelas rotas que mudam algo (liberar, tempo extra, encerrar, desligar, trocar piso...); `ROTULOS` dá o nome de cada ação no painel e no CSV |
 | `horario.py` | horário de funcionamento (chave `horario_funcionamento` em `configuracoes`, um dia por linha, 0 = segunda): `decidir` diz, a cada batimento, se avisa (10 e 5 min antes de fechar) ou encerra as sessões (motivo `horario`, devolvendo o tempo); `esta_fechada` recusa o login no PC e o liberar direto |
 | `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
@@ -70,6 +71,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `usuarios` | admin, operadores e clientes (`perfil`), tempo que o cliente ainda tem hoje (`saldo_segundos` + `saldo_dia`), `ativo`, documento, e-mail, data de nascimento, `foto_em` (quando a foto mudou), `piso_id` com `piso_alterado_por` / `piso_alterado_em` (quem trocou por último) |
 | `fotos_clientes` | foto de cada cliente (bytes + tipo), à parte para a lista de clientes não carregar imagens |
 | `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
+| `acoes_operadores` | registro do que cada operador fez (`app/registro.py`): quando, operador, ação, cliente, estação e detalhe, com nomes guardados no momento |
 | `pisos` | pisos da biblioteca (nome, cor, `padrao`), cadastrados em Configurações → Pisos |
 | `grupos_estacao` | mapas (abas do Mapa), com cor e `piso_id` (obrigatório ao criar; vazio só em mapas antigos, que o painel aponta e contam como o padrão). O `tempo_padrao_segundos` do grupo não é mais usado |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |

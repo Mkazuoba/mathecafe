@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { IconChevronDown, IconChevronUp, IconDownload, IconSelector } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
@@ -7,6 +7,7 @@ import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import { cn } from "@/lib/utils"
 import { CabecalhoTela } from "@/components/Layout"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
+import { AbaAcoesOperadores, type FiltrosAcoes } from "@/components/AbaAcoesOperadores"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, MensagemErro, Select } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
@@ -34,7 +35,7 @@ interface HistoricoEstacao extends Resumo {
   itens: (ItemUso & { cliente_id: number; login: string; nome: string })[]
 }
 
-type Aba = "cliente" | "estacao"
+type Aba = "cliente" | "estacao" | "acoes"
 type Coluna = "nome" | "sessoes" | "tempo" | "ultima"
 
 /** Uma linha da tabela, igual nas duas abas. */
@@ -66,21 +67,51 @@ function baixarCsv(nomeArquivo: string, cabecalho: string[], linhas: (string | n
 
 export default function Historicos() {
   const [params, setParams] = useSearchParams()
-  const aba: Aba = params.get("aba") === "estacao" ? "estacao" : "cliente"
+  const admin = Api.ehAdmin()
+  const pedida = params.get("aba")
+  // o registro dos operadores é só do admin
+  const aba: Aba = pedida === "estacao" ? "estacao" : pedida === "acoes" && admin ? "acoes" : "cliente"
   const clienteId = params.get("cliente")
   const estacaoNome = params.get("estacao") ?? ""
   const de = params.get("de") ?? ""
   const ate = params.get("ate") ?? ""
 
   // O endereço guarda a escolha: dá para voltar, recarregar e mandar o link
-  function mudar(novos: Record<string, string | null>) {
-    const p = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(novos)) {
-      if (v) p.set(k, v)
-      else p.delete(k)
-    }
-    setParams(p, { replace: true })
+  const mudar = useCallback(
+    (novos: Record<string, string | null | undefined>) => {
+      setParams(
+        (atual) => {
+          const p = new URLSearchParams(atual)
+          for (const [k, v] of Object.entries(novos)) {
+            if (v) p.set(k, v)
+            else p.delete(k)
+          }
+          return p
+        },
+        { replace: true },
+      )
+    },
+    [setParams],
+  )
+  const filtrosAcoes: FiltrosAcoes = {
+    operador_id: params.get("operador_id") ?? "",
+    acao: params.get("acao") ?? "",
+    cliente: params.get("cliente_texto") ?? "",
+    estacao: params.get("estacao_texto") ?? "",
+    de,
+    ate,
   }
+  const mudarAcoes = useCallback(
+    (novos: Partial<FiltrosAcoes>) => {
+      const { cliente, estacao, ...resto } = novos
+      mudar({
+        ...resto,
+        ...(cliente !== undefined ? { cliente_texto: cliente } : {}),
+        ...(estacao !== undefined ? { estacao_texto: estacao } : {}),
+      })
+    },
+    [mudar],
+  )
 
   return (
     <>
@@ -90,6 +121,7 @@ export default function Historicos() {
             [
               ["cliente", "Por cliente"],
               ["estacao", "Por estação"],
+              ...(admin ? ([["acoes", "Ações dos operadores"]] as const) : []),
             ] as const
           ).map(([id, rotulo]) => (
             <button
@@ -109,7 +141,9 @@ export default function Historicos() {
         </div>
       </CabecalhoTela>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {aba === "cliente" ? (
+        {aba === "acoes" ? (
+          <AbaAcoesOperadores filtros={filtrosAcoes} mudar={mudarAcoes} />
+        ) : aba === "cliente" ? (
           <AbaCliente
             clienteId={clienteId}
             de={de}

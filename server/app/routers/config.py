@@ -11,6 +11,7 @@ from app.database import ARQUIVO_SQLITE, _db_url, get_db
 from app.tempo_diario import FUSO, hoje_br
 from app.models import ConfiguracaoSistema
 from app.security import requer_perfil
+from app.registro import registrar
 from app.tempo_diario import zerar_tempo_de_hoje
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -36,12 +37,14 @@ def obter(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     }
 
 @router.put("/")
-def atualizar(data: ConfigUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def atualizar(data: ConfigUpdate, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     if data.reiniciar_ao_encerrar is not None:
         _set(db, "reiniciar_ao_encerrar", "true" if data.reiniciar_ao_encerrar else "false")
     if data.tempo_padrao_segundos is not None:
         _set(db, "tempo_padrao_segundos", str(data.tempo_padrao_segundos))
     db.commit()
+    registrar(db, quem, "configuracao", detalhe=", ".join(
+        f"{k}={v}" for k, v in data.model_dump(exclude_none=True).items()))
 
     configs = db.query(ConfiguracaoSistema).all()
     valores = {c.chave: c.valor for c in configs}
@@ -52,9 +55,11 @@ def atualizar(data: ConfigUpdate, db: Session = Depends(get_db), _=Depends(reque
 
 
 @router.post("/zerar_tempo_hoje")
-def zerar_tempo_hoje(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def zerar_tempo_hoje(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     """Faz agora o que a meia-noite faria: todos os clientes voltam ao tempo cheio."""
-    return {"ok": True, "clientes": zerar_tempo_de_hoje(db)}
+    n = zerar_tempo_de_hoje(db)
+    registrar(db, quem, "zerar_tempo_dia", detalhe=f"{n} cliente(s)")
+    return {"ok": True, "clientes": n}
 
 
 # ── Banco do servidor ────────────────────────────────────────────────────────
@@ -195,6 +200,7 @@ def ver_horario(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))
 
 
 @router.put("/horario")
-def salvar_horario(data: Horario, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def salvar_horario(data: Horario, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     horario.gravar(db, data.model_dump())
+    registrar(db, quem, "horario", detalhe="ligado" if data.ativo else "desligado")
     return horario.carregar(db)

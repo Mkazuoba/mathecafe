@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Registro das ações dos operadores (Ciclo 8, tarefa 8.1)
+
+- **Históricos → Ações dos operadores** (só admin): quem fez o quê, quando, com qual cliente e em qual estação, do mais recente para o mais antigo. Filtros por operador, ação, cliente (nome ou login), estação e período; **Exportar CSV** com os mesmos filtros. Os filtros ficam no endereço.
+- Registradas: cadastrar/editar/excluir/ativar/desativar cliente, trocar a senha e o piso, mudar o tempo de hoje (tempo extra), liberar, tirar da fila, liberar direto, encerrar/pausar/retomar a sessão e dar mais tempo nela, mensagem, reiniciar, desligar, ligar e manutenção (cada estação de uma ação em massa), zerar o tempo do dia, horário de funcionamento, configurações e operadores.
+- Tabela `acoes_operadores`; API `GET /api/relatorios/acoes`, `/acoes/tipos` e `/acoes.csv`.
+
 ## 2026-11-06 — Horário de funcionamento (Ciclo 8, tarefa 8.4)
 
 - **Configurações → Horário**: liga/desliga e, para cada dia da semana, se funciona e o horário de abrir e fechar (Brasília). Vários dias de uma vez: atalhos Seg a sex / Fim de semana / Todos e "Nos marcados: das ... às ... Aplicar" ou "Fechado". Começa desligado.

@@ -98,3 +98,9 @@ def fechar_tempo_da_sessao(sessao, agora: datetime) -> tuple[int, int]:
     sessao.pausada = False
     sessao.pausada_em = None
     return consumido, concedido - consumido
+
+
+def formatar_hhmmss(segundos: int) -> str:
+    """Tempo como no painel: HH:MM:SS."""
+    segundos = max(0, int(segundos or 0))
+    return f"{segundos // 3600:02d}:{segundos % 3600 // 60:02d}:{segundos % 60:02d}"

@@ -1423,3 +1423,68 @@ def test_biblioteca_fechada_recusa_login_e_liberar_direto(c, admin, cenario):
             assert r.status_code == 400 and "fechada" in r.json()["detail"]
     finally:
         c.put("/api/config/horario", headers=admin, json={"ativo": False, "dias": _semana()})
+
+
+# ── 8.1 Registro de acoes dos operadores ─────────────────────────────────────
+
+def _acoes(c, admin, **filtros):
+    r = c.get("/api/relatorios/acoes", headers=admin, params=filtros)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_acoes_do_operador_ficam_registradas(c, admin, operador, cenario):
+    cid = cenario["cliente_id"]
+    login = cenario["cliente"]["login"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        assert c.post(f"/api/estacoes/fila/{cid}", headers=operador).status_code == 200
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+        assert c.post(f"/api/sessoes/encerrar/{sid}", headers=operador).status_code == 200
+        ws.receive_json()  # encerrar_sessao
+        assert c.put(f"/api/clientes/{cid}", headers=operador, json={"saldo_segundos": 3600}).status_code == 200
+        assert c.post(f"/api/estacoes/{cenario['estacao']}/mensagem", headers=operador,
+                      json={"texto": "Oi"}).status_code == 200
+    acoes = _acoes(c, admin, cliente=login)
+    feitas = [a["acao"] for a in acoes]
+    assert {"liberar", "encerrar_sessao", "tempo_extra"} <= set(feitas)
+    a = next(x for x in acoes if x["acao"] == "tempo_extra")
+    assert a["operador"] == "Operador" and a["cliente_login"] == login and "01:00:00" in a["detalhe"]
+    enc = next(x for x in acoes if x["acao"] == "encerrar_sessao")
+    assert enc["estacao"] == cenario["estacao"]
+    msgs = _acoes(c, admin, estacao=cenario["estacao"], acao="mensagem")
+    assert msgs and msgs[0]["detalhe"] == "Oi"
+    # o mais recente primeiro
+    assert acoes == sorted(acoes, key=lambda x: x["quando"], reverse=True)
+
+
+def test_filtrar_acoes_por_operador_e_data(c, admin, operador, cenario):
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=operador)
+    op_id = next(o["id"] for o in c.get("/api/operadores/", headers=admin).json() if o["login"] == "operador.teste")
+    acoes = _acoes(c, admin, operador_id=op_id)
+    assert acoes and all(a["operador"] == "Operador" for a in acoes)
+    hoje = datetime.utcnow().date()
+    assert _acoes(c, admin, operador_id=op_id, de=str(hoje - timedelta(days=1)), ate=str(hoje + timedelta(days=1)))
+    assert _acoes(c, admin, operador_id=op_id, de=str(hoje + timedelta(days=2))) == []
+
+
+def test_so_o_admin_ve_o_registro_e_exporta_csv(c, admin, operador, cenario):
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 403
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=operador)
+    r = c.get("/api/relatorios/acoes.csv", headers=admin)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    primeira = r.text.lstrip("﻿").splitlines()[0]
+    assert "Operador" in primeira and "Ação" in primeira
+
+
+def test_acao_em_massa_registra_cada_estacao(c, admin, cenario):
+    outra = _estacao_nova(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as a, \
+            c.websocket_connect(f"/ws/estacao/{outra}") as b:
+        _estado(a)
+        _estado(b)
+        c.post("/api/estacoes/acoes", headers=admin,
+               json={"acao": "mensagem", "texto": "Fecha logo", "estacoes": [cenario["estacao"], outra]})
+    for nome in (cenario["estacao"], outra):
+        assert _acoes(c, admin, estacao=nome, acao="mensagem")

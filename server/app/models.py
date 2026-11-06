@@ -140,3 +140,20 @@ class ItemProgramacao(Base):
     tipo = Column(String(20), nullable=False)
     conteudo = Column(LargeBinary, nullable=False)
     atualizado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class AcaoOperador(Base):
+    """O que cada operador (ou admin) fez no painel (8.1; app/registro.py).
+    Nomes e login guardados no momento da acao: o registro nao muda se o
+    cadastro mudar ou for excluido."""
+    __tablename__ = "acoes_operadores"
+    id = Column(Integer, primary_key=True, index=True)
+    quando = Column(DateTime, default=datetime.utcnow, index=True)
+    operador_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
+    operador_nome = Column(String(100), nullable=False)
+    acao = Column(String(30), nullable=False, index=True)
+    cliente_id = Column(Integer, nullable=True, index=True)
+    cliente_login = Column(String(50), nullable=True)
+    cliente_nome = Column(String(100), nullable=True)
+    estacao = Column(String(20), nullable=True, index=True)
+    detalhe = Column(Text, nullable=True)

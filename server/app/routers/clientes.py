@@ -18,6 +18,8 @@ from app.models import FotoCliente, Usuario, Sessao
 from app.models import Piso
 from app.pisos import piso_do_cliente, piso_padrao, resumo
 from app.security import hash_senha, requer_perfil
+from app.registro import registrar
+from app.tempo_diario import formatar_hhmmss
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
@@ -174,7 +176,7 @@ def _piso_existente(db: Session, piso_id: Optional[int]) -> Piso:
 
 
 @router.post("/")
-def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def criar(data: ClienteCreate, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
     if db.query(Usuario).filter(Usuario.login == data.login).first():
         raise HTTPException(status_code=400, detail="Login já existe")
     cliente = Usuario(
@@ -188,6 +190,7 @@ def criar(data: ClienteCreate, db: Session = Depends(get_db), _=Depends(requer_p
     db.add(cliente)
     db.commit()
     db.refresh(cliente)
+    registrar(db, quem, "criar_cliente", cliente=cliente, detalhe=f"piso {cliente.piso.nome}" if cliente.piso else None)
     return serializar(cliente, db)
 
 @router.put("/{id}")
@@ -196,6 +199,15 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db),
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    feitas = []  # (acao, detalhe) para o registro dos operadores
+    editados = [c for c in ("nome", "observacao", "documento", "data_nascimento", "email")
+                if c in data.model_fields_set and getattr(data, c) != getattr(cliente, c)]
+    if editados:
+        feitas.append(("editar_cliente", ", ".join(editados)))
+    if data.senha:
+        feitas.append(("senha_cliente", None))
+    if data.ativo is not None and data.ativo != cliente.ativo:
+        feitas.append(("ativar_cliente" if data.ativo else "desativar_cliente", None))
     if data.nome: cliente.nome = data.nome
     if data.senha: cliente.senha_hash = hash_senha(data.senha)
     if data.ativo is not None: cliente.ativo = data.ativo
@@ -206,18 +218,23 @@ def atualizar(id: int, data: ClienteUpdate, db: Session = Depends(get_db),
     if data.piso_id is not None and data.piso_id != cliente.piso_id:
         # quem trocou fica na ficha (o painel pede confirmacao antes)
         operador = db.get(Usuario, int(quem["sub"]))
+        de = cliente.piso.nome if cliente.piso else "-"
         cliente.piso_id = _piso_existente(db, data.piso_id).id
+        feitas.append(("trocar_piso", f"{de} -> {db.get(Piso, cliente.piso_id).nome}"))
         cliente.piso_alterado_por = operador.nome if operador else None
         cliente.piso_alterado_em = datetime.utcnow()
     if data.saldo_segundos is not None:
         # vale para hoje: e assim que o operador da tempo extra
         cliente.saldo_segundos = data.saldo_segundos
         cliente.saldo_dia = hoje_br()
+        feitas.append(("tempo_extra", f"tempo de hoje: {formatar_hhmmss(data.saldo_segundos)}"))
     db.commit()
+    for acao, detalhe in feitas:
+        registrar(db, quem, acao, cliente=cliente, detalhe=detalhe)
     return serializar(cliente, db)
 
 @router.delete("/{id}")
-def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+def excluir(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     cliente = db.query(Usuario).filter(Usuario.id == id, Usuario.perfil == "cliente").first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
@@ -228,6 +245,7 @@ def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("adm
     if cliente.autorizacao:
         db.delete(cliente.autorizacao)
     db.query(FotoCliente).filter(FotoCliente.cliente_id == id).delete()
+    registrar(db, quem, "excluir_cliente", cliente=cliente)
     db.delete(cliente)
     db.commit()
     return {"ok": True}
