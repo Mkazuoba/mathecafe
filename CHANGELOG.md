@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-06 — Relatório de uso na tela (Ciclo 8, tarefa 8.2)
+
+- **Históricos → Uso** (só admin), por período (7 dias, 30 dias, este mês ou datas à escolha; padrão: últimos 30 dias) e piso:
+  - números do período: sessões, tempo de uso, clientes diferentes e média por sessão;
+  - **horas de uso por dia** (barras; passando o mouse, as sessões e os clientes do dia; ou **Ver tabela**);
+  - **horários de pico**: dia da semana × hora, mais escuro onde houve mais uso;
+  - **estações mais usadas**, em ranking.
+- Só sessões já encerradas. O uso de cada sessão é distribuído pelas horas em que aconteceu.
+- API `GET /api/relatorios/uso?de=&ate=&piso_id=`.
+
 ## 2026-11-06 — Registro das ações dos operadores (Ciclo 8, tarefa 8.1)
 
 - **Históricos → Ações dos operadores** (só admin): quem fez o quê, quando, com qual cliente e em qual estação, do mais recente para o mais antigo. Filtros por operador, ação, cliente (nome ou login), estação e período; **Exportar CSV** com os mesmos filtros. Os filtros ficam no endereço.

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { CabecalhoTela } from "@/components/Layout"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { AbaAcoesOperadores, type FiltrosAcoes } from "@/components/AbaAcoesOperadores"
+import { AbaUso, type FiltrosUso } from "@/components/AbaUso"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, MensagemErro, Select } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
@@ -35,7 +36,7 @@ interface HistoricoEstacao extends Resumo {
   itens: (ItemUso & { cliente_id: number; login: string; nome: string })[]
 }
 
-type Aba = "cliente" | "estacao" | "acoes"
+type Aba = "cliente" | "estacao" | "acoes" | "uso"
 type Coluna = "nome" | "sessoes" | "tempo" | "ultima"
 
 /** Uma linha da tabela, igual nas duas abas. */
@@ -70,7 +71,8 @@ export default function Historicos() {
   const admin = Api.ehAdmin()
   const pedida = params.get("aba")
   // o registro dos operadores é só do admin
-  const aba: Aba = pedida === "estacao" ? "estacao" : pedida === "acoes" && admin ? "acoes" : "cliente"
+  const aba: Aba =
+    pedida === "estacao" ? "estacao" : (pedida === "acoes" || pedida === "uso") && admin ? pedida : "cliente"
   const clienteId = params.get("cliente")
   const estacaoNome = params.get("estacao") ?? ""
   const de = params.get("de") ?? ""
@@ -101,6 +103,7 @@ export default function Historicos() {
     de,
     ate,
   }
+  const filtrosUso: FiltrosUso = { de, ate, piso_id: params.get("piso_id") ?? "" }
   const mudarAcoes = useCallback(
     (novos: Partial<FiltrosAcoes>) => {
       const { cliente, estacao, ...resto } = novos
@@ -121,7 +124,12 @@ export default function Historicos() {
             [
               ["cliente", "Por cliente"],
               ["estacao", "Por estação"],
-              ...(admin ? ([["acoes", "Ações dos operadores"]] as const) : []),
+              ...(admin
+                ? ([
+                    ["uso", "Uso"],
+                    ["acoes", "Ações dos operadores"],
+                  ] as const)
+                : []),
             ] as const
           ).map(([id, rotulo]) => (
             <button
@@ -141,7 +149,9 @@ export default function Historicos() {
         </div>
       </CabecalhoTela>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {aba === "acoes" ? (
+        {aba === "uso" ? (
+          <AbaUso filtros={filtrosUso} mudar={mudar} />
+        ) : aba === "acoes" ? (
           <AbaAcoesOperadores filtros={filtrosAcoes} mudar={mudarAcoes} />
         ) : aba === "cliente" ? (
           <AbaCliente

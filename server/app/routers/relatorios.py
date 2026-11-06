@@ -225,3 +225,68 @@ def acoes_csv(
     saida.seek(0)
     return StreamingResponse(iter([saida.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": "attachment; filename=acoes_operadores.csv"})
+
+
+# ── Relatorio de uso (8.2) ───────────────────────────────────────────────────
+
+@router.get("/uso")
+def relatorio_de_uso(
+    de: Optional[str] = None, ate: Optional[str] = None, piso_id: Optional[int] = None,
+    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+):
+    """Uso no periodo (datas de Brasilia, padrao: ultimos 30 dias), so sessoes
+    encerradas: resumo, por dia, pico (dia da semana x hora) e estacoes."""
+    from collections import defaultdict
+    from app.pisos import piso_da_estacao
+
+    hoje = datetime.now(FUSO).date()
+    fim_local = datetime.strptime(ate, "%Y-%m-%d").date() if ate else hoje
+    inicio_local = datetime.strptime(de, "%Y-%m-%d").date() if de else fim_local - timedelta(days=29)
+
+    def utc(dia):
+        return datetime.combine(dia, datetime.min.time()).replace(tzinfo=FUSO).astimezone(timezone.utc).replace(tzinfo=None)
+
+    q = db.query(Sessao).filter(Sessao.encerrada_em != None,
+                                Sessao.iniciada_em >= utc(inicio_local),
+                                Sessao.iniciada_em < utc(fim_local + timedelta(days=1)))
+    if piso_id:
+        do_piso = [e.id for e in db.query(Estacao).all() if (p := piso_da_estacao(e)) and p.id == piso_id]
+        q = q.filter(Sessao.estacao_id.in_(do_piso or [-1]))
+
+    total = {"sessoes": 0, "segundos": 0}
+    clientes = set()
+    dias = defaultdict(lambda: {"sessoes": 0, "segundos": 0, "clientes": set()})
+    pico = defaultdict(int)
+    estacoes = defaultdict(lambda: {"sessoes": 0, "segundos": 0})
+    for s in q.all():
+        uso = max(0, s.tempo_consumido_segundos or 0)
+        inicio = s.iniciada_em.replace(tzinfo=timezone.utc).astimezone(FUSO).replace(tzinfo=None)
+        total["sessoes"] += 1
+        total["segundos"] += uso
+        clientes.add(s.cliente_id)
+        d = dias[inicio.date().isoformat()]
+        d["sessoes"] += 1
+        d["segundos"] += uso
+        d["clientes"].add(s.cliente_id)
+        e = estacoes[s.estacao.nome if s.estacao else "?"]
+        e["sessoes"] += 1
+        e["segundos"] += uso
+        # o uso espalhado pelas horas em que aconteceu
+        momento, resta = inicio, uso
+        while resta > 0:
+            proxima_hora = momento.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            pedaco = min(resta, int((proxima_hora - momento).total_seconds()) or 3600)
+            pico[(momento.weekday(), momento.hour)] += pedaco
+            resta -= pedaco
+            momento += timedelta(seconds=pedaco)
+
+    return {
+        "periodo": {"de": inicio_local.isoformat(), "ate": fim_local.isoformat()},
+        "resumo": {**total, "clientes": len(clientes),
+                   "media_segundos": total["segundos"] // total["sessoes"] if total["sessoes"] else 0},
+        "por_dia": [{"dia": dia, "sessoes": v["sessoes"], "segundos": v["segundos"], "clientes": len(v["clientes"])}
+                    for dia, v in sorted(dias.items())],
+        "pico": [{"dia_semana": k[0], "hora": k[1], "segundos": v} for k, v in sorted(pico.items())],
+        "estacoes": sorted(({"estacao": nome, **v} for nome, v in estacoes.items()),
+                           key=lambda x: (-x["segundos"], x["estacao"])),
+    }

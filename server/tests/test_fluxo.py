@@ -1488,3 +1488,62 @@ def test_acao_em_massa_registra_cada_estacao(c, admin, cenario):
                json={"acao": "mensagem", "texto": "Fecha logo", "estacoes": [cenario["estacao"], outra]})
     for nome in (cenario["estacao"], outra):
         assert _acoes(c, admin, estacao=nome, acao="mensagem")
+
+
+# ── 8.2 Relatorio de uso ─────────────────────────────────────────────────────
+
+def _sessao_encerrada(cliente_id, estacao_nome, inicio_utc, minutos):
+    from app.models import Estacao
+    db = SessionLocal()
+    est = db.query(Estacao).filter(Estacao.nome == estacao_nome).one()
+    s = Sessao(cliente_id=cliente_id, estacao_id=est.id, iniciada_em=inicio_utc,
+               encerrada_em=inicio_utc + timedelta(minutes=minutos), tempo_total_segundos=7200,
+               tempo_consumido_segundos=minutos * 60, motivo_encerramento="cliente")
+    db.add(s)
+    db.commit()
+    db.close()
+
+
+def test_relatorio_de_uso(c, admin, operador, cenario):
+    # periodo no futuro distante: so as sessoes deste teste entram
+    outra = _estacao_nova(c, admin)
+    cid = cenario["cliente_id"]
+    r = c.post("/api/clientes/", headers=admin, json={"login": f"uso{next(_contador)}", "nome": "Uso", "senha": "senha-x"})
+    cid2 = r.json()["id"]
+    # 10/03/2031 (segunda) 14:00 em Brasilia = 17:00 UTC
+    base = datetime(2031, 3, 10, 17, 0)
+    _sessao_encerrada(cid, cenario["estacao"], base, 90)                       # 14:00-15:30
+    _sessao_encerrada(cid2, cenario["estacao"], base + timedelta(hours=2), 30)  # 16:00-16:30
+    _sessao_encerrada(cid, outra, base + timedelta(days=1), 60)                 # terca 14:00-15:00
+    assert c.get("/api/relatorios/uso", headers=operador).status_code == 403
+    r = c.get("/api/relatorios/uso", headers=admin, params={"de": "2031-03-10", "ate": "2031-03-11"})
+    assert r.status_code == 200, r.text
+    u = r.json()
+    assert u["resumo"] == {"sessoes": 3, "segundos": 180 * 60, "clientes": 2, "media_segundos": 60 * 60}
+    assert u["por_dia"] == [
+        {"dia": "2031-03-10", "sessoes": 2, "segundos": 120 * 60, "clientes": 2},
+        {"dia": "2031-03-11", "sessoes": 1, "segundos": 60 * 60, "clientes": 1},
+    ]
+    # pico: segundos de uso por dia da semana (0 = segunda) e hora de Brasilia
+    pico = {(p["dia_semana"], p["hora"]): p["segundos"] for p in u["pico"]}
+    assert pico[(0, 14)] == 3600 and pico[(0, 15)] == 1800 and pico[(0, 16)] == 1800
+    assert pico[(1, 14)] == 3600
+    assert u["estacoes"][0] == {"estacao": cenario["estacao"], "sessoes": 2, "segundos": 120 * 60}
+    # sem nada no periodo: tudo zerado, sem erro
+    vazio = c.get("/api/relatorios/uso", headers=admin, params={"de": "2031-04-01", "ate": "2031-04-02"}).json()
+    assert vazio["resumo"]["sessoes"] == 0 and vazio["por_dia"] == [] and vazio["estacoes"] == []
+
+
+def test_relatorio_de_uso_por_piso(c, admin, cenario):
+    infantil = _estacao_infantil(c, admin)
+    base = datetime(2031, 5, 5, 17, 0)
+    _sessao_encerrada(cenario["cliente_id"], cenario["estacao"], base, 30)
+    _, crianca = _cliente_infantil(c, admin)
+    _sessao_encerrada(crianca, infantil, base, 45)
+    params = {"de": "2031-05-05", "ate": "2031-05-05"}
+    so_infantil = c.get("/api/relatorios/uso", headers=admin,
+                        params={**params, "piso_id": _id_piso(c, admin, "Infantil")}).json()
+    assert so_infantil["resumo"]["segundos"] == 45 * 60
+    assert [e["estacao"] for e in so_infantil["estacoes"]] == [infantil]
+    todos = c.get("/api/relatorios/uso", headers=admin, params=params).json()
+    assert todos["resumo"]["segundos"] == 75 * 60
