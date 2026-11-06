@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Mapa: zonas em qualquer lugar, colunas e zoom
+
+- **Zonas vão para qualquer lugar**: no modo configuração o quadro tem folga à direita e embaixo, a tela rola sozinha quando o arrasto chega na beirada e a zona se move pegando em qualquer ponto vazio dela (não só no cabeçalho). Antes ela ficava presa à área visível.
+- **Colunas × linhas**: ao criar ou editar a zona, escolher o tamanho em estações (ex.: 1 coluna × 6 para uma fileira junto à parede, 2 ou 3 colunas para uma bancada). A zona pode ter uma coluna só; ao estreitá-la, as estações que ficariam de fora vão para a primeira vaga livre. A zona nova entra embaixo das outras, já com o tamanho escolhido.
+- **Zoom** no topo do Mapa (−, +, Ajustar para ver o mapa inteiro), lembrado em cada navegador.
+
 ## 2026-11-06 — Mapa novo: zonas, cores de estado e iniciar sessão no mapa (Ciclo 7, tarefa 7.3)
 
 - **Todas as zonas (salas) do piso lado a lado numa tela só**, cada uma um retângulo na cor dela, com o nome e quantas estão ocupadas. Estações em quadrados numerados **na cor do estado** (livre verde, ocupada laranja com o tempo restante, desligada apagada, manutenção amarela; ícone de sem conexão). Legenda com a contagem no topo.

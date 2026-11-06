@@ -35,6 +35,29 @@ const MARGEM_ZONA = 12
 const ESPACO_ZONAS = 24
 const LARGURA_MAXIMA = 1400 // zonas automáticas quebram a linha aqui
 const SEM_GRUPO = -1
+const FOLGA = 800 // no modo configuração, espaço livre à direita e embaixo para levar as zonas
+const BORDA_ROLAGEM = 48 // arrastando a menos disso da beirada, a tela rola
+const ZOOMS = [0.4, 0.5, 0.6, 0.75, 0.9, 1, 1.15, 1.3]
+
+function lerZoom() {
+  try {
+    const z = Number(localStorage.getItem("mapa.zoom"))
+    return ZOOMS.includes(z) ? z : 1
+  } catch {
+    return 1
+  }
+}
+
+/** Rola a área quando o arrasto chega perto da beirada (para levar a zona além do que aparece). */
+function rolarNaBorda(area: HTMLElement | null, ev: { clientX: number; clientY: number }) {
+  if (!area) return
+  const r = area.getBoundingClientRect()
+  const passo = 24
+  if (ev.clientX > r.right - BORDA_ROLAGEM) area.scrollLeft += passo
+  else if (ev.clientX < r.left + BORDA_ROLAGEM) area.scrollLeft -= passo
+  if (ev.clientY > r.bottom - BORDA_ROLAGEM) area.scrollTop += passo
+  else if (ev.clientY < r.top + BORDA_ROLAGEM) area.scrollTop -= passo
+}
 
 // Cores do estado (o que a imagem de referência mostra nos quadrados)
 const COR_QUADRADO: Record<StatusEstacao, string> = {
@@ -95,7 +118,7 @@ function posicionar(estacoes: Estacao[], colunas: number) {
   // primeiro as que têm posição salva, depois as novas
   for (const e of ordenadas.filter((e) => e.pos_x || e.pos_y)) {
     let q = quadranteDe(e.pos_x, e.pos_y)
-    if (ocupados.has(chave(q))) q = primeiroLivre(ocupados, colunas)
+    if (q.col >= colunas || ocupados.has(chave(q))) q = primeiroLivre(ocupados, colunas)
     ocupados.add(chave(q))
     lugar.set(e.id, q)
   }
@@ -112,6 +135,11 @@ function posicionar(estacoes: Estacao[], colunas: number) {
 
 const linhasDa = (altura: number) =>
   Math.max(1, Math.floor((altura - CABECALHO_ZONA - 2 * MARGEM_ZONA + (PASSO - QUADRADO)) / PASSO))
+/** Tamanho exato da zona para tantas colunas e linhas de estações. */
+const tamanhoPara = (colunas: number, linhas: number) => ({
+  largura: 2 * MARGEM_ZONA + colunas * PASSO - (PASSO - QUADRADO),
+  altura: CABECALHO_ZONA + 2 * MARGEM_ZONA + linhas * PASSO - (PASSO - QUADRADO),
+})
 const colunasDa = (largura: number) => Math.max(1, Math.floor((largura - 2 * MARGEM_ZONA + (PASSO - QUADRADO)) / PASSO))
 
 /** As zonas do piso: a posição salva de cada uma, ou lado a lado. */
@@ -167,6 +195,16 @@ export default function Mapa() {
     estacao?: { id: number; x: number; y: number }
   } | null>(null)
   const quadro = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(lerZoom)
+  function mudarZoom(novo: number) {
+    setZoom(novo)
+    try {
+      localStorage.setItem("mapa.zoom", String(novo))
+    } catch {
+      /* sem storage */
+    }
+  }
 
   const zonas = useMemo(() => montarZonas(grupos, estacoes, !!piso?.padrao), [grupos, estacoes, piso])
   const contagem = useMemo(() => {
@@ -176,8 +214,18 @@ export default function Mapa() {
   }, [estacoes])
 
   const retDe = (z: ZonaNoMapa) => (provisorio?.zona?.id === z.id ? provisorio.zona.ret : z.ret)
-  const larguraQuadro = Math.max(1000, ...zonas.map((z) => retDe(z).x + retDe(z).largura + ESPACO_ZONAS))
-  const alturaQuadro = Math.max(600, ...zonas.map((z) => retDe(z).y + retDe(z).altura + ESPACO_ZONAS))
+  const larguraConteudo = Math.max(0, ...zonas.map((z) => retDe(z).x + retDe(z).largura + ESPACO_ZONAS))
+  const alturaConteudo = Math.max(0, ...zonas.map((z) => retDe(z).y + retDe(z).altura + ESPACO_ZONAS))
+  // configurando, sobra espaço para levar as zonas para qualquer lado
+  const larguraQuadro = Math.max(1000, larguraConteudo + (modoConfig ? FOLGA : 0))
+  const alturaQuadro = Math.max(600, alturaConteudo + (modoConfig ? FOLGA : 0))
+
+  function ajustarATela() {
+    const r = area.current?.getBoundingClientRect()
+    if (!r || !larguraConteudo) return
+    const cabe = Math.min(r.width / larguraConteudo, r.height / alturaConteudo)
+    mudarZoom([...ZOOMS].reverse().find((z) => z <= cabe) ?? ZOOMS[0])
+  }
 
   const estacaoAberta = estacoes.find((e) => e.id === aberta)
   const ondeAberta = (() => {
@@ -291,9 +339,10 @@ export default function Mapa() {
     }
   }
 
+  /** Ponto do mouse no quadro, em px do mapa (desfaz o zoom). */
   function pontoNoQuadro(ev: { clientX: number; clientY: number }) {
     const r = quadro.current!.getBoundingClientRect()
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top }
+    return { x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom }
   }
 
   return (
@@ -310,6 +359,36 @@ export default function Mapa() {
           ))}
         </div>
         <div className="flex-1" />
+        {/* zoom: para montar (e ver inteiro) um mapa grande */}
+        <div className="flex items-center gap-0.5 rounded-md border border-borda bg-superficie-2 p-0.5 text-xs">
+          <button
+            type="button"
+            aria-label="Diminuir o zoom"
+            disabled={zoom === ZOOMS[0]}
+            onClick={() => mudarZoom(ZOOMS[Math.max(0, ZOOMS.indexOf(zoom) - 1)])}
+            className="rounded px-2 py-1 text-texto-suave hover:text-texto disabled:opacity-40"
+          >
+            −
+          </button>
+          <span className="w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            aria-label="Aumentar o zoom"
+            disabled={zoom === ZOOMS[ZOOMS.length - 1]}
+            onClick={() => mudarZoom(ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(zoom) + 1)])}
+            className="rounded px-2 py-1 text-texto-suave hover:text-texto disabled:opacity-40"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={ajustarATela}
+            className="rounded px-2 py-1 text-texto-suave hover:text-texto"
+            title="Mostrar o mapa inteiro"
+          >
+            Ajustar
+          </button>
+        </div>
         {admin && modoConfig && (
           <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditandoZona("nova")}>
             <IconPlus size={14} /> Zona
@@ -329,68 +408,84 @@ export default function Mapa() {
         )}
       </CabecalhoTela>
 
-      <div className="fundo-pontilhado relative min-h-0 flex-1 overflow-auto" onClick={() => setAberta(null)}>
+      <div
+        ref={area}
+        className="fundo-pontilhado relative min-h-0 flex-1 overflow-auto"
+        onClick={() => setAberta(null)}
+      >
         {!zonas.length ? (
           <div className="pt-16">
             <Vazio>Nenhuma zona neste piso.{admin && " Use o Modo configuração → + Zona para criar."}</Vazio>
           </div>
         ) : (
-          <div ref={quadro} className="relative" style={{ width: larguraQuadro, height: alturaQuadro }}>
-            {zonas.map((z) => (
-              <ZonaDoMapa
-                key={z.id}
-                zona={z}
-                ret={retDe(z)}
-                modoConfig={modoConfig}
-                aoMoverZona={(ret) => setProvisorio({ zona: { id: z.id, ret } })}
-                aoSoltarZona={(ret) => z.grupo && salvarZona(z.id, ret)}
-                aoEditar={() => z.grupo && setEditandoZona(z.grupo)}
-                aoNovaEstacao={() => setNovaEstacaoEm(z.grupo ? z.id : null)}
-              >
-                {z.estacoes.map(({ estacao: e, x, y }) => {
-                  const arrastando = provisorio?.estacao?.id === e.id
-                  const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
-                  return (
-                    <QuadradoEstacao
-                      key={e.id}
-                      estacao={e}
-                      x={arrastando ? provisorio.estacao!.x : x}
-                      y={arrastando ? provisorio.estacao!.y : y}
-                      arrastando={arrastando}
-                      restante={sessao ? restanteDaSessao(sessao, agora) : null}
-                      aberta={aberta === e.id}
-                      modoConfig={modoConfig}
-                      aoAbrir={() => setAberta(aberta === e.id ? null : e.id)}
-                      aoArrastar={(ev) => {
-                        // posição provisória no sistema da zona de origem (segue o mouse)
-                        const p = pontoNoQuadro(ev)
-                        const r = retDe(z)
-                        setProvisorio({
-                          estacao: {
-                            id: e.id,
-                            x: p.x - r.x - MARGEM_ZONA - QUADRADO / 2,
-                            y: p.y - r.y - CABECALHO_ZONA - MARGEM_ZONA - QUADRADO / 2,
-                          },
-                        })
-                      }}
-                      aoSoltar={(ev) => soltarEstacao(e, pontoNoQuadro(ev))}
-                      aoExcluir={() => excluir(e)}
-                    />
-                  )
-                })}
-              </ZonaDoMapa>
-            ))}
+          // o quadro em px do mapa, encolhido/ampliado pelo zoom (a caixa de fora reserva o tamanho na tela)
+          <div style={{ width: larguraQuadro * zoom, height: alturaQuadro * zoom }}>
+            <div
+              ref={quadro}
+              className="relative origin-top-left"
+              style={{ width: larguraQuadro, height: alturaQuadro, transform: `scale(${zoom})` }}
+            >
+              {zonas.map((z) => (
+                <ZonaDoMapa
+                  key={z.id}
+                  zona={z}
+                  ret={retDe(z)}
+                  modoConfig={modoConfig}
+                  zoom={zoom}
+                  area={area}
+                  aoMoverZona={(ret) => setProvisorio({ zona: { id: z.id, ret } })}
+                  aoSoltarZona={(ret) => z.grupo && salvarZona(z.id, ret)}
+                  aoEditar={() => z.grupo && setEditandoZona(z.grupo)}
+                  aoNovaEstacao={() => setNovaEstacaoEm(z.grupo ? z.id : null)}
+                >
+                  {z.estacoes.map(({ estacao: e, x, y }) => {
+                    const arrastando = provisorio?.estacao?.id === e.id
+                    const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+                    return (
+                      <QuadradoEstacao
+                        key={e.id}
+                        estacao={e}
+                        x={arrastando ? provisorio.estacao!.x : x}
+                        y={arrastando ? provisorio.estacao!.y : y}
+                        arrastando={arrastando}
+                        restante={sessao ? restanteDaSessao(sessao, agora) : null}
+                        aberta={aberta === e.id}
+                        modoConfig={modoConfig}
+                        aoAbrir={() => setAberta(aberta === e.id ? null : e.id)}
+                        aoArrastar={(ev) => {
+                          rolarNaBorda(area.current, ev)
+                          // posição provisória no sistema da zona de origem (segue o mouse)
+                          const p = pontoNoQuadro(ev)
+                          const r = retDe(z)
+                          setProvisorio({
+                            estacao: {
+                              id: e.id,
+                              x: p.x - r.x - MARGEM_ZONA - QUADRADO / 2,
+                              y: p.y - r.y - CABECALHO_ZONA - MARGEM_ZONA - QUADRADO / 2,
+                            },
+                          })
+                        }}
+                        aoSoltar={(ev) => soltarEstacao(e, pontoNoQuadro(ev))}
+                        aoExcluir={() => excluir(e)}
+                      />
+                    )
+                  })}
+                </ZonaDoMapa>
+              ))}
 
-            {estacaoAberta && ondeAberta && !modoConfig && (
-              <CartaoEstacao
-                estacao={estacaoAberta}
-                x={
-                  ondeAberta.x + QUADRADO + 10 + 320 > larguraQuadro ? ondeAberta.x - 330 : ondeAberta.x + QUADRADO + 10
-                }
-                y={ondeAberta.y}
-                aoFechar={() => setAberta(null)}
-              />
-            )}
+              {estacaoAberta && ondeAberta && !modoConfig && (
+                <CartaoEstacao
+                  estacao={estacaoAberta}
+                  x={
+                    ondeAberta.x + QUADRADO + 10 + 320 > larguraQuadro
+                      ? ondeAberta.x - 330
+                      : ondeAberta.x + QUADRADO + 10
+                  }
+                  y={ondeAberta.y}
+                  aoFechar={() => setAberta(null)}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -400,7 +495,12 @@ export default function Mapa() {
         grupoInicial={novaEstacaoEm ?? null}
         aoFechar={() => setNovaEstacaoEm(undefined)}
       />
-      <ModalZona zona={editandoZona} aoFechar={() => setEditandoZona(null)} />
+      <ModalZona
+        zona={editandoZona}
+        noMapa={editandoZona && editandoZona !== "nova" ? zonas.find((z) => z.id === editandoZona.id) : undefined}
+        novaEm={{ x: ESPACO_ZONAS, y: alturaConteudo }}
+        aoFechar={() => setEditandoZona(null)}
+      />
     </>
   )
 }
@@ -411,6 +511,8 @@ function ZonaDoMapa({
   zona: z,
   ret,
   modoConfig,
+  zoom,
+  area,
   aoMoverZona,
   aoSoltarZona,
   aoEditar,
@@ -420,36 +522,59 @@ function ZonaDoMapa({
   zona: ZonaNoMapa
   ret: Retangulo
   modoConfig: boolean
+  zoom: number
+  area: React.RefObject<HTMLDivElement | null>
   aoMoverZona: (ret: Retangulo) => void
   aoSoltarZona: (ret: Retangulo) => void
   aoEditar: () => void
   aoNovaEstacao: () => void
   children: React.ReactNode
 }) {
-  const arrasto = useRef<{ tipo: "mover" | "tamanho"; x: number; y: number; ret: Retangulo; atual: Retangulo } | null>(
-    null,
-  )
+  const arrasto = useRef<{
+    tipo: "mover" | "tamanho"
+    x: number
+    y: number
+    rolX: number
+    rolY: number
+    ret: Retangulo
+    atual: Retangulo
+  } | null>(null)
   const ocupadas = z.estacoes.filter((s) => s.estacao.status === "ocupada").length
   const editavel = modoConfig && z.grupo != null
+  // zona estreita (1 ou 2 colunas): cabeçalho enxuto, para os botões caberem
+  const estreita = ret.largura < 170
 
   function iniciar(tipo: "mover" | "tamanho", ev: React.PointerEvent) {
     if (!editavel) return
+    // pegar numa estação ou num botão não move a zona
+    if (tipo === "mover" && (ev.target as HTMLElement).closest("button, [aria-label^='Estação ']")) return
     ev.stopPropagation()
     ev.currentTarget.setPointerCapture(ev.pointerId)
-    arrasto.current = { tipo, x: ev.clientX, y: ev.clientY, ret, atual: ret }
+    const a = area.current
+    arrasto.current = {
+      tipo,
+      x: ev.clientX,
+      y: ev.clientY,
+      rolX: a?.scrollLeft ?? 0,
+      rolY: a?.scrollTop ?? 0,
+      ret,
+      atual: ret,
+    }
   }
   function mover(ev: React.PointerEvent) {
     const a = arrasto.current
     if (!a) return
-    const dx = ev.clientX - a.x
-    const dy = ev.clientY - a.y
+    rolarNaBorda(area.current, ev)
+    // o quanto o mouse andou, mais o quanto a tela rolou, em px do mapa
+    const dx = (ev.clientX - a.x + (area.current?.scrollLeft ?? 0) - a.rolX) / zoom
+    const dy = (ev.clientY - a.y + (area.current?.scrollTop ?? 0) - a.rolY) / zoom
     a.atual =
       a.tipo === "mover"
         ? { ...a.ret, x: arredondar(a.ret.x + dx), y: arredondar(a.ret.y + dy) }
         : {
             ...a.ret,
-            largura: Math.max(160, arredondar(a.ret.largura + dx)),
-            altura: Math.max(120, arredondar(a.ret.altura + dy)),
+            largura: Math.max(tamanhoPara(1, 1).largura, arredondar(a.ret.largura + dx)),
+            altura: Math.max(tamanhoPara(1, 1).altura, arredondar(a.ret.altura + dy)),
           }
     aoMoverZona(a.atual)
   }
@@ -469,7 +594,15 @@ function ZonaDoMapa({
   return (
     <section
       aria-label={`Zona ${z.nome}`}
-      className={cn("absolute rounded-xl border", modoConfig && "border-dashed")}
+      className={cn(
+        "absolute rounded-xl border",
+        modoConfig && "border-dashed",
+        editavel && "cursor-grab touch-none active:cursor-grabbing",
+      )}
+      title={editavel ? "Arraste para mover a zona" : undefined}
+      onPointerDown={(ev) => iniciar("mover", ev)}
+      onPointerMove={mover}
+      onPointerUp={soltar}
       style={{
         left: ret.x,
         top: ret.y,
@@ -480,22 +613,18 @@ function ZonaDoMapa({
       }}
     >
       <div
-        className={cn(
-          "flex items-center gap-2 px-3 text-sm select-none",
-          editavel && "cursor-grab touch-none active:cursor-grabbing",
-        )}
+        className={cn("flex items-center overflow-hidden text-sm select-none", estreita ? "gap-1 px-2" : "gap-2 px-3")}
         style={{ height: CABECALHO_ZONA }}
-        onPointerDown={(ev) => iniciar("mover", ev)}
-        onPointerMove={mover}
-        onPointerUp={soltar}
-        title={editavel ? "Arraste para mover a zona" : undefined}
+        title={estreita ? `${z.nome} · ${ocupadas}/${z.estacoes.length}` : undefined}
       >
-        {editavel && <IconArrowsMove size={14} className="shrink-0 text-texto-fraco" />}
+        {editavel && !estreita && <IconArrowsMove size={14} className="shrink-0 text-texto-fraco" />}
         <span className="size-2.5 shrink-0 rounded-full" style={{ background: z.cor }} />
-        <span className="truncate font-semibold">{z.nome}</span>
-        <span className="text-xs text-texto-fraco tabular-nums">
-          {ocupadas}/{z.estacoes.length}
-        </span>
+        <span className="min-w-0 truncate font-semibold">{z.nome}</span>
+        {!estreita && (
+          <span className="text-xs text-texto-fraco tabular-nums">
+            {ocupadas}/{z.estacoes.length}
+          </span>
+        )}
         <div className="flex-1" />
         {modoConfig && (
           <>
@@ -505,7 +634,7 @@ function ZonaDoMapa({
                 onPointerDown={(ev) => ev.stopPropagation()}
                 onClick={aoEditar}
                 aria-label={`Editar a zona ${z.nome}`}
-                className="rounded p-1 text-texto-suave hover:text-texto"
+                className="shrink-0 rounded p-0.5 text-texto-suave hover:text-texto"
               >
                 <IconPencil size={14} />
               </button>
@@ -516,7 +645,7 @@ function ZonaDoMapa({
               onClick={aoNovaEstacao}
               aria-label={`Nova estação em ${z.nome}`}
               title="Nova estação nesta zona"
-              className="rounded p-1 text-texto-suave hover:text-texto"
+              className="shrink-0 rounded p-0.5 text-texto-suave hover:text-texto"
             >
               <IconPlus size={14} />
             </button>
@@ -547,8 +676,6 @@ function ZonaDoMapa({
           className="absolute right-0 bottom-0 size-4 cursor-nwse-resize touch-none rounded-br-xl border-r-2 border-b-2"
           style={{ borderColor: z.cor }}
           onPointerDown={(ev) => iniciar("tamanho", ev)}
-          onPointerMove={mover}
-          onPointerUp={soltar}
         />
       )}
     </section>
@@ -805,32 +932,63 @@ function CartaoEstacao({
 
 // ── Modais do modo configuração ──────────────────────────────────────────────
 
-function ModalZona({ zona, aoFechar }: { zona: Grupo | "nova" | null; aoFechar: () => void }) {
+function ModalZona({
+  zona,
+  noMapa,
+  novaEm,
+  aoFechar,
+}: {
+  zona: Grupo | "nova" | null
+  /** a zona como está no mapa (posição, tamanho, estações), ao editar */
+  noMapa?: ZonaNoMapa
+  /** onde a zona nova entra (embaixo das outras) */
+  novaEm: { x: number; y: number }
+  aoFechar: () => void
+}) {
   const { piso, recarregar } = useDados()
   const avisar = useAvisos()
   const [nome, setNome] = useState("")
   const [cor, setCor] = useState("#6366f1")
+  const [colunas, setColunas] = useState(4)
+  const [linhas, setLinhas] = useState(2)
   const [erro, setErro] = useState("")
   const nova = zona === "nova"
+  const nEstacoes = noMapa?.estacoes.length ?? 0
 
   useEffect(() => {
     if (!zona) return
     setErro("")
     setNome(nova ? "" : zona.nome)
     setCor(nova ? "#22c55e" : zona.cor)
+    setColunas(noMapa ? colunasDa(noMapa.ret.largura) : 4)
+    setLinhas(noMapa ? linhasDa(noMapa.ret.altura) : 2)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zona, nova])
 
   async function salvar(ev: React.FormEvent) {
     ev.preventDefault()
     if (!nome.trim()) return setErro("Dê um nome à zona")
+    if (colunas * linhas < nEstacoes)
+      return setErro(
+        `A zona tem ${nEstacoes} estações: ${colunas} × ${linhas} não cabe. Aumente as colunas ou as linhas.`,
+      )
     try {
       if (nova) {
         if (!piso) return setErro("Escolha o piso no topo da tela")
         const params = new URLSearchParams({ nome: nome.trim(), cor, piso_id: String(piso.id) })
-        await Api.post(`/api/estacoes/grupos?${params}`, {})
+        const criada = await Api.post<Grupo>(`/api/estacoes/grupos?${params}`, {})
+        await Api.put(`/api/estacoes/grupos/${criada.id}`, { zona: { ...novaEm, ...tamanhoPara(colunas, linhas) } })
         avisar(`Zona criada no piso ${piso.nome}`)
       } else if (zona) {
-        await Api.put(`/api/estacoes/grupos/${zona.id}`, { nome: nome.trim(), cor })
+        const tamanho = tamanhoPara(colunas, linhas)
+        const mudouTamanho = noMapa && (noMapa.ret.largura !== tamanho.largura || noMapa.ret.altura !== tamanho.altura)
+        await Api.put(`/api/estacoes/grupos/${zona.id}`, {
+          nome: nome.trim(),
+          cor,
+          ...(noMapa && (mudouTamanho || noMapa.automatica)
+            ? { zona: { x: noMapa.ret.x, y: noMapa.ret.y, ...tamanho } }
+            : {}),
+        })
         avisar("Zona atualizada")
       }
       await recarregar()
@@ -861,8 +1019,47 @@ function ModalZona({ zona, aoFechar }: { zona: Grupo | "nova" | null; aoFechar: 
             className="h-9 w-20 cursor-pointer rounded-md border border-borda bg-transparent p-0.5"
           />
         </Campo>
+        <div>
+          <span className="mb-1.5 block text-xs font-medium tracking-wide text-texto-suave uppercase">
+            Tamanho (estações)
+          </span>
+          <div className="flex items-center gap-2 text-sm">
+            <Select
+              aria-label="Colunas"
+              className="h-9 w-20"
+              value={colunas}
+              onChange={(e) => setColunas(Number(e.target.value))}
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+            <span className="text-texto-suave">colunas ×</span>
+            <Select
+              aria-label="Linhas"
+              className="h-9 w-20"
+              value={linhas}
+              onChange={(e) => setLinhas(Number(e.target.value))}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+            <span className="text-texto-suave">linhas</span>
+          </div>
+          <p className="mt-1 text-xs text-texto-fraco">
+            Ex.: 1 coluna para uma fileira junto à parede. Também dá para ajustar arrastando o canto da zona.
+            {nEstacoes > 0 && ` Esta zona tem ${nEstacoes} estações.`}
+          </p>
+        </div>
         {nova && piso && (
-          <p className="text-xs text-texto-fraco">A zona entra no piso {piso.nome} (o do topo da tela).</p>
+          <p className="text-xs text-texto-fraco">
+            A zona entra no piso {piso.nome} (o do topo da tela), embaixo das outras: depois é só arrastá-la.
+          </p>
         )}
         <MensagemErro>{erro}</MensagemErro>
         <div className="flex gap-2">

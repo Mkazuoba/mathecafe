@@ -96,7 +96,7 @@ class GrupoUpdate(BaseModel):
 class Zona(BaseModel):
     x: int = Field(ge=0, le=20000)
     y: int = Field(ge=0, le=20000)
-    largura: int = Field(ge=120, le=5000)
+    largura: int = Field(ge=80, le=5000)  # 1 coluna de estacoes
     altura: int = Field(ge=100, le=5000)
 
 

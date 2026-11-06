@@ -1620,3 +1620,13 @@ def test_mover_estacao_para_outra_zona_com_posicao(c, admin):
     assert r.status_code == 200, r.text
     est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
     assert (est["grupo_id"], est["pos_x"], est["pos_y"]) == (g["id"], 72, 16)
+
+
+def test_zona_de_uma_coluna(c, admin):
+    # coluna de estacoes junto a parede: 1 estacao de largura (56 + margens = 80 px)
+    adulto = _id_piso(c, admin, "Adulto")
+    g = c.post(f"/api/estacoes/grupos?nome=Fileira&piso_id={adulto}", headers=admin).json()
+    zona = {"x": 24, "y": 400, "largura": 80, "altura": 308}
+    r = c.put(f"/api/estacoes/grupos/{g['id']}", headers=admin, json={"zona": zona})
+    assert r.status_code == 200, r.text
+    assert r.json()["zona"] == zona
