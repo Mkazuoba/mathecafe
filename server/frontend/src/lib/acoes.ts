@@ -68,6 +68,20 @@ export function useAcoes() {
     [avisar],
   )
 
+  const desligarPc = useCallback(
+    async (nomeEstacao: string) => {
+      if (!window.confirm(`Desligar o PC da estação ${nomeEstacao}? Se houver cliente, a sessão é encerrada e o tempo que sobrou volta para ele.`)) return
+      try {
+        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/desligar`)
+        avisar(`${nomeEstacao} desliga em 10 segundos`)
+        await recarregar()
+      } catch (e) {
+        avisar((e as Error).message, "erro")
+      }
+    },
+    [avisar, recarregar],
+  )
+
   const enviarMensagem = useCallback(
     async (nomeEstacao: string, texto: string) => {
       try {
@@ -108,5 +122,5 @@ export function useAcoes() {
     [avisar, recarregar],
   )
 
-  return { liberar, removerDaFila, encerrarSessao, reiniciarPc, enviarMensagem, alternarManutencao, liberarDireto }
+  return { liberar, removerDaFila, encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, alternarManutencao, liberarDireto }
 }

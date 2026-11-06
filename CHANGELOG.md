@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-06 — Desligar pelo painel e ações em massa (Ciclo 7, tarefas 7.1 e 7.2; agente 1.8.1)
+
+- **Desligar o PC pelo painel**: no painel da estação, **Desligar** ao lado de Reiniciar. O servidor encerra a sessão (o tempo que sobrou volta para o cliente) e o agente desliga em 10s (`shutdown /s`). **Reiniciar** passou a encerrar a sessão do mesmo jeito.
+- **Ações em massa**: o Controle de sessões ganhou caixinhas (uma por estação e uma para todas as do grupo/piso na tela). Com estações marcadas aparece a barra **Mensagem**, **Encerrar sessões**, **Ligar**, **Reiniciar** e **Desligar**; as que pedem confirmação dizem quantas estações. O aviso conta quantas deram certo e diz as que não foram e por quê (ex.: "AC-02 (Estação offline)").
+- API: `POST /api/estacoes/{nome}/desligar` e `POST /api/estacoes/acoes`.
+- Agente 1.8.1 (auto-update): entende `desligar_pc`. Agente antigo ignora o comando (a sessão é encerrada mesmo assim).
+
 ## 2026-11-06 — Cliente não cai junto com o servidor (agente 1.8.0) e total de clientes por piso
 
 - **Queda do servidor ou da rede não derruba mais o cliente**: antes o agente voltava ao login e o servidor, ao subir, encerrava todas as sessões. Agora o cliente segue usando até o tempo acabar, o agente reconecta sozinho e o servidor retoma a mesma sessão (o tempo continua contado pelo relógio do servidor). A estação aparece ocupada, com o ícone de sem conexão.

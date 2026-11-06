@@ -96,8 +96,10 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | Direção | Eventos |
 |---|---|
 | Servidor → painel | `captura_tela`, `tela_frame`, `estacao_online`, `estacao_offline`, `sessao_iniciada`, `sessao_encerrada`, `fila_atualizada` |
-| Servidor → agente | `login_resultado`, `encerrar_sessao`, `manutencao_resultado`, `pong`, `programacao_atualizada` (recarregar os cartazes) |
-| Agente → servidor | `login_cliente`, `sessao_encerrada`, `status_estacao` (manutencao/livre), `validar_manutencao`, `ping`, `captura_tela_resultado` e `tela_frame` (imagem em `dados.imagem`) |
+| Servidor → agente | `login_resultado`, `encerrar_sessao`, `manutencao_resultado`, `pong`, `programacao_atualizada` (recarregar os cartazes), `mensagem_tela`, `reiniciar_pc` e `desligar_pc` (o servidor já encerrou a sessão e devolveu o tempo; o agente sai dela e roda `shutdown /r` ou `/s` em 10s), `ativar_manutencao`/`desativar_manutencao`, `capturar_tela` |
+| Agente → servidor | `estado` (primeira mensagem ao conectar: a sessão em andamento ou nenhuma), `teste_conexao`, `login_cliente`, `sessao_encerrada` (com `segundos_atras` quando terminou sem conexão), `status_estacao` (manutencao/livre), `validar_manutencao`, `ping`, `captura_tela_resultado` e `tela_frame` (imagem em `dados.imagem`) |
+
+**Comandos em massa**: `POST /api/estacoes/acoes` `{acao, estacoes, texto}` com `acao` = `mensagem`, `encerrar`, `reiniciar`, `desligar` ou `ligar` (Wake-on-LAN) aplica o mesmo comando a cada estação e devolve `resultados` (`"ok"` ou o motivo: offline, sem sessão...), sem parar no primeiro erro. No Painel: as caixinhas do Controle de sessões e a barra `components/AcoesEmMassa.tsx`.
 
 ## Perfis
 

@@ -1230,3 +1230,93 @@ def test_teste_de_conexao_nao_encerra_a_sessao(c, admin, cenario):
         ws.send_json({"evento": "teste_conexao"})
         assert ws.receive_json()["evento"] == "pong"
     assert _sessao(sid).encerrada_em is None
+
+
+# ── 7.1 / 7.2 Desligar pelo painel e acoes em massa ──────────────────────────
+
+def _estacao_nova(c, admin):
+    nome = f"PC-{next(_contador):02d}"
+    assert c.post(f"/api/estacoes/?nome={nome}", headers=admin).status_code == 200
+    return nome
+
+
+def test_desligar_pc_encerra_a_sessao_e_manda_o_comando(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        r = c.post(f"/api/estacoes/{cenario['estacao']}/desligar", headers=admin)
+        assert r.status_code == 200, r.text
+        assert ws.receive_json()["evento"] == "desligar_pc"
+    s = _sessao(dados["sessao_id"])
+    assert s.encerrada_em is not None and s.motivo_encerramento == "operador"
+    saldo = c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"]
+    assert saldo >= dados["tempo_segundos"] - 5  # o tempo que sobrou volta
+
+
+def test_reiniciar_tambem_encerra_a_sessao(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+        assert c.post(f"/api/estacoes/{cenario['estacao']}/reiniciar", headers=admin).status_code == 200
+        assert ws.receive_json()["evento"] == "reiniciar_pc"
+    assert _sessao(sid).motivo_encerramento == "operador"
+
+
+def test_desligar_estacao_offline_e_recusado(c, admin, cenario):
+    r = c.post(f"/api/estacoes/{cenario['estacao']}/desligar", headers=admin)
+    assert r.status_code == 400
+
+
+def test_acao_em_massa_diz_o_resultado_de_cada_estacao(c, operador, admin, cenario):
+    offline = _estacao_nova(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        r = c.post("/api/estacoes/acoes", headers=operador, json={
+            "acao": "mensagem", "texto": "A biblioteca fecha em 10 minutos",
+            "estacoes": [cenario["estacao"], offline, "NAO-EXISTE"]})
+        assert r.status_code == 200, r.text
+        res = r.json()["resultados"]
+        assert res[cenario["estacao"]] == "ok"
+        assert "offline" in res[offline].lower()
+        assert "encontrada" in res["NAO-EXISTE"]
+        msg = ws.receive_json()
+        assert msg["evento"] == "mensagem_tela" and msg["dados"]["texto"] == "A biblioteca fecha em 10 minutos"
+
+
+def test_desligar_em_massa(c, admin, cenario):
+    outra = _estacao_nova(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as a, \
+            c.websocket_connect(f"/ws/estacao/{outra}") as b:
+        _estado(a)
+        _estado(b)
+        r = c.post("/api/estacoes/acoes", headers=admin,
+                   json={"acao": "desligar", "estacoes": [cenario["estacao"], outra]})
+        assert r.json()["resultados"] == {cenario["estacao"]: "ok", outra: "ok"}
+        assert a.receive_json()["evento"] == "desligar_pc"
+        assert b.receive_json()["evento"] == "desligar_pc"
+
+
+def test_encerrar_em_massa_so_onde_ha_sessao(c, admin, cenario):
+    vazia = _estacao_nova(c, admin)
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws, \
+            c.websocket_connect(f"/ws/estacao/{vazia}") as ws2:
+        _estado(ws2)
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+        r = c.post("/api/estacoes/acoes", headers=admin,
+                   json={"acao": "encerrar", "estacoes": [cenario["estacao"], vazia]})
+        res = r.json()["resultados"]
+        assert res[cenario["estacao"]] == "ok"
+        assert "sess" in res[vazia].lower()
+        assert ws.receive_json()["evento"] == "encerrar_sessao"
+    assert _sessao(sid).motivo_encerramento == "operador"
+
+
+def test_acao_em_massa_invalida(c, admin, cenario):
+    r = c.post("/api/estacoes/acoes", headers=admin, json={"acao": "formatar", "estacoes": [cenario["estacao"]]})
+    assert r.status_code == 422
+    r = c.post("/api/estacoes/acoes", headers=admin, json={"acao": "mensagem", "estacoes": [cenario["estacao"]]})
+    assert r.status_code == 400  # mensagem sem texto

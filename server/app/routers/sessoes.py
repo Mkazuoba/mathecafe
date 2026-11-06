@@ -54,7 +54,14 @@ async def encerrar_operador(sessao_id: int, db: Session = Depends(get_db),
         Sessao.id == sessao_id, Sessao.encerrada_em == None).first()
     if not sessao:
         raise HTTPException(404, "Sessão ativa não encontrada")
+    restante = await encerrar_pelo_operador(db, sessao)
+    return {"ok": True, "saldo_restante": restante}
 
+
+async def encerrar_pelo_operador(db: Session, sessao: Sessao, avisar_agente: bool = True) -> int:
+    """Encerra a sessao como "operador", devolvendo ao cliente o tempo que sobrou.
+    Sem avisar o agente quando quem chama ja manda outro comando (desligar,
+    reiniciar), que tambem tira o cliente da sessao."""
     agora = datetime.utcnow()
     _, restante = fechar_tempo_da_sessao(sessao, agora)
 
@@ -62,12 +69,14 @@ async def encerrar_operador(sessao_id: int, db: Session = Depends(get_db),
     sessao.motivo_encerramento = "operador"
     sessao.cliente.saldo_segundos = restante
     sessao.estacao.status = "livre"
+    sessao.sem_conexao_desde = None
     estacao_nome = sessao.estacao.nome
     db.commit()
 
     # Avisa o agente para bloquear a tela
-    await manager.enviar_estacao(estacao_nome, "encerrar_sessao",
-                                  {"motivo": "operador", "saldo_restante": restante})
+    if avisar_agente:
+        await manager.enviar_estacao(estacao_nome, "encerrar_sessao",
+                                      {"motivo": "operador", "saldo_restante": restante})
 
     # Avisa painéis que a sessão encerrou
     await manager.broadcast_paineis("sessao_encerrada", {
@@ -80,8 +89,7 @@ async def encerrar_operador(sessao_id: int, db: Session = Depends(get_db),
     # Garante que o painel veja a estação como online/livre
     if estacao_nome in manager.estacoes_online():
         await manager.broadcast_paineis("estacao_online", {"nome": estacao_nome})
-
-    return {"ok": True, "saldo_restante": restante}
+    return restante
 
 
 @router.post("/pausar/{sessao_id}")

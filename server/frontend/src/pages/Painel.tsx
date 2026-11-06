@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Link } from "react-router-dom"
-import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 import { Select } from "@/components/ui/campos"
 import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
 import { FichaCliente } from "@/components/FichaCliente"
+import { AcoesEmMassa } from "@/components/AcoesEmMassa"
 import { textoIdade } from "@/lib/piso"
 import { FiltrosBusca } from "@/components/FiltrosBusca"
 import { ModalNovoCliente } from "@/components/ModalNovoCliente"
@@ -223,6 +224,8 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
   const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
   const [abertaId, setAbertaId] = useState<number | null>(null)
+  // Estações marcadas para um comando em massa (pelo nome, que é o que a API usa)
+  const [marcadas, setMarcadas] = useState<Set<string>>(() => new Set())
 
   // grupo apagado depois de escolhido: volta para "Todos"
   const grupoEfetivo = grupo === SEM_GRUPO || grupos.some((g) => String(g.id) === grupo) ? grupo : ""
@@ -258,6 +261,21 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
     gravarPreferencia("painel.ordem", JSON.stringify(nova))
   }
 
+  // só valem as marcadas que estão na tela (trocar de piso ou de grupo as esconde)
+  const marcadasVisiveis = linhas.map((l) => l.estacao.nome).filter((n) => marcadas.has(n))
+  const todasMarcadas = linhas.length > 0 && marcadasVisiveis.length === linhas.length
+  function marcar(nome: string, sim: boolean) {
+    setMarcadas((prev) => {
+      const n = new Set(prev)
+      if (sim) n.add(nome)
+      else n.delete(nome)
+      return n
+    })
+  }
+  function marcarTodas(sim: boolean) {
+    setMarcadas(sim ? new Set(linhas.map((l) => l.estacao.nome)) : new Set())
+  }
+
   const aberta = abertaId != null ? estacoes.find((e) => e.id === abertaId) : undefined
   const temSemGrupo = estacoes.some((e) => e.grupo_id == null)
 
@@ -288,6 +306,10 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
         {controles}
       </div>
 
+      {marcadasVisiveis.length > 0 && (
+        <AcoesEmMassa estacoes={marcadasVisiveis} aoLimpar={() => marcarTodas(false)} />
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!carregado ? null : estacoes.length === 0 ? (
           <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
@@ -297,6 +319,18 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-superficie">
               <tr className="border-b border-borda text-left text-xs text-texto-suave">
+                <th scope="col" className="w-8 py-1.5 pl-3">
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todas as estações"
+                    checked={todasMarcadas}
+                    ref={(el) => {
+                      if (el) el.indeterminate = marcadasVisiveis.length > 0 && !todasMarcadas
+                    }}
+                    onChange={(ev) => marcarTodas(ev.target.checked)}
+                    className="size-4 cursor-pointer accent-[var(--color-piso)]"
+                  />
+                </th>
                 <Cabecalho coluna="status" ordem={ordem} aoOrdenar={ordenar}>Status</Cabecalho>
                 <Cabecalho coluna="estacao" ordem={ordem} aoOrdenar={ordenar}>Estação</Cabecalho>
                 <Cabecalho coluna="login" ordem={ordem} aoOrdenar={ordenar}>Login</Cabecalho>
@@ -307,7 +341,13 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
             </thead>
             <tbody>
               {linhas.map((l) => (
-                <LinhaEstacao key={l.estacao.id} linha={l} aoAbrir={() => setAbertaId(l.estacao.id)} />
+                <LinhaEstacao
+                  key={l.estacao.id}
+                  linha={l}
+                  aoAbrir={() => setAbertaId(l.estacao.id)}
+                  marcada={marcadas.has(l.estacao.nome)}
+                  aoMarcar={(sim) => marcar(l.estacao.nome, sim)}
+                />
               ))}
             </tbody>
           </table>
@@ -363,7 +403,12 @@ function Cabecalho({ coluna, ordem, aoOrdenar, className, children }: {
   )
 }
 
-function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir }: { linha: LinhaTabela; aoAbrir: () => void }) {
+function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcada, aoMarcar }: {
+  linha: LinhaTabela
+  aoAbrir: () => void
+  marcada: boolean
+  aoMarcar: (sim: boolean) => void
+}) {
   const { liberarDireto } = useAcoes()
   const [alvo, setAlvo] = useState(false)
   const aceitaCliente = e.status === "livre"
@@ -378,6 +423,7 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir }: { li
       className={cn(
         "cursor-pointer border-b border-borda/60 hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none",
         e.status === "desligada" && "text-texto-suave",
+        marcada && "bg-piso-fundo",
         alvo && "bg-destaque/15",
       )}
       onDragOver={(ev) => {
@@ -394,6 +440,16 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir }: { li
         if (id && aceitaCliente) liberarDireto(e.nome, id)
       }}
     >
+      {/* marcar não abre o painel da estação */}
+      <td className="py-1.5 pl-3" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
+        <input
+          type="checkbox"
+          aria-label={`Selecionar ${e.nome}`}
+          checked={marcada}
+          onChange={(ev) => aoMarcar(ev.target.checked)}
+          className="size-4 cursor-pointer accent-[var(--color-piso)]"
+        />
+      </td>
       <td className={cn("px-2 py-1.5 font-semibold whitespace-nowrap capitalize", COR_TEXTO_STATUS[e.status])}>
         {ROTULO_STATUS[e.status]}
       </td>
@@ -826,6 +882,7 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
   frameUrl: string | null
   toggleStreaming: () => Promise<void>
 }) {
+  const { desligarPc } = useAcoes()
   const { sessoes, fila } = useDados()
   const [textoMsg, setTextoMsg] = useState("")
   const [buscaCliente, setBuscaCliente] = useState("")
@@ -995,7 +1052,7 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
         </div>
       </SecaoComando>
 
-      {/* Manutenção + Reiniciar */}
+      {/* Manutenção, reiniciar e desligar */}
       <SecaoComando titulo="Outros">
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="flex-1" onClick={() => { alternarManutencao(e.nome); aoFechar() }}>
@@ -1004,6 +1061,9 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
           </Button>
           <Button variant="perigo" size="sm" onClick={() => { reiniciarPc(e.nome); aoFechar() }}>
             <IconRefresh size={14} className="mr-1.5" /> Reiniciar
+          </Button>
+          <Button variant="perigo" size="sm" onClick={() => { desligarPc(e.nome); aoFechar() }}>
+            <IconPower size={14} className="mr-1.5" /> Desligar
           </Button>
         </div>
       </SecaoComando>

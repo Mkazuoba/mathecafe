@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 from datetime import datetime
 from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
@@ -163,7 +163,12 @@ def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db
 async def ligar_pc(nome: str, db: Session = Depends(get_db),
                    _=Depends(requer_perfil("admin", "operador"))):
     """Envia magic packet Wake-on-LAN para a estacao."""
-    import socket, struct
+    _ligar(db, nome)
+    return {"ok": True}
+
+
+def _ligar(db: Session, nome: str):
+    import socket
     e = db.query(Estacao).filter(Estacao.nome == nome).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
@@ -177,7 +182,6 @@ async def ligar_pc(nome: str, db: Session = Depends(get_db),
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.sendto(payload, ("255.255.255.255", 9))
-    return {"ok": True}
 
 @router.post("/{nome}/capturar_tela")
 async def capturar_tela(nome: str, _=Depends(requer_perfil("admin", "operador"))):
@@ -263,27 +267,93 @@ class MensagemBody(BaseModel):
 class LiberarDiretoBody(BaseModel):
     cliente_id: int
 
-@router.post("/{nome}/reiniciar")
-async def reiniciar_pc(nome: str, db: Session = Depends(get_db),
-                        _=Depends(requer_perfil("admin", "operador"))):
+# ── Comandos para o PC (um a um ou em massa, em /acoes) ───────────────────────
+
+def _estacao_online(db: Session, nome: str) -> Estacao:
     e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
     if nome not in manager.estacoes_online():
         raise HTTPException(400, "Estação offline")
-    await manager.enviar_estacao(nome, "reiniciar_pc", {})
+    return e
+
+
+async def _desligar_ou_reiniciar(db: Session, nome: str, comando: str):
+    """Encerra a sessao (o tempo que sobrou volta ao cliente) e manda o comando;
+    o agente sai da sessao e desliga/reinicia depois de 10s."""
+    e = _estacao_online(db, nome)
+    from app.routers.sessoes import encerrar_pelo_operador
+    aberta = db.query(Sessao).filter(Sessao.estacao_id == e.id, Sessao.encerrada_em == None).first()
+    if aberta:
+        await encerrar_pelo_operador(db, aberta, avisar_agente=False)
+    await manager.enviar_estacao(nome, comando, {})
+
+
+async def _mensagem(db: Session, nome: str, texto: str):
+    _estacao_online(db, nome)
+    await manager.enviar_estacao(nome, "mensagem_tela", {"texto": texto})
+
+
+async def _encerrar(db: Session, nome: str):
+    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    aberta = db.query(Sessao).filter(Sessao.estacao_id == e.id, Sessao.encerrada_em == None).first()
+    if not aberta:
+        raise HTTPException(400, "Sem sessão em andamento")
+    from app.routers.sessoes import encerrar_pelo_operador
+    await encerrar_pelo_operador(db, aberta)
+
+
+@router.post("/{nome}/reiniciar")
+async def reiniciar_pc(nome: str, db: Session = Depends(get_db),
+                        _=Depends(requer_perfil("admin", "operador"))):
+    await _desligar_ou_reiniciar(db, nome, "reiniciar_pc")
+    return {"ok": True}
+
+@router.post("/{nome}/desligar")
+async def desligar_pc(nome: str, db: Session = Depends(get_db),
+                      _=Depends(requer_perfil("admin", "operador"))):
+    await _desligar_ou_reiniciar(db, nome, "desligar_pc")
     return {"ok": True}
 
 @router.post("/{nome}/mensagem")
 async def enviar_mensagem(nome: str, body: MensagemBody, db: Session = Depends(get_db),
                            _=Depends(requer_perfil("admin", "operador"))):
-    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
-    if not e:
-        raise HTTPException(404, "Estação não encontrada")
-    if nome not in manager.estacoes_online():
-        raise HTTPException(400, "Estação offline")
-    await manager.enviar_estacao(nome, "mensagem_tela", {"texto": body.texto})
+    await _mensagem(db, nome, body.texto)
     return {"ok": True}
+
+
+class AcaoEmMassa(BaseModel):
+    acao: Literal["mensagem", "encerrar", "reiniciar", "desligar", "ligar"]
+    estacoes: List[str] = Field(min_length=1, max_length=500)
+    texto: Optional[str] = None
+
+
+@router.post("/acoes")
+async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
+                         _=Depends(requer_perfil("admin", "operador"))):
+    """O mesmo comando para varias estacoes; cada uma diz se deu certo ("ok") ou
+    o motivo (offline, sem sessao...), sem parar as outras."""
+    texto = (body.texto or "").strip()
+    if body.acao == "mensagem" and not texto:
+        raise HTTPException(400, "Escreva a mensagem")
+    resultados = {}
+    for nome in dict.fromkeys(body.estacoes):  # sem repetir, na ordem
+        try:
+            if body.acao == "mensagem":
+                await _mensagem(db, nome, texto)
+            elif body.acao == "encerrar":
+                await _encerrar(db, nome)
+            elif body.acao in ("reiniciar", "desligar"):
+                await _desligar_ou_reiniciar(db, nome, f"{body.acao}_pc")
+            else:
+                _ligar(db, nome)
+            resultados[nome] = "ok"
+        except HTTPException as erro:
+            db.rollback()
+            resultados[nome] = erro.detail
+    return {"resultados": resultados}
 
 @router.post("/{nome}/manutencao")
 async def alternar_manutencao(nome: str, db: Session = Depends(get_db),

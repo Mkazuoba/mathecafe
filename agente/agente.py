@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.8.0"
+VERSAO = "1.8.1"
 
 import asyncio
 import json
@@ -1006,6 +1006,14 @@ class AgenteApp:
                 self._voltar_login()
             self._countdown_reinicio(10)
 
+        elif evento == "desligar_pc":
+            # O servidor ja encerrou a sessao e devolveu o tempo ao cliente
+            self._log("<- desligar_pc do operador")
+            if self.sessao_ativa:
+                self._log("Encerrando sessao para desligar...")
+                self._voltar_login()
+            self._countdown_reinicio(10, desligar=True)
+
         elif evento == "mensagem_tela":
             texto = dados.get("texto", "")
             self._log(f"<- mensagem_tela: {texto}")
@@ -1358,20 +1366,21 @@ class AgenteApp:
         self._log("Iniciando contagem para reiniciar...")
         self._countdown_reinicio(10)
 
-    def _countdown_reinicio(self, segundos):
-        """Exibe contagem regressiva no launcher e reinicia ao zerar."""
+    def _countdown_reinicio(self, segundos, desligar=False):
+        """Exibe contagem regressiva no launcher e reinicia (ou desliga) ao zerar."""
+        verbo = "Desligando" if desligar else "Reiniciando"
         if segundos > 0:
             self.lbl_login_erro.config(
-                text=f"Sessao encerrada. Reiniciando em {segundos}s...",
+                text=f"Sessao encerrada. {verbo} em {segundos}s...",
                 fg="#f59e0b"
             )
-            self.root.after(1000, self._countdown_reinicio, segundos - 1)
+            self.root.after(1000, self._countdown_reinicio, segundos - 1, desligar)
         else:
-            self.lbl_login_erro.config(text="Reiniciando agora...", fg="#ef4444")
-            self._log("Reiniciando o PC...")
+            self.lbl_login_erro.config(text=f"{verbo} agora...", fg="#ef4444")
+            self._log(f"{verbo} o PC...")
             try:
                 resultado = subprocess.run(
-                    r"C:\Windows\System32\shutdown.exe /r /f /t 0",
+                    r"C:\Windows\System32\shutdown.exe " + ("/s" if desligar else "/r") + " /f /t 0",
                     shell=True, capture_output=True, text=True
                 )
                 if resultado.returncode != 0:

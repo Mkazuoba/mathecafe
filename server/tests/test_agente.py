@@ -436,3 +436,12 @@ def test_testar_conexao_nao_mexe_na_sessao_da_estacao():
     src = _fonte()
     trecho = src[src.index("def testar_conexao("):src.index("# Operadores que ja entraram")]
     assert '"teste_conexao"' in trecho and '"ping"' not in trecho
+
+
+def test_desligar_pelo_painel():
+    src = _fonte()
+    i = src.index('elif evento == "desligar_pc":')
+    trecho = src[i:src.index("elif evento ==", i + 10)]
+    assert "_voltar_login" in trecho and "desligar=True" in trecho
+    contagem = src[src.index("def _countdown_reinicio"):src.index("def _encerrar_apps_do_cliente")]
+    assert '"/s" if desligar else "/r"' in contagem
