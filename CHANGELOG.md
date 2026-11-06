@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Meus arquivos no próprio ícone do dock, em leque animado (tarefa 9.5; agente 1.10.2)
+
+- O **ícone do dock virou a pasta** (na 1.10.1 abria uma pasta grande separada em cima dele). Com o mouse em cima, os arquivos saem dela em **leque animado** logo acima do dock (até 5 cartões, fotos com miniatura, +N para os próximos); tirar o mouse guarda os cartões.
+- Mouse num cartão o levanta e mostra o ×; clicar abre direto no programa liberado; × exclui com confirmação. Avisos (tipo que não abre, programa não liberado) chegam como notificação.
+- Animação a ~60 quadros/s sem pisca: cada quadro troca uma imagem só, com os cartões prontos em cache.
+
 ## 2026-11-06 — Meus arquivos como pasta e downloads presos (tarefa 9.5; agente 1.10.1)
 
 - **Visual de pasta**: os arquivos baixados saem de uma pasta em cartões inclinados (fotos com miniatura; documentos com tipo e tamanho), aberta em cima do ícone do dock. Mouse em cima levanta o cartão; clicar abre; × exclui com confirmação; ⋯ mostra os próximos 4. **Clicar fora ou Esc fecha** (antes a janela ficava por cima de tudo).

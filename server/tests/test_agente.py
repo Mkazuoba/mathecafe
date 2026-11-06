@@ -545,12 +545,21 @@ def test_downloads_presos_na_pasta_downloads():
     assert '"PromptForDownloadLocation" -Value 0' in pol
 
 
-def test_meus_arquivos_abre_direto_e_fecha_ao_clicar_fora():
-    # 1.10.0: os.startfile passava pelo aviso de seguranca do Windows; a janela
-    # ficava por cima de tudo ate fechar no x
+def test_meus_arquivos_e_o_icone_do_dock_que_abre_no_hover():
+    # 1.10.1 abria uma pasta grande separada em cima do icone; o pedido era o
+    # proprio icone virar a pasta e os arquivos sairem dela com o mouse em cima,
+    # animados (cada quadro troca uma imagem so: nada de redesenhar o dock)
     src = _fonte()
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert "icone_pasta" in dock  # o icone desenhado como pasta
+    mover = dock[dock.index("def _ao_mover"):dock.index("def _ao_sair")]
+    assert "espiar(" in mover
+    sair = dock[dock.index("def _ao_sair"):dock.index("def _marcar_sobre")]
+    assert "espiar(False)" in sair
     tela = src[src.index("class MeusArquivos:"):src.index("class Programacao:")]
+    assert "def espiar(self" in tela and "after(16" in tela
+    assert ".delete(" not in tela and "itemconfig(self._item, image=" in tela
     abrir = tela[tela.index("def _abrir_arquivo"):]
     abrir = abrir[:abrir.index("\n    def ", 10)]
+    # direto no programa: pelo Windows vinha o aviso de seguranca
     assert "subprocess.Popen([programa, caminho])" in abrir and "startfile" not in abrir
-    assert "GetAsyncKeyState" in tela and "<Escape>" in tela
