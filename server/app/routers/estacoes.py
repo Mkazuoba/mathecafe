@@ -66,6 +66,9 @@ def serial_grupo(g: GrupoEstacao):
         "nome": g.nome,
         "tempo_padrao_segundos": g.tempo_padrao_segundos,
         "cor": g.cor or "#6366f1",
+        # posicao e tamanho da zona no Mapa (None: o painel arruma sozinho)
+        "zona": ({"x": g.zona_x, "y": g.zona_y, "largura": g.zona_largura, "altura": g.zona_altura}
+                 if g.zona_largura else None),
         **resumo(g.piso),  # vazio: grupo antigo sem piso (o painel avisa)
     }
 
@@ -87,6 +90,17 @@ class GrupoUpdate(BaseModel):
     tempo_padrao_segundos: Optional[int] = None
     cor: Optional[str] = None
     piso_id: Optional[int] = None
+    zona: Optional["Zona"] = None
+
+
+class Zona(BaseModel):
+    x: int = Field(ge=0, le=20000)
+    y: int = Field(ge=0, le=20000)
+    largura: int = Field(ge=120, le=5000)
+    altura: int = Field(ge=100, le=5000)
+
+
+GrupoUpdate.model_rebuild()
 
 
 def _piso_ou_400(db: Session, piso_id: int):
@@ -104,6 +118,9 @@ def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
     if data.piso_id is not None:
         _piso_ou_400(db, data.piso_id)
         g.piso_id = data.piso_id
+    if data.zona is not None:
+        g.zona_x, g.zona_y = data.zona.x, data.zona.y
+        g.zona_largura, g.zona_altura = data.zona.largura, data.zona.altura
     db.commit()
     return serial_grupo(g)
 

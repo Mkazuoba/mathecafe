@@ -52,6 +52,11 @@ class GrupoEstacao(Base):
     # e, ate escolher, conta como o piso padrao
     piso_id = Column(Integer, ForeignKey("pisos.id"), nullable=True)
     ativo = Column(Boolean, default=True)
+    # Zona no Mapa (px no quadro do piso): vazio = o painel arruma sozinho
+    zona_x = Column(Integer, nullable=True)
+    zona_y = Column(Integer, nullable=True)
+    zona_largura = Column(Integer, nullable=True)
+    zona_altura = Column(Integer, nullable=True)
     piso = relationship("Piso")
     estacoes = relationship("Estacao", back_populates="grupo")
 

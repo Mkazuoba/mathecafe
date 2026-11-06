@@ -1,100 +1,327 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { IconX } from "@tabler/icons-react"
+import {
+  IconArrowsMove,
+  IconMessage,
+  IconPencil,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconPlus,
+  IconPower,
+  IconRefresh,
+  IconWifi,
+  IconWifiOff,
+  IconX,
+} from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, restanteDaSessao } from "@/lib/tempo"
-import type { Estacao, StatusEstacao } from "@/lib/tipos"
+import type { Estacao, Grupo, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { CabecalhoTela } from "@/components/Layout"
+import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, MensagemErro, Select } from "@/components/ui/campos"
+import { Campo, Input, MensagemErro, Select, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
-import { SeloStatus, Vazio } from "@/components/ui/status"
+import { ROTULO_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
 
+// ── Medidas do quadro (px) ────────────────────────────────────────────────────
+const QUADRADO = 56 // a estação
+const PASSO = 64 // estação + espaço, na grade automática
+const GRADE = 8 // posições arredondadas para esta grade
+const CABECALHO_ZONA = 36
+const MARGEM_ZONA = 12
+const ESPACO_ZONAS = 24
+const LARGURA_MAXIMA = 1400 // zonas automáticas quebram a linha aqui
 const SEM_GRUPO = -1
-const TAMANHO_PINO = 80
 
-const BORDA_PINO: Record<StatusEstacao, string> = {
-  livre: "border-b-livre",
-  ocupada: "border-b-ocupada bg-superficie-3",
-  desligada: "border-b-desligada opacity-60",
-  manutencao: "border-b-manutencao opacity-85",
+// Cores do estado (o que a imagem de referência mostra nos quadrados)
+const COR_QUADRADO: Record<StatusEstacao, string> = {
+  livre: "border-livre bg-livre-fundo text-livre",
+  ocupada: "border-ocupada bg-ocupada text-white",
+  desligada: "border-borda bg-superficie-2 text-texto-fraco",
+  manutencao: "border-manutencao bg-manutencao-fundo text-manutencao",
+}
+const COR_LEGENDA: Record<StatusEstacao, string> = {
+  livre: "border-livre bg-livre-fundo",
+  ocupada: "border-ocupada bg-ocupada",
+  desligada: "border-borda bg-superficie-2",
+  manutencao: "border-manutencao bg-manutencao-fundo",
 }
 
+interface Retangulo {
+  x: number
+  y: number
+  largura: number
+  altura: number
+}
+interface ZonaNoMapa {
+  id: number // SEM_GRUPO para as estações sem grupo
+  nome: string
+  cor: string
+  grupo: Grupo | null
+  ret: Retangulo
+  automatica: boolean
+  estacoes: { estacao: Estacao; x: number; y: number }[]
+}
+
+const arredondar = (v: number) => Math.max(0, Math.round(v / GRADE) * GRADE)
+
+/**
+ * Cada zona é uma grade de quadrantes (PASSO px): uma estação por quadrante,
+ * nunca uma em cima da outra. A posição salva vai para o quadrante mais
+ * próximo (as do mapa antigo eram livres); se ele já tem dono, ou se a
+ * estação ainda não tem posição, ela fica no primeiro quadrante livre.
+ */
+type Quadrante = { col: number; lin: number }
+const chave = (q: Quadrante) => `${q.col},${q.lin}`
+const quadranteDe = (x: number, y: number): Quadrante => ({
+  col: Math.max(0, Math.round(x / PASSO)),
+  lin: Math.max(0, Math.round(y / PASSO)),
+})
+
+function primeiroLivre(ocupados: Set<string>, colunas: number): Quadrante {
+  for (let i = 0; ; i++) {
+    const q = { col: i % colunas, lin: Math.floor(i / colunas) }
+    if (!ocupados.has(chave(q))) return q
+  }
+}
+
+function posicionar(estacoes: Estacao[], colunas: number) {
+  const ocupados = new Set<string>()
+  const ordenadas = estacoes.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }))
+  const lugar = new Map<number, Quadrante>()
+  // primeiro as que têm posição salva, depois as novas
+  for (const e of ordenadas.filter((e) => e.pos_x || e.pos_y)) {
+    let q = quadranteDe(e.pos_x, e.pos_y)
+    if (ocupados.has(chave(q))) q = primeiroLivre(ocupados, colunas)
+    ocupados.add(chave(q))
+    lugar.set(e.id, q)
+  }
+  for (const e of ordenadas.filter((e) => !e.pos_x && !e.pos_y)) {
+    const q = primeiroLivre(ocupados, colunas)
+    ocupados.add(chave(q))
+    lugar.set(e.id, q)
+  }
+  return ordenadas.map((e) => {
+    const q = lugar.get(e.id)!
+    return { estacao: e, x: q.col * PASSO, y: q.lin * PASSO }
+  })
+}
+
+const linhasDa = (altura: number) =>
+  Math.max(1, Math.floor((altura - CABECALHO_ZONA - 2 * MARGEM_ZONA + (PASSO - QUADRADO)) / PASSO))
+const colunasDa = (largura: number) => Math.max(1, Math.floor((largura - 2 * MARGEM_ZONA + (PASSO - QUADRADO)) / PASSO))
+
+/** As zonas do piso: a posição salva de cada uma, ou lado a lado. */
+function montarZonas(grupos: Grupo[], estacoes: Estacao[], comSemGrupo: boolean): ZonaNoMapa[] {
+  const lista: { id: number; nome: string; cor: string; grupo: Grupo | null; estacoes: Estacao[] }[] = grupos.map(
+    (g) => ({ id: g.id, nome: g.nome, cor: g.cor, grupo: g, estacoes: estacoes.filter((e) => e.grupo_id === g.id) }),
+  )
+  const semGrupo = estacoes.filter((e) => e.grupo_id == null)
+  if (comSemGrupo && semGrupo.length)
+    lista.push({ id: SEM_GRUPO, nome: "Sem grupo", cor: "#64748b", grupo: null, estacoes: semGrupo })
+
+  // zonas automáticas entram depois das salvas, da esquerda para a direita
+  const salvas = lista.filter((z) => z.grupo?.zona)
+  let cursorY = salvas.reduce((m, z) => Math.max(m, z.grupo!.zona!.y + z.grupo!.zona!.altura), 0)
+  cursorY = salvas.length ? cursorY + ESPACO_ZONAS : ESPACO_ZONAS
+  let cursorX = ESPACO_ZONAS
+  let alturaLinha = 0
+
+  return lista.map((z) => {
+    const zona = z.grupo?.zona
+    if (zona) {
+      return { ...z, ret: zona, automatica: false, estacoes: posicionar(z.estacoes, colunasDa(zona.largura)) }
+    }
+    const colunas = Math.min(6, Math.max(2, Math.ceil(Math.sqrt(z.estacoes.length || 1))))
+    const posicoes = posicionar(z.estacoes, colunas)
+    const conteudoL = Math.max(colunas * PASSO, ...posicoes.map((p) => p.x + PASSO))
+    const conteudoA = Math.max(PASSO, ...posicoes.map((p) => p.y + PASSO))
+    const largura = Math.max(200, conteudoL + 2 * MARGEM_ZONA)
+    const altura = CABECALHO_ZONA + conteudoA + 2 * MARGEM_ZONA
+    if (cursorX + largura > LARGURA_MAXIMA && cursorX > ESPACO_ZONAS) {
+      cursorX = ESPACO_ZONAS
+      cursorY += alturaLinha + ESPACO_ZONAS
+      alturaLinha = 0
+    }
+    const ret = { x: cursorX, y: cursorY, largura, altura }
+    cursorX += largura + ESPACO_ZONAS
+    alturaLinha = Math.max(alturaLinha, altura)
+    return { ...z, ret, automatica: true, estacoes: posicoes }
+  })
+}
 
 export default function Mapa() {
-  const { estacoes, grupos, recarregarEstacoes } = useDados()
+  const { estacoes, grupos, piso, sessaoDaEstacao, agora, recarregar, recarregarEstacoes } = useDados()
   const avisar = useAvisos()
   const admin = Api.ehAdmin()
-  const [grupoAtivo, setGrupoAtivo] = useState<number | null>(null)
   const [modoConfig, setModoConfig] = useState(false)
-  const [selecionada, setSelecionada] = useState<number | null>(null)
-  const [criando, setCriando] = useState(false)
+  const [aberta, setAberta] = useState<number | null>(null)
+  const [novaEstacaoEm, setNovaEstacaoEm] = useState<number | null | undefined>(undefined)
+  const [editandoZona, setEditandoZona] = useState<Grupo | "nova" | null>(null)
+  // enquanto arrasta: a posição provisória da zona ou da estação
+  const [provisorio, setProvisorio] = useState<{
+    zona?: { id: number; ret: Retangulo }
+    estacao?: { id: number; x: number; y: number }
+  } | null>(null)
+  const quadro = useRef<HTMLDivElement>(null)
 
-  const temSemGrupo = estacoes.some((e) => e.grupo_id === null)
-  const abas = useMemo(
-    () => [...grupos.map((g) => ({ id: g.id, nome: g.nome, cor: g.cor })), ...(temSemGrupo ? [{ id: SEM_GRUPO, nome: "Sem grupo", cor: null as string | null }] : [])],
-    [grupos, temSemGrupo],
-  )
-  // A aba escolhida pode sumir (ex.: "Sem grupo" quando a última estação muda de grupo)
-  const grupo = abas.some((a) => a.id === grupoAtivo) ? grupoAtivo : (abas[0]?.id ?? null)
-  const doGrupo = estacoes.filter((e) => (grupo === SEM_GRUPO ? e.grupo_id === null : e.grupo_id === grupo))
-  const ocupadas = doGrupo.filter((e) => e.status === "ocupada").length
-  const estacaoSelecionada = estacoes.find((e) => e.id === selecionada)
+  const zonas = useMemo(() => montarZonas(grupos, estacoes, !!piso?.padrao), [grupos, estacoes, piso])
+  const contagem = useMemo(() => {
+    const c: Record<StatusEstacao, number> = { livre: 0, ocupada: 0, desligada: 0, manutencao: 0 }
+    for (const e of estacoes) c[e.status]++
+    return c
+  }, [estacoes])
+
+  const retDe = (z: ZonaNoMapa) => (provisorio?.zona?.id === z.id ? provisorio.zona.ret : z.ret)
+  const larguraQuadro = Math.max(1000, ...zonas.map((z) => retDe(z).x + retDe(z).largura + ESPACO_ZONAS))
+  const alturaQuadro = Math.max(600, ...zonas.map((z) => retDe(z).y + retDe(z).altura + ESPACO_ZONAS))
+
+  const estacaoAberta = estacoes.find((e) => e.id === aberta)
+  const ondeAberta = (() => {
+    for (const z of zonas) {
+      const p = z.estacoes.find((s) => s.estacao.id === aberta)
+      if (p) return { x: retDe(z).x + MARGEM_ZONA + p.x, y: retDe(z).y + CABECALHO_ZONA + MARGEM_ZONA + p.y }
+    }
+    return null
+  })()
+
+  /** Grava a zona; as que ainda estão automáticas são gravadas junto, para não se moverem. */
+  async function salvarZona(id: number, ret: Retangulo) {
+    try {
+      const pedidos = zonas
+        .filter((z) => z.grupo && (z.id === id || z.automatica))
+        .map((z) => Api.put(`/api/estacoes/grupos/${z.id}`, { zona: z.id === id ? ret : z.ret }))
+      await Promise.all(pedidos)
+      await recarregar()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setProvisorio(null)
+    }
+  }
+
+  /**
+   * Solta a estação num quadrante. Se ele tem outra estação, as duas trocam de
+   * lugar (vinda de outra zona, a que estava lá vai para o primeiro livre).
+   * Grava a zona inteira: nada pula de lugar depois.
+   */
+  async function soltarEstacao(e: Estacao, pontoNoQuadro: { x: number; y: number }) {
+    const destino = zonas.find((z) => {
+      const r = retDe(z)
+      return (
+        pontoNoQuadro.x >= r.x &&
+        pontoNoQuadro.x <= r.x + r.largura &&
+        pontoNoQuadro.y >= r.y &&
+        pontoNoQuadro.y <= r.y + r.altura
+      )
+    })
+    const origem = zonas.find((z) => z.estacoes.some((s) => s.estacao.id === e.id))
+    if (!destino || !origem || (destino.id === SEM_GRUPO && e.grupo_id != null)) {
+      setProvisorio(null)
+      return
+    }
+    const r = retDe(destino)
+    const colunas = colunasDa(r.largura)
+    const alvo = quadranteDe(
+      pontoNoQuadro.x - r.x - MARGEM_ZONA - QUADRADO / 2,
+      pontoNoQuadro.y - r.y - CABECALHO_ZONA - MARGEM_ZONA - QUADRADO / 2,
+    )
+    alvo.col = Math.min(alvo.col, colunas - 1)
+    const mesmaZona = destino.id === origem.id
+    const deOnde = origem.estacoes.find((s) => s.estacao.id === e.id)!
+
+    // posições finais da zona de destino (quadrantes únicos)
+    const finais = new Map<number, Quadrante>()
+    for (const s of destino.estacoes) {
+      if (s.estacao.id !== e.id) finais.set(s.estacao.id, quadranteDe(s.x, s.y))
+    }
+    const dono = [...finais.entries()].find(([, q]) => chave(q) === chave(alvo))?.[0]
+    finais.set(e.id, alvo)
+    if (dono != null) {
+      if (mesmaZona)
+        finais.set(dono, quadranteDe(deOnde.x, deOnde.y)) // trocam de lugar
+      else {
+        const ocupados = new Set([...finais.entries()].filter(([id]) => id !== dono).map(([, q]) => chave(q)))
+        finais.set(dono, primeiroLivre(ocupados, colunas))
+      }
+    }
+
+    const mudancas = [...finais.entries()].filter(([id, q]) => {
+      const atual = destino.estacoes.find((s) => s.estacao.id === id)
+      const salvo = estacoes.find((x) => x.id === id)
+      // grava tudo o que muda e o que ainda estava sem posição salva (para não pular)
+      return (
+        id === e.id ||
+        !atual ||
+        atual.x !== q.col * PASSO ||
+        atual.y !== q.lin * PASSO ||
+        !(salvo?.pos_x || salvo?.pos_y)
+      )
+    })
+    try {
+      await Promise.all(
+        mudancas.map(([id, q]) => {
+          // +1: o quadrante (0, 0) gravado como 0,0 seria lido como "sem posição"
+          const pos = { pos_x: q.col * PASSO + 1, pos_y: q.lin * PASSO + 1 }
+          return id === e.id && !mesmaZona
+            ? Api.put(`/api/estacoes/${id}`, { grupo_id: destino.id, ...pos })
+            : Api.put(`/api/estacoes/${id}/posicao`, pos)
+        }),
+      )
+      if (!mesmaZona) avisar(`${e.nome} agora está em ${destino.nome}`)
+      await recarregarEstacoes()
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    } finally {
+      setProvisorio(null)
+    }
+  }
 
   async function excluir(e: Estacao) {
     if (!window.confirm(`Excluir a estação ${e.nome}?`)) return
     try {
       const r = await Api.del<{ desativada?: boolean }>(`/api/estacoes/${e.id}`)
-      avisar(r.desativada ? "Estação removida do painel (o histórico de uso foi mantido)" : "Estação excluída")
+      avisar(r.desativada ? "Estação removida do mapa (o histórico de uso foi mantido)" : "Estação excluída")
       await recarregarEstacoes()
     } catch (err) {
       avisar((err as Error).message, "erro")
     }
   }
 
+  function pontoNoQuadro(ev: { clientX: number; clientY: number }) {
+    const r = quadro.current!.getBoundingClientRect()
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top }
+  }
+
   return (
     <>
       <CabecalhoTela titulo="Mapa">
-        <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Grupos de estações">
-          {abas.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              role="tab"
-              aria-selected={a.id === grupo}
-              onClick={() => setGrupoAtivo(a.id)}
-              style={a.id === grupo && a.cor ? { backgroundColor: a.cor, borderColor: a.cor } : undefined}
-              className={cn(
-                "cursor-pointer rounded-md border px-3.5 py-1.5 text-sm",
-                a.id === grupo
-                  ? (a.cor ? "text-white" : "border-destaque bg-destaque text-white")
-                  : "border-borda bg-superficie-2 text-texto-suave hover:text-texto",
-              )}
-            >
-              {a.cor && (
-                <span
-                  className="mr-1.5 inline-block size-2.5 rounded-full align-middle"
-                  style={{ backgroundColor: a.cor }}
-                />
-              )}
-              {a.nome}
-            </button>
+        {/* legenda dos estados, com a contagem do piso */}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-texto-suave">
+          {(Object.keys(COR_LEGENDA) as StatusEstacao[]).map((s) => (
+            <span key={s} className="inline-flex items-center gap-1.5">
+              <span className={cn("size-3 rounded-[3px] border", COR_LEGENDA[s])} />
+              <span className="capitalize">{ROTULO_STATUS[s]}</span>
+              <strong className="text-texto tabular-nums">{contagem[s]}</strong>
+            </span>
           ))}
         </div>
         <div className="flex-1" />
-        <span className="text-sm text-texto-suave">
-          {ocupadas}/{doGrupo.length} ocupadas
-        </span>
+        {admin && modoConfig && (
+          <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditandoZona("nova")}>
+            <IconPlus size={14} /> Zona
+          </Button>
+        )}
         {admin && (
           <Button
             variant={modoConfig ? "default" : "outline"}
             size="sm"
             onClick={() => {
               setModoConfig((v) => !v)
-              setSelecionada(null)
+              setAberta(null)
             }}
           >
             {modoConfig ? "Concluir configuração" : "Modo configuração"}
@@ -102,126 +329,308 @@ export default function Mapa() {
         )}
       </CabecalhoTela>
 
-      <div className="fundo-pontilhado relative min-h-0 flex-1 overflow-auto">
-        <div className="relative min-h-[700px] min-w-[1000px]">
-          {modoConfig && (
-            <Button size="sm" variant="outline" className="absolute top-3 left-3 z-10" onClick={() => setCriando(true)}>
-              + Adicionar estação
-            </Button>
-          )}
-          {doGrupo.length ? (
-            doGrupo.map((e) => (
-              <Pino
-                key={e.id}
-                estacao={e}
-                corGrupo={e.grupo_cor}
+      <div className="fundo-pontilhado relative min-h-0 flex-1 overflow-auto" onClick={() => setAberta(null)}>
+        {!zonas.length ? (
+          <div className="pt-16">
+            <Vazio>Nenhuma zona neste piso.{admin && " Use o Modo configuração → + Zona para criar."}</Vazio>
+          </div>
+        ) : (
+          <div ref={quadro} className="relative" style={{ width: larguraQuadro, height: alturaQuadro }}>
+            {zonas.map((z) => (
+              <ZonaDoMapa
+                key={z.id}
+                zona={z}
+                ret={retDe(z)}
                 modoConfig={modoConfig}
-                aoClicar={() => setSelecionada(e.id)}
-                aoExcluir={() => excluir(e)}
+                aoMoverZona={(ret) => setProvisorio({ zona: { id: z.id, ret } })}
+                aoSoltarZona={(ret) => z.grupo && salvarZona(z.id, ret)}
+                aoEditar={() => z.grupo && setEditandoZona(z.grupo)}
+                aoNovaEstacao={() => setNovaEstacaoEm(z.grupo ? z.id : null)}
+              >
+                {z.estacoes.map(({ estacao: e, x, y }) => {
+                  const arrastando = provisorio?.estacao?.id === e.id
+                  const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+                  return (
+                    <QuadradoEstacao
+                      key={e.id}
+                      estacao={e}
+                      x={arrastando ? provisorio.estacao!.x : x}
+                      y={arrastando ? provisorio.estacao!.y : y}
+                      arrastando={arrastando}
+                      restante={sessao ? restanteDaSessao(sessao, agora) : null}
+                      aberta={aberta === e.id}
+                      modoConfig={modoConfig}
+                      aoAbrir={() => setAberta(aberta === e.id ? null : e.id)}
+                      aoArrastar={(ev) => {
+                        // posição provisória no sistema da zona de origem (segue o mouse)
+                        const p = pontoNoQuadro(ev)
+                        const r = retDe(z)
+                        setProvisorio({
+                          estacao: {
+                            id: e.id,
+                            x: p.x - r.x - MARGEM_ZONA - QUADRADO / 2,
+                            y: p.y - r.y - CABECALHO_ZONA - MARGEM_ZONA - QUADRADO / 2,
+                          },
+                        })
+                      }}
+                      aoSoltar={(ev) => soltarEstacao(e, pontoNoQuadro(ev))}
+                      aoExcluir={() => excluir(e)}
+                    />
+                  )
+                })}
+              </ZonaDoMapa>
+            ))}
+
+            {estacaoAberta && ondeAberta && !modoConfig && (
+              <CartaoEstacao
+                estacao={estacaoAberta}
+                x={
+                  ondeAberta.x + QUADRADO + 10 + 320 > larguraQuadro ? ondeAberta.x - 330 : ondeAberta.x + QUADRADO + 10
+                }
+                y={ondeAberta.y}
+                aoFechar={() => setAberta(null)}
               />
-            ))
-          ) : (
-            <div className="pt-16">
-              <Vazio>
-                Nenhuma estação neste grupo.
-                {admin && !modoConfig && " Use o Modo configuração para cadastrar."}
-              </Vazio>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {estacaoSelecionada && !modoConfig && (
-        <PainelDetalhe estacao={estacaoSelecionada} aoFechar={() => setSelecionada(null)} />
-      )}
       <ModalNovaEstacao
-        aberto={criando}
-        grupoInicial={grupo !== SEM_GRUPO ? grupo : null}
-        aoFechar={() => setCriando(false)}
+        aberto={novaEstacaoEm !== undefined}
+        grupoInicial={novaEstacaoEm ?? null}
+        aoFechar={() => setNovaEstacaoEm(undefined)}
       />
+      <ModalZona zona={editandoZona} aoFechar={() => setEditandoZona(null)} />
     </>
   )
 }
 
-function Pino({
-  estacao: e,
-  corGrupo,
+// ── Zona ─────────────────────────────────────────────────────────────────────
+
+function ZonaDoMapa({
+  zona: z,
+  ret,
   modoConfig,
-  aoClicar,
+  aoMoverZona,
+  aoSoltarZona,
+  aoEditar,
+  aoNovaEstacao,
+  children,
+}: {
+  zona: ZonaNoMapa
+  ret: Retangulo
+  modoConfig: boolean
+  aoMoverZona: (ret: Retangulo) => void
+  aoSoltarZona: (ret: Retangulo) => void
+  aoEditar: () => void
+  aoNovaEstacao: () => void
+  children: React.ReactNode
+}) {
+  const arrasto = useRef<{ tipo: "mover" | "tamanho"; x: number; y: number; ret: Retangulo; atual: Retangulo } | null>(
+    null,
+  )
+  const ocupadas = z.estacoes.filter((s) => s.estacao.status === "ocupada").length
+  const editavel = modoConfig && z.grupo != null
+
+  function iniciar(tipo: "mover" | "tamanho", ev: React.PointerEvent) {
+    if (!editavel) return
+    ev.stopPropagation()
+    ev.currentTarget.setPointerCapture(ev.pointerId)
+    arrasto.current = { tipo, x: ev.clientX, y: ev.clientY, ret, atual: ret }
+  }
+  function mover(ev: React.PointerEvent) {
+    const a = arrasto.current
+    if (!a) return
+    const dx = ev.clientX - a.x
+    const dy = ev.clientY - a.y
+    a.atual =
+      a.tipo === "mover"
+        ? { ...a.ret, x: arredondar(a.ret.x + dx), y: arredondar(a.ret.y + dy) }
+        : {
+            ...a.ret,
+            largura: Math.max(160, arredondar(a.ret.largura + dx)),
+            altura: Math.max(120, arredondar(a.ret.altura + dy)),
+          }
+    aoMoverZona(a.atual)
+  }
+  function soltar() {
+    const a = arrasto.current
+    arrasto.current = null
+    if (
+      a &&
+      (a.atual.x !== a.ret.x ||
+        a.atual.y !== a.ret.y ||
+        a.atual.largura !== a.ret.largura ||
+        a.atual.altura !== a.ret.altura)
+    )
+      aoSoltarZona(a.atual)
+  }
+
+  return (
+    <section
+      aria-label={`Zona ${z.nome}`}
+      className={cn("absolute rounded-xl border", modoConfig && "border-dashed")}
+      style={{
+        left: ret.x,
+        top: ret.y,
+        width: ret.largura,
+        height: ret.altura,
+        background: `color-mix(in srgb, ${z.cor} 10%, var(--color-fundo))`,
+        borderColor: `color-mix(in srgb, ${z.cor} 55%, var(--color-borda))`,
+      }}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 text-sm select-none",
+          editavel && "cursor-grab touch-none active:cursor-grabbing",
+        )}
+        style={{ height: CABECALHO_ZONA }}
+        onPointerDown={(ev) => iniciar("mover", ev)}
+        onPointerMove={mover}
+        onPointerUp={soltar}
+        title={editavel ? "Arraste para mover a zona" : undefined}
+      >
+        {editavel && <IconArrowsMove size={14} className="shrink-0 text-texto-fraco" />}
+        <span className="size-2.5 shrink-0 rounded-full" style={{ background: z.cor }} />
+        <span className="truncate font-semibold">{z.nome}</span>
+        <span className="text-xs text-texto-fraco tabular-nums">
+          {ocupadas}/{z.estacoes.length}
+        </span>
+        <div className="flex-1" />
+        {modoConfig && (
+          <>
+            {z.grupo && (
+              <button
+                type="button"
+                onPointerDown={(ev) => ev.stopPropagation()}
+                onClick={aoEditar}
+                aria-label={`Editar a zona ${z.nome}`}
+                className="rounded p-1 text-texto-suave hover:text-texto"
+              >
+                <IconPencil size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              onPointerDown={(ev) => ev.stopPropagation()}
+              onClick={aoNovaEstacao}
+              aria-label={`Nova estação em ${z.nome}`}
+              title="Nova estação nesta zona"
+              className="rounded p-1 text-texto-suave hover:text-texto"
+            >
+              <IconPlus size={14} />
+            </button>
+          </>
+        )}
+      </div>
+      <div className="relative" style={{ margin: MARGEM_ZONA }}>
+        {/* modo configuração: as vagas (quadrantes) da zona */}
+        {modoConfig &&
+          Array.from({ length: colunasDa(ret.largura) * linhasDa(ret.altura) }, (_, i) => {
+            const col = i % colunasDa(ret.largura)
+            const lin = Math.floor(i / colunasDa(ret.largura))
+            return (
+              <div
+                key={i}
+                aria-hidden="true"
+                className="pointer-events-none absolute rounded-lg border border-dashed border-borda"
+                style={{ left: col * PASSO, top: lin * PASSO, width: QUADRADO, height: QUADRADO }}
+              />
+            )
+          })}
+        {children}
+      </div>
+      {editavel && (
+        <div
+          role="presentation"
+          title="Arraste para mudar o tamanho"
+          className="absolute right-0 bottom-0 size-4 cursor-nwse-resize touch-none rounded-br-xl border-r-2 border-b-2"
+          style={{ borderColor: z.cor }}
+          onPointerDown={(ev) => iniciar("tamanho", ev)}
+          onPointerMove={mover}
+          onPointerUp={soltar}
+        />
+      )}
+    </section>
+  )
+}
+
+// ── Estação ──────────────────────────────────────────────────────────────────
+
+function QuadradoEstacao({
+  estacao: e,
+  x,
+  y,
+  arrastando,
+  restante,
+  aberta,
+  modoConfig,
+  aoAbrir,
+  aoArrastar,
+  aoSoltar,
   aoExcluir,
 }: {
   estacao: Estacao
-  corGrupo: string | null
+  x: number
+  y: number
+  arrastando: boolean
+  restante: number | null
+  aberta: boolean
   modoConfig: boolean
-  aoClicar: () => void
+  aoAbrir: () => void
+  aoArrastar: (ev: React.PointerEvent) => void
+  aoSoltar: (ev: React.PointerEvent) => void
   aoExcluir: () => void
 }) {
-  const { sessaoDaEstacao, agora, recarregarEstacoes } = useDados()
-  const avisar = useAvisos()
-  const sessao = sessaoDaEstacao(e.nome)
-  const [pos, setPos] = useState({ x: e.pos_x || 0, y: e.pos_y || 0 })
-  const arrasto = useRef<{ dx: number; dy: number } | null>(null)
-
-  useEffect(() => setPos({ x: e.pos_x || 0, y: e.pos_y || 0 }), [e.pos_x, e.pos_y])
-
-  function aoPressionar(ev: React.PointerEvent<HTMLDivElement>) {
-    if (!modoConfig || (ev.target as HTMLElement).closest("button")) return
-    ev.currentTarget.setPointerCapture(ev.pointerId)
-    arrasto.current = { dx: ev.clientX - pos.x, dy: ev.clientY - pos.y }
-  }
-  function aoMover(ev: React.PointerEvent) {
-    if (!arrasto.current) return
-    setPos({
-      x: Math.max(0, Math.round(ev.clientX - arrasto.current.dx)),
-      y: Math.max(0, Math.round(ev.clientY - arrasto.current.dy)),
-    })
-  }
-  async function aoSoltar() {
-    if (!arrasto.current) return
-    arrasto.current = null
-    if (pos.x === e.pos_x && pos.y === e.pos_y) return
-    try {
-      await Api.put(`/api/estacoes/${e.id}/posicao`, { pos_x: pos.x, pos_y: pos.y })
-      await recarregarEstacoes()
-    } catch (err) {
-      avisar((err as Error).message, "erro")
-      setPos({ x: e.pos_x, y: e.pos_y })
-    }
-  }
-
+  const pressionado = useRef(false)
+  const semConexao = !e.online && e.status !== "desligada"
   return (
     <div
       role={modoConfig ? undefined : "button"}
       tabIndex={modoConfig ? undefined : 0}
-      aria-label={modoConfig ? undefined : `Estação ${e.nome}, ${e.status}`}
-      onClick={() => !modoConfig && aoClicar()}
-      onKeyDown={(ev) => !modoConfig && (ev.key === "Enter" || ev.key === " ") && aoClicar()}
-      onPointerDown={aoPressionar}
-      onPointerMove={aoMover}
-      onPointerUp={aoSoltar}
-      style={{
-        left: pos.x, top: pos.y, width: TAMANHO_PINO, height: TAMANHO_PINO,
-        ...(e.status === "livre" && corGrupo ? { borderBottomColor: corGrupo } : {}),
+      aria-label={`Estação ${e.nome}, ${ROTULO_STATUS[e.status]}`}
+      aria-expanded={modoConfig ? undefined : aberta}
+      title={modoConfig ? "Arraste para mover (também para outra zona)" : undefined}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        if (!modoConfig) aoAbrir()
       }}
+      onKeyDown={(ev) => !modoConfig && (ev.key === "Enter" || ev.key === " ") && aoAbrir()}
+      onPointerDown={(ev) => {
+        if (!modoConfig || (ev.target as HTMLElement).closest("button")) return
+        ev.stopPropagation()
+        ev.currentTarget.setPointerCapture(ev.pointerId)
+        pressionado.current = true
+      }}
+      onPointerMove={(ev) => pressionado.current && aoArrastar(ev)}
+      onPointerUp={(ev) => {
+        if (!pressionado.current) return
+        pressionado.current = false
+        aoSoltar(ev)
+      }}
+      style={{ left: x, top: y, width: QUADRADO, height: QUADRADO }}
       className={cn(
-        "absolute flex touch-none flex-col items-center justify-center rounded-[10px] border border-borda bg-superficie-2 select-none",
-        e.status !== "livre" || !corGrupo ? BORDA_PINO[e.status] : "border-b-[3px]",
-        modoConfig ? "cursor-grab border-dashed active:cursor-grabbing" : "cursor-pointer hover:ring-2 hover:ring-borda-forte",
+        "absolute flex touch-none flex-col items-center justify-center rounded-lg border-2 font-semibold select-none",
+        COR_QUADRADO[e.status],
+        modoConfig ? "cursor-grab active:cursor-grabbing" : "cursor-pointer hover:brightness-110",
+        arrastando && "z-20 opacity-80 shadow-lg",
+        aberta && "ring-2 ring-texto ring-offset-2 ring-offset-fundo",
       )}
     >
-      <span className="text-sm font-bold">{e.nome}</span>
-      {sessao && (
-        <>
-          <span className="max-w-[70px] truncate text-[0.62rem] text-texto-suave">{sessao.cliente_nome}</span>
-          <span className="text-[0.62rem] font-semibold text-ocupada tabular-nums">
-            {formatarTempo(restanteDaSessao(sessao, agora))}
-          </span>
-        </>
+      <span className="max-w-[52px] truncate text-[0.8rem] leading-tight">{e.nome}</span>
+      {restante != null && (
+        <span className="text-[0.6rem] leading-tight tabular-nums opacity-90">{formatarTempo(restante)}</span>
+      )}
+      {semConexao && (
+        <IconWifiOff size={12} className="absolute top-0.5 right-0.5 opacity-80" aria-label="sem conexão" />
       )}
       {modoConfig && (
         <button
           type="button"
-          onClick={aoExcluir}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            aoExcluir()
+          }}
           aria-label={`Excluir estação ${e.nome}`}
           className="absolute -top-2 -right-2 flex size-5 cursor-pointer items-center justify-center rounded-full bg-perigo text-white"
         >
@@ -232,80 +641,240 @@ function Pino({
   )
 }
 
-function PainelDetalhe({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: () => void }) {
-  const { sessaoDaEstacao, agora, todosGrupos: grupos, recarregarEstacoes } = useDados()
-  const { encerrarSessao } = useAcoes()
-  const avisar = useAvisos()
-  const sessao = sessaoDaEstacao(e.nome)
+// ── Cartão da estação (clicar no quadrado) ───────────────────────────────────
 
-  async function mudarGrupo(valor: string) {
+function CartaoEstacao({
+  estacao: e,
+  x,
+  y,
+  aoFechar,
+}: {
+  estacao: Estacao
+  x: number
+  y: number
+  aoFechar: () => void
+}) {
+  const { sessaoDaEstacao, agora } = useDados()
+  const { encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, liberarDireto } = useAcoes()
+  const avisar = useAvisos()
+  const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+  const [cliente, setCliente] = useState<ClienteResumo | null>(null)
+  const [iniciando, setIniciando] = useState(false)
+  const [escrevendo, setEscrevendo] = useState(false)
+  const [texto, setTexto] = useState("")
+
+  useEffect(() => {
+    const aoTeclar = (ev: KeyboardEvent) => ev.key === "Escape" && aoFechar()
+    document.addEventListener("keydown", aoTeclar)
+    return () => document.removeEventListener("keydown", aoTeclar)
+  }, [aoFechar])
+
+  async function iniciar() {
+    if (!cliente) return
+    setIniciando(true)
+    const ok = await liberarDireto(e.nome, cliente.id)
+    setIniciando(false)
+    if (ok) aoFechar()
+  }
+
+  async function ligar() {
     try {
-      await Api.put(`/api/estacoes/${e.id}`, { grupo_id: Number(valor) })
-      avisar("Grupo alterado")
-      await recarregarEstacoes()
+      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/ligar`)
+      avisar(`Comando de ligar enviado para ${e.nome}`)
     } catch (err) {
       avisar((err as Error).message, "erro")
     }
   }
 
   return (
-    <aside className="fixed top-[52px] right-0 bottom-0 z-[80] w-80 overflow-y-auto border-l border-borda bg-superficie p-5">
-      <button
-        type="button"
-        onClick={aoFechar}
-        aria-label="Fechar detalhes"
-        className="absolute top-4 right-4 cursor-pointer text-texto-suave hover:text-texto"
-      >
-        <IconX size={18} />
-      </button>
-      <h3 className="mb-4 text-lg font-semibold">{e.nome}</h3>
-      <Linha rotulo="Status">
+    <div
+      role="dialog"
+      aria-label={`Estação ${e.nome}`}
+      onClick={(ev) => ev.stopPropagation()}
+      className="absolute z-30 w-80 rounded-xl border border-borda-forte bg-superficie p-4 shadow-2xl"
+      style={{ left: Math.max(8, x), top: y }}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-base font-semibold">{e.nome}</span>
         <SeloStatus status={e.status} />
-      </Linha>
-      <Linha rotulo="Grupo">
-        {Api.ehAdmin() ? (
-          <Select aria-label="Grupo da estação" value={e.grupo_id ?? ""} onChange={(ev) => mudarGrupo(ev.target.value)} className="h-9">
-            {e.grupo_id === null && <option value="">Sem grupo</option>}
-            {grupos.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.nome}{g.piso_nome ? ` (piso ${g.piso_nome})` : " (sem piso)"}
-              </option>
-            ))}
-          </Select>
-        ) : (
-          (e.grupo_nome ?? "Sem grupo")
+        {!e.online && e.status !== "desligada" && (
+          <IconWifiOff size={14} className="text-texto-fraco" aria-label="sem conexão" />
         )}
-      </Linha>
-      {sessao && (
+        <div className="flex-1" />
+        <button type="button" onClick={aoFechar} aria-label="Fechar" className="text-texto-suave hover:text-texto">
+          <IconX size={16} />
+        </button>
+      </div>
+      {e.grupo_nome && <p className="-mt-2 mb-3 text-xs text-texto-fraco">{e.grupo_nome}</p>}
+
+      {sessao ? (
         <>
-          <Linha rotulo="Cliente">
-            {sessao.cliente_nome} ({sessao.cliente_login})
-          </Linha>
-          <Linha rotulo="Tempo total">{formatarTempo(sessao.tempo_total_segundos)}</Linha>
-          <Linha rotulo="Tempo restante">
-            <span className="tabular-nums">
-              {formatarTempo(restanteDaSessao(sessao, agora))}
-            </span>
-          </Linha>
+          <div className="mb-3 rounded-lg bg-superficie-2 px-3 py-2.5">
+            <div className="font-medium">{sessao.cliente_nome}</div>
+            <div className="text-xs text-texto-fraco">{sessao.cliente_login}</div>
+            <div className="mt-2 flex justify-between text-xs">
+              <span className="text-texto-suave">
+                Restante{" "}
+                <strong className="text-texto tabular-nums">{formatarTempo(restanteDaSessao(sessao, agora))}</strong>
+              </span>
+              <span className="text-texto-suave">
+                Total <span className="tabular-nums">{formatarTempo(sessao.tempo_total_segundos)}</span>
+              </span>
+            </div>
+          </div>
           <Button
             variant="perigo"
-            className="mt-4 w-full"
+            size="sm"
+            className="mb-2 w-full gap-1.5"
             onClick={async () => (await encerrarSessao(sessao.id, e.nome)) && aoFechar()}
           >
-            Encerrar sessão
+            <IconPlayerStop size={14} /> Encerrar sessão
           </Button>
         </>
+      ) : e.status === "livre" && e.online ? (
+        <div className="mb-3 flex flex-col gap-2">
+          <Campo rotulo="Iniciar sessão para" id={`mapa-cliente-${e.id}`}>
+            <SeletorCliente
+              id={`mapa-cliente-${e.id}`}
+              valor={cliente}
+              aoMudar={setCliente}
+              placeholder="Digite o nome ou login"
+            />
+          </Campo>
+          <Button size="sm" className="gap-1.5" disabled={!cliente || iniciando} onClick={iniciar}>
+            <IconPlayerPlay size={14} /> {iniciando ? "Iniciando..." : "Iniciar"}
+          </Button>
+          <p className="text-xs text-texto-fraco">A sessão começa no computador sem o cliente digitar a senha.</p>
+        </div>
+      ) : !e.online ? (
+        <p className="mb-3 text-sm text-texto-suave">
+          {e.status === "desligada" ? "Computador desligado." : "Computador sem conexão com o servidor."}
+        </p>
+      ) : (
+        <p className="mb-3 text-sm text-texto-suave">Estação em manutenção.</p>
       )}
-    </aside>
+
+      {/* ações do computador */}
+      <div className="flex flex-wrap gap-1.5">
+        {e.online ? (
+          <>
+            <Button size="xs" variant="outline" className="gap-1" onClick={() => setEscrevendo((v) => !v)}>
+              <IconMessage size={13} /> Mensagem
+            </Button>
+            <Button size="xs" variant="outline" className="gap-1" onClick={() => reiniciarPc(e.nome)}>
+              <IconRefresh size={13} /> Reiniciar
+            </Button>
+            <Button size="xs" variant="outline" className="gap-1" onClick={() => desligarPc(e.nome)}>
+              <IconPower size={13} /> Desligar
+            </Button>
+          </>
+        ) : (
+          e.mac_address && (
+            <Button size="xs" variant="outline" className="gap-1" onClick={ligar}>
+              <IconWifi size={13} /> Ligar
+            </Button>
+          )
+        )}
+      </div>
+      {escrevendo && (
+        <form
+          className="mt-2 flex flex-col gap-1.5"
+          onSubmit={async (ev) => {
+            ev.preventDefault()
+            if (!texto.trim()) return
+            await enviarMensagem(e.nome, texto.trim())
+            setTexto("")
+            setEscrevendo(false)
+          }}
+        >
+          <Textarea
+            rows={2}
+            aria-label="Mensagem"
+            value={texto}
+            onChange={(ev) => setTexto(ev.target.value)}
+            autoFocus
+          />
+          <Button type="submit" size="xs" disabled={!texto.trim()}>
+            Enviar
+          </Button>
+        </form>
+      )}
+    </div>
   )
 }
 
-function Linha({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
+// ── Modais do modo configuração ──────────────────────────────────────────────
+
+function ModalZona({ zona, aoFechar }: { zona: Grupo | "nova" | null; aoFechar: () => void }) {
+  const { piso, recarregar } = useDados()
+  const avisar = useAvisos()
+  const [nome, setNome] = useState("")
+  const [cor, setCor] = useState("#6366f1")
+  const [erro, setErro] = useState("")
+  const nova = zona === "nova"
+
+  useEffect(() => {
+    if (!zona) return
+    setErro("")
+    setNome(nova ? "" : zona.nome)
+    setCor(nova ? "#22c55e" : zona.cor)
+  }, [zona, nova])
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nome.trim()) return setErro("Dê um nome à zona")
+    try {
+      if (nova) {
+        if (!piso) return setErro("Escolha o piso no topo da tela")
+        const params = new URLSearchParams({ nome: nome.trim(), cor, piso_id: String(piso.id) })
+        await Api.post(`/api/estacoes/grupos?${params}`, {})
+        avisar(`Zona criada no piso ${piso.nome}`)
+      } else if (zona) {
+        await Api.put(`/api/estacoes/grupos/${zona.id}`, { nome: nome.trim(), cor })
+        avisar("Zona atualizada")
+      }
+      await recarregar()
+      aoFechar()
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
   return (
-    <div className="mb-3 text-sm">
-      <span className="mb-0.5 block text-xs text-texto-fraco uppercase">{rotulo}</span>
-      {children}
-    </div>
+    <Modal titulo={nova ? "Nova zona" : "Editar zona"} aberto={zona != null} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="flex flex-col gap-4">
+        <Campo rotulo="Nome" id="zona-nome">
+          <Input
+            id="zona-nome"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="ex.: Sala de leitura"
+            autoFocus
+          />
+        </Campo>
+        <Campo rotulo="Cor" id="zona-cor">
+          <input
+            id="zona-cor"
+            type="color"
+            value={cor}
+            onChange={(e) => setCor(e.target.value)}
+            className="h-9 w-20 cursor-pointer rounded-md border border-borda bg-transparent p-0.5"
+          />
+        </Campo>
+        {nova && piso && (
+          <p className="text-xs text-texto-fraco">A zona entra no piso {piso.nome} (o do topo da tela).</p>
+        )}
+        <MensagemErro>{erro}</MensagemErro>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1" onClick={aoFechar}>
+            Cancelar
+          </Button>
+          <Button type="submit" className="flex-1">
+            {nova ? "Criar zona" : "Salvar"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -351,9 +920,16 @@ function ModalNovaEstacao({
     <Modal titulo="Nova estação" aberto={aberto} aoFechar={aoFechar}>
       <form onSubmit={criar} className="flex flex-col gap-4">
         <Campo rotulo="Nome da estação" id="est-nome">
-          <Input id="est-nome" placeholder="ex: PC-01" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} autoFocus />
+          <Input
+            id="est-nome"
+            placeholder="ex: PC-01"
+            autoComplete="off"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            autoFocus
+          />
         </Campo>
-        <Campo rotulo="Grupo" id="est-grupo">
+        <Campo rotulo="Zona" id="est-grupo">
           <Select id="est-grupo" value={grupoId} onChange={(e) => setGrupoId(e.target.value)}>
             {grupos.map((g) => (
               <option key={g.id} value={g.id}>

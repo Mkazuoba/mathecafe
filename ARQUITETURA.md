@@ -74,7 +74,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `programacao` | cartazes da programação da biblioteca (imagem, título, ordem, ativo); o tempo de cada um fica em `configuracoes.programacao_segundos` |
 | `acoes_operadores` | registro do que cada operador fez (`app/registro.py`): quando, operador, ação, cliente, estação e detalhe, com nomes guardados no momento |
 | `pisos` | pisos da biblioteca (nome, cor, `padrao`), cadastrados em Configurações → Pisos |
-| `grupos_estacao` | mapas (abas do Mapa), com cor e `piso_id` (obrigatório ao criar; vazio só em mapas antigos, que o painel aponta e contam como o padrão). O `tempo_padrao_segundos` do grupo não é mais usado |
+| `grupos_estacao` | mapas/zonas do Mapa, com cor, `piso_id` e `zona_x`/`zona_y`/`zona_largura`/`zona_altura` (posição e tamanho da zona no quadro do piso; vazio = o Mapa arruma sozinho) (obrigatório ao criar; vazio só em mapas antigos, que o painel aponta e contam como o padrão). O `tempo_padrao_segundos` do grupo não é mais usado |
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo (`vscyber` = importada do VSCyber por `importar_historico.py`, em estações inativas "... (VS)"/"(VSI)") |

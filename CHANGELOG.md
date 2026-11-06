@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-06 — Mapa novo: zonas, cores de estado e iniciar sessão no mapa (Ciclo 7, tarefa 7.3)
+
+- **Todas as zonas (salas) do piso lado a lado numa tela só**, cada uma um retângulo na cor dela, com o nome e quantas estão ocupadas. Estações em quadrados numerados **na cor do estado** (livre verde, ocupada laranja com o tempo restante, desligada apagada, manutenção amarela; ícone de sem conexão). Legenda com a contagem no topo.
+- **Cartão da estação** ao clicar: cliente, tempo restante e total, Encerrar sessão, Mensagem, Reiniciar, Desligar (ou Ligar, se desligada). Na estação livre: **busca de cliente e Iniciar**, que começa a sessão no PC sem o cliente digitar a senha.
+- **Modo configuração** (admin): **+ Zona** (no piso do topo), mover a zona pelo cabeçalho e mudar o tamanho pelo canto, editar nome e cor, **+** estação na zona, excluir estação e arrastar estações, também para outra zona.
+- **Quadrantes**: cada zona é uma grade com uma estação por quadrante (as vagas aparecem tracejadas no modo configuração). Soltar em cima de outra estação troca as duas de lugar; posições antigas são encaixadas no quadrante mais próximo, sem nunca ficar uma em cima da outra. Ao soltar, a zona inteira é gravada.
+- API: `zona` (x, y, largura, altura) nos grupos (`PUT /api/estacoes/grupos/{id}`).
+
 ## 2026-11-06 — Histórico do VSCyber guardado, mas escondido
 
 - A importação do histórico ainda vai ser ajustada: as sessões importadas (motivo `vscyber`) ficam no banco, mas saem de todos os históricos e relatórios (ficha do cliente, painel da estação, Históricos por cliente/estação/uso e o CSV) até a chave `historico_vscyber_visivel` ser ligada. Regra num lugar só: `app/importados.py`.

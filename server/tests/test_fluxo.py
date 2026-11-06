@@ -1584,3 +1584,39 @@ def test_historico_do_vscyber_fica_escondido(c, admin, cenario):
         db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == "historico_vscyber_visivel").delete()
         db.commit()
         db.close()
+
+
+# ── 7.3 Mapa: zonas (grupos) com posicao e tamanho ──────────────────────────
+
+def test_zona_guarda_posicao_e_tamanho_no_mapa(c, admin, operador):
+    adulto = _id_piso(c, admin, "Adulto")
+    r = c.post(f"/api/estacoes/grupos?nome=Sala%20Zona&piso_id={adulto}", headers=admin)
+    g = r.json()
+    assert g["zona"] is None  # sem posicao: o mapa arruma sozinho
+    zona = {"x": 40, "y": 60, "largura": 520, "altura": 300}
+    r = c.put(f"/api/estacoes/grupos/{g['id']}", headers=admin, json={"zona": zona})
+    assert r.status_code == 200, r.text
+    assert r.json()["zona"] == zona
+    lista = {x["id"]: x for x in c.get("/api/estacoes/grupos", headers=operador).json()}
+    assert lista[g["id"]]["zona"] == zona
+    # operador nao mexe no mapa
+    assert c.put(f"/api/estacoes/grupos/{g['id']}", headers=operador, json={"zona": zona}).status_code == 403
+
+
+def test_zona_com_tamanho_invalido_e_recusada(c, admin):
+    adulto = _id_piso(c, admin, "Adulto")
+    g = c.post(f"/api/estacoes/grupos?nome=Sala%20Ruim&piso_id={adulto}", headers=admin).json()
+    for zona in ({"x": -5, "y": 0, "largura": 300, "altura": 200},
+                 {"x": 0, "y": 0, "largura": 50, "altura": 200}):
+        assert c.put(f"/api/estacoes/grupos/{g['id']}", headers=admin, json={"zona": zona}).status_code == 422
+
+
+def test_mover_estacao_para_outra_zona_com_posicao(c, admin):
+    adulto = _id_piso(c, admin, "Adulto")
+    g = c.post(f"/api/estacoes/grupos?nome=Sala%20Destino&piso_id={adulto}", headers=admin).json()
+    nome = _estacao_nova(c, admin)
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    r = c.put(f"/api/estacoes/{est['id']}", headers=admin, json={"grupo_id": g["id"], "pos_x": 72, "pos_y": 16})
+    assert r.status_code == 200, r.text
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    assert (est["grupo_id"], est["pos_x"], est["pos_y"]) == (g["id"], 72, 16)

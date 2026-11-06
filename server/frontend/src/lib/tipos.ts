@@ -41,6 +41,8 @@ export interface Grupo extends PisoDe {
   nome: string
   tempo_padrao_segundos: number
   cor: string
+  /** Posição e tamanho da zona no Mapa (px); null = o Mapa arruma sozinho */
+  zona: { x: number; y: number; largura: number; altura: number } | null
 }
 
 export interface Cliente extends PisoDe {
