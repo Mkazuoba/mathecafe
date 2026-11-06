@@ -35,7 +35,7 @@ from importar_infantil import _nome_completo, _primeiro_nome, data_vscyber, ler_
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 PASTA_VSCYBER = os.path.join(AQUI, "..", "Arquivos VSCyber")
-MOTIVO = "vscyber"
+from app.importados import MOTIVO  # "vscyber": escondidas por enquanto (app/importados.py)
 USO_MAXIMO = timedelta(hours=16)  # mais que isso e registro quebrado (PC esquecido ligado)
 BASES = [  # pasta do export, sufixo das estacoes, piso
     ("export", "VS", "Adulto"),

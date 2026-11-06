@@ -156,6 +156,7 @@ Depois dos clientes, `importar_historico.py` traz os usos do VSCyber (`tabelas/C
 
 - As estações do VSCyber ficam com o nome antigo, como estações inativas ("BSP-87 (VS)" do adulto, "BSP-87 (VSI)" do infantil), num mapa inativo do piso de cada banco: não aparecem no Mapa nem no Painel.
 - Ficam de fora: usos sem horário de fim, com mais de 16 horas ou de clientes que não existem no MatheCafé, e os dos logins da planilha de conferência. Rodar de novo não duplica.
+- **Por enquanto o histórico importado fica escondido** (a importação ainda vai ser ajustada): as sessões ficam no banco, mas não aparecem em nenhum histórico nem relatório. Para mostrar, a chave `historico_vscyber_visivel` = `true` na tabela `configuracoes`.
 - Numa cópia do banco (06/11/2026): 252.469 usos do adulto e 30.489 do infantil desde 2022, em uns 20 segundos; o banco ficou com 42 MB.
 
 ## 5. Testes automáticos

@@ -1547,3 +1547,40 @@ def test_relatorio_de_uso_por_piso(c, admin, cenario):
     assert [e["estacao"] for e in so_infantil["estacoes"]] == [infantil]
     todos = c.get("/api/relatorios/uso", headers=admin, params=params).json()
     assert todos["resumo"]["segundos"] == 75 * 60
+
+
+# ── 8.5 Historico do VSCyber guardado, mas escondido por enquanto ───────────
+
+def test_historico_do_vscyber_fica_escondido(c, admin, cenario):
+    from app.models import ConfiguracaoSistema, Estacao
+    cid, nome = cenario["cliente_id"], cenario["estacao"]
+    _sessao_encerrada(cid, nome, datetime(2031, 7, 7, 17, 0), 40)  # do MatheCafe: aparece
+    db = SessionLocal()
+    est = db.query(Estacao).filter(Estacao.nome == nome).one()
+    db.add(Sessao(cliente_id=cid, estacao_id=est.id, iniciada_em=datetime(2031, 7, 8, 17, 0),
+                  encerrada_em=datetime(2031, 7, 8, 18, 0), tempo_total_segundos=3600,
+                  tempo_consumido_segundos=3600, motivo_encerramento="vscyber"))
+    db.commit()
+    db.close()
+    periodo = {"de": "2031-07-01", "ate": "2031-07-31"}
+
+    def visto():
+        uso = c.get("/api/relatorios/uso", headers=admin, params=periodo).json()["resumo"]["sessoes"]
+        cli = c.get(f"/api/relatorios/cliente/{cid}", headers=admin, params=periodo).json()["sessoes"]
+        est = c.get(f"/api/relatorios/estacao/{nome}", headers=admin, params=periodo).json()["sessoes"]
+        hist = [s for s in c.get(f"/api/sessoes/historico?cliente_id={cid}&limit=500", headers=admin).json()
+                if s["iniciada_em"].startswith("2031-07")]
+        csv_ = c.get(f"/api/relatorios/csv?cliente_id={cid}&data_inicio=2031-07-01&data_fim=2031-07-31",
+                     headers=admin).text.lstrip("﻿").strip().splitlines()
+        return uso, cli, est, len(hist), len(csv_) - 1
+
+    assert visto() == (1, 1, 1, 1, 1)  # so a do MatheCafe
+    db = SessionLocal()
+    db.add(ConfiguracaoSistema(chave="historico_vscyber_visivel", valor="true"))
+    db.commit()
+    try:
+        assert visto() == (2, 2, 2, 2, 2)  # ligado: as importadas voltam a aparecer
+    finally:
+        db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == "historico_vscyber_visivel").delete()
+        db.commit()
+        db.close()

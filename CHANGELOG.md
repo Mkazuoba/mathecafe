@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-06 — Histórico do VSCyber guardado, mas escondido
+
+- A importação do histórico ainda vai ser ajustada: as sessões importadas (motivo `vscyber`) ficam no banco, mas saem de todos os históricos e relatórios (ficha do cliente, painel da estação, Históricos por cliente/estação/uso e o CSV) até a chave `historico_vscyber_visivel` ser ligada. Regra num lugar só: `app/importados.py`.
+
 ## 2026-11-06 — Histórico de uso do VSCyber (Ciclo 8, tarefa 8.5)
 
 - **`server/importar_historico.py`**: traz os usos do VSCyber desde 2022 (adulto e infantil) como sessões encerradas, que aparecem no histórico de cada cliente e em Históricos → Uso. Sem `--aplicar` só simula; com `--aplicar` faz backup e grava; rodar de novo não duplica.

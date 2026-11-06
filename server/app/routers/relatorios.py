@@ -9,6 +9,7 @@ import io
 from app.database import get_db
 from app.models import AcaoOperador, Sessao, Estacao, Usuario
 from app.registro import ROTULOS
+from app.importados import so_visiveis
 from app.security import requer_perfil
 from app.tempo_diario import FUSO
 
@@ -23,7 +24,7 @@ def exportar_csv(
     db: Session = Depends(get_db),
     _=Depends(requer_perfil("admin")),
 ):
-    q = db.query(Sessao).filter(Sessao.encerrada_em != None)
+    q = so_visiveis(db.query(Sessao).filter(Sessao.encerrada_em != None), db)
 
     if cliente_id:
         q = q.filter(Sessao.cliente_id == cliente_id)
@@ -86,9 +87,9 @@ def _periodo_utc(de: Optional[str], ate: Optional[str]):
     return (utc(de) if de else None), (utc(ate, mais_um=True) if ate else None)
 
 
-def _filtrar(q, de, ate):
+def _filtrar(q, de, ate, db):
     inicio, fim = _periodo_utc(de, ate)
-    q = q.filter(Sessao.encerrada_em != None)
+    q = so_visiveis(q.filter(Sessao.encerrada_em != None), db)
     if inicio:
         q = q.filter(Sessao.iniciada_em >= inicio)
     if fim:
@@ -112,7 +113,7 @@ def historico_do_cliente(cliente_id: int, de: Optional[str] = None, ate: Optiona
         db.query(Estacao.nome, func.count(Sessao.id), tempo,
                  func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em))
           .join(Estacao, Estacao.id == Sessao.estacao_id)
-          .filter(Sessao.cliente_id == cliente_id), de, ate
+          .filter(Sessao.cliente_id == cliente_id), de, ate, db
     ).group_by(Estacao.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
     return {
         "cliente": {"id": cliente.id, "login": cliente.login, "nome": cliente.nome},
@@ -137,7 +138,7 @@ def historico_da_estacao(nome: str, de: Optional[str] = None, ate: Optional[str]
         db.query(Usuario.id, Usuario.login, Usuario.nome, func.count(Sessao.id), tempo,
                  func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em))
           .join(Usuario, Usuario.id == Sessao.cliente_id)
-          .filter(Sessao.estacao_id == estacao.id), de, ate
+          .filter(Sessao.estacao_id == estacao.id), de, ate, db
     ).group_by(Usuario.id, Usuario.login, Usuario.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
     return {
         "estacao": {"id": estacao.id, "nome": estacao.nome, "grupo": estacao.grupo.nome if estacao.grupo else None},
@@ -251,6 +252,7 @@ def relatorio_de_uso(
                                 Sessao.encerrada_em != None,
                                 Sessao.iniciada_em >= utc(inicio_local),
                                 Sessao.iniciada_em < utc(fim_local + timedelta(days=1)))
+    q = so_visiveis(q, db)
     if piso_id:
         do_piso = [e.id for e in db.query(Estacao).all() if (p := piso_da_estacao(e)) and p.id == piso_id]
         q = q.filter(Sessao.estacao_id.in_(do_piso or [-1]))

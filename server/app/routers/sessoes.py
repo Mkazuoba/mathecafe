@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import Sessao, Estacao
 from app.security import requer_perfil
 from app.registro import registrar
+from app.importados import so_visiveis
 from app.websocket_manager import manager
 from app.tempo_diario import fechar_tempo_da_sessao
 
@@ -38,7 +39,7 @@ def sessoes_ativas(db: Session = Depends(get_db), _=Depends(requer_perfil("admin
 def historico(cliente_id: Optional[int] = None, estacao_nome: Optional[str] = None,
               limit: int = 100, db: Session = Depends(get_db),
               _=Depends(requer_perfil("admin", "operador"))):
-    q = db.query(Sessao).filter(Sessao.encerrada_em != None)
+    q = so_visiveis(db.query(Sessao).filter(Sessao.encerrada_em != None), db)
     if cliente_id:
         q = q.filter(Sessao.cliente_id == cliente_id)
     if estacao_nome:
