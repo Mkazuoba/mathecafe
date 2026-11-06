@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-06 — Meus arquivos: downloads da sessão (Ciclo 9, tarefa 9.5; agente 1.10.0)
+
+- **Ícone "Meus arquivos" no dock** (ao lado do Início): lista o que o cliente baixou na pasta Downloads, com tamanho e hora, e se atualiza quando um download termina. O Explorador de Arquivos continua bloqueado.
+- **Abrir** só documentos e imagens (PDF, Word, Excel, PowerPoint, txt, fotos) e só se o programa que abre o tipo estiver na whitelist; senão avisa para pedir ajuda ao atendimento. Imprimir é pelo próprio programa. Executáveis e scripts só aparecem para **Excluir** (com confirmação).
+- **Downloads esvaziada** no fim de cada sessão (depois de fechar os apps) e no início da próxima (caso o PC tenha reiniciado no meio), para o próximo cliente não ver o que o anterior baixou.
+
 ## 2026-11-06 — Dock sem pisca e sininho junto da hora (tarefa 9.4; agente 1.9.2)
 
 - **Dock parou de piscar**: o efeito de crescer redesenhava o dock inteiro (e recolocava o bloco da hora) a cada 16 ms com o mouse em cima. Agora não há animação: o mouse só contorna o ícone e mostra o nome, e o dock é redesenhado apenas quando abre/fecha um app, muda o foco ou o tema.

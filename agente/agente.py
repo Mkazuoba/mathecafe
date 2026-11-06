@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.9.2"
+VERSAO = "1.10.0"
 
 import asyncio
 import json
@@ -146,6 +146,94 @@ JANELAS_DE_PROCESSOS_SEGUROS = {
     "explorer.exe": ("CabinetWClass", "Explorador de Arquivos"),
     "applicationframehost.exe": ("ApplicationFrameWindow", "app do Windows"),
 }
+
+
+# ── Meus arquivos (9.5): os downloads da sessão ─────────────────────────────
+# Só documentos e imagens abrem pela tela (executáveis e scripts só aparecem
+# para excluir; mesmo que rodassem, a whitelist os encerraria).
+EXTENSOES_DOCUMENTOS = {
+    ".pdf", ".txt", ".rtf", ".csv",
+    ".doc", ".docx", ".odt", ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+}
+
+
+def pasta_downloads():
+    """Pasta Downloads do usuário (a do Windows, mesmo se foi movida)."""
+    try:
+        guid = (ctypes.c_byte * 16).from_buffer_copy(
+            bytes.fromhex("90E24D373F126545916439C4925E467B"))  # FOLDERID_Downloads
+        caminho = ctypes.c_wchar_p()
+        if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(caminho)) == 0:
+            pasta = caminho.value
+            ctypes.windll.ole32.CoTaskMemFree(caminho)
+            if pasta:
+                return pasta
+    except Exception:
+        pass
+    return os.path.join(os.path.expanduser("~"), "Downloads")
+
+
+def listar_arquivos(pasta):
+    """Arquivos da pasta (sem subpastas, ocultos ou downloads pela metade), mais novos primeiro."""
+    arquivos = []
+    try:
+        entradas = list(os.scandir(pasta))
+    except OSError:
+        return arquivos
+    for e in entradas:
+        nome = e.name
+        if not e.is_file() or nome.lower() in ("desktop.ini", "thumbs.db") or nome.startswith((".", "~$")):
+            continue
+        if nome.lower().endswith((".crdownload", ".part", ".tmp", ".partial")):
+            continue
+        try:
+            info = e.stat()
+        except OSError:
+            continue
+        arquivos.append({"nome": nome, "caminho": e.path, "tamanho": info.st_size, "quando": info.st_mtime})
+    return sorted(arquivos, key=lambda a: a["quando"], reverse=True)
+
+
+def limpar_pasta(pasta):
+    """Apaga tudo dentro da pasta (não a pasta). Recusa a pasta do usuário, as
+    de cima dela e a raiz do disco. Devolve quantos itens apagou."""
+    import shutil
+    pasta = os.path.normpath(os.path.abspath(pasta))
+    casa = os.path.normpath(os.path.expanduser("~")).lower()
+    if not os.path.isdir(pasta) or os.path.dirname(pasta) == pasta or casa.startswith(pasta.lower()):
+        return 0
+    apagados = 0
+    for e in list(os.scandir(pasta)):
+        try:
+            if e.is_dir(follow_symlinks=False):
+                shutil.rmtree(e.path)
+            else:
+                os.remove(e.path)
+            apagados += 1
+        except OSError:
+            continue  # em uso: fica para a próxima limpeza
+    return apagados
+
+
+def pode_abrir_arquivo(nome):
+    return os.path.splitext(nome)[1].lower() in EXTENSOES_DOCUMENTOS
+
+
+def tamanho_legivel(n):
+    if n < 1024 * 1024:
+        return f"{max(1, round(n / 1024))} KB"
+    return f"{n / (1024 * 1024):.1f} MB".replace(".", ",")
+
+
+def programa_que_abre(caminho):
+    """Executável que o Windows usa para abrir o arquivo (None se nenhum)."""
+    try:
+        buf = ctypes.create_unicode_buffer(260)
+        r = ctypes.windll.shell32.FindExecutableW(caminho, None, buf)
+        return buf.value if r > 32 and buf.value else None
+    except Exception:
+        return None
 
 
 # ── Janelas abertas ──────────────────────────────────────────────────────────
@@ -524,7 +612,9 @@ class BarraSessao:
         return 0, {"nome": processo.rsplit(".", 1)[0].title(), "processo": processo}
 
     def _montar_itens(self):
-        itens = [{"chave": "inicio", "nome": "Início", "letra": "⌂", "cor": None, "acao": self.inicio}]
+        itens = [{"chave": "inicio", "nome": "Início", "letra": "⌂", "cor": None, "acao": self.inicio},
+                 {"chave": "arquivos", "nome": "Meus arquivos", "letra": "📁", "cor": "#f59e0b",
+                  "acao": self._meus_arquivos}]
         for processo in sorted(self._janelas):
             i, a = self._app_do_processo(processo)
             nome = a.get("nome") or processo
@@ -551,6 +641,11 @@ class BarraSessao:
         janelas = self._janelas.get(processo)
         if janelas:
             trazer_para_frente(janelas[0])
+
+    def _meus_arquivos(self):
+        abrir = getattr(self.app, "abrir_meus_arquivos", None)
+        if abrir:
+            abrir()
 
     def _sininho(self):
         alternar = getattr(self.app, "alternar_notificacoes", None)
@@ -903,6 +998,138 @@ class Notificacoes:
         return texto if len(texto) <= cabe else texto[: cabe - 1].rstrip() + "…"
 
 
+class MeusArquivos:
+    """Janela "Meus arquivos" (9.5): o que o cliente baixou nesta sessão, com
+    Abrir (só documentos e imagens, e só se o programa que abre o tipo estiver
+    liberado) e Excluir. O Explorador continua bloqueado; a pasta é esvaziada
+    quando a sessão termina."""
+    LARGURA, ALTURA = 520, 440
+
+    def __init__(self, app):
+        self.app = app
+        self.top = None
+        self._lista = None  # assinatura da última lista (só remonta se mudar)
+        self._confirmar = None  # caminho esperando o segundo clique em Excluir
+
+    def abrir(self):
+        if self.top and self.top.winfo_exists():
+            self.top.deiconify()
+            self.top.lift()
+            return
+        p = self.app.paleta
+        self.top = tk.Toplevel(self.app.root)
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.configure(bg=p["superficie3"])
+        tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
+        x = (tela_l - self.LARGURA) // 2
+        y = tela_a - self.app.barra.altura - self.ALTURA - 10
+        self.top.geometry(f"{self.LARGURA}x{self.ALTURA}+{x}+{y}")
+        caixa = tk.Frame(self.top, bg=p["superficie"])
+        caixa.pack(fill="both", expand=True, padx=1, pady=1)
+        topo = tk.Frame(caixa, bg=p["superficie"])
+        topo.pack(fill="x", padx=16, pady=(14, 2))
+        tk.Label(topo, text="📁  Meus arquivos", font=("Segoe UI", 13, "bold"), fg=p["texto"],
+                 bg=p["superficie"]).pack(side="left")
+        tk.Button(topo, text="✕", font=("Segoe UI", 10), fg=p["texto2"], bg=p["superficie"], relief="flat",
+                  activebackground=p["superficie3"], cursor="hand2", command=self.fechar).pack(side="right")
+        tk.Label(caixa, text="Arquivos baixados nesta sessão. Eles são apagados quando a sessão termina.",
+                 font=("Segoe UI", 9), fg=p["texto2"], bg=p["superficie"], anchor="w").pack(fill="x", padx=16)
+        self.lbl_aviso = tk.Label(caixa, text="", font=("Segoe UI", 9, "bold"), fg="#f59e0b", bg=p["superficie"],
+                                  anchor="w", wraplength=self.LARGURA - 32, justify="left")
+        self.lbl_aviso.pack(fill="x", padx=16, pady=(4, 0))
+        self.corpo = tk.Frame(caixa, bg=p["superficie"])
+        self.corpo.pack(fill="both", expand=True, padx=12, pady=(6, 12))
+        self._lista = None
+        self._atualizar()
+
+    def fechar(self):
+        if self.top and self.top.winfo_exists():
+            self.top.destroy()
+        self.top = None
+
+    def _atualizar(self):
+        if not (self.top and self.top.winfo_exists()):
+            return
+        arquivos = listar_arquivos(pasta_downloads())
+        assinatura = [(a["nome"], a["tamanho"], a["quando"]) for a in arquivos] + [self._confirmar]
+        if assinatura != self._lista:
+            self._lista = assinatura
+            self._montar(arquivos)
+        self.top.after(2000, self._atualizar)  # o download pode terminar com a janela aberta
+
+    def _montar(self, arquivos):
+        p = self.app.paleta
+        for w in self.corpo.winfo_children():
+            w.destroy()
+        if not arquivos:
+            tk.Label(self.corpo, text="Nenhum arquivo baixado ainda.\nO que você baixar no navegador aparece aqui.",
+                     font=("Segoe UI", 10), fg=p["texto2"], bg=p["superficie"], justify="center").pack(expand=True)
+            return
+        for a in arquivos[:7]:
+            linha = tk.Frame(self.corpo, bg=p["superficie2"])
+            linha.pack(fill="x", pady=3)
+            documento = pode_abrir_arquivo(a["nome"])
+            tk.Label(linha, text="📄" if documento else "⛔", font=("Segoe UI Emoji", 14), fg=p["texto"],
+                     bg=p["superficie2"]).pack(side="left", padx=(10, 6), pady=6)
+            textos = tk.Frame(linha, bg=p["superficie2"])
+            textos.pack(side="left", fill="x", expand=True)
+            nome = a["nome"] if len(a["nome"]) <= 38 else a["nome"][:36] + "…"
+            tk.Label(textos, text=nome, font=("Segoe UI", 10, "bold"), fg=p["texto"], bg=p["superficie2"],
+                     anchor="w").pack(fill="x")
+            detalhe = f"{tamanho_legivel(a['tamanho'])} · {time.strftime('%H:%M', time.localtime(a['quando']))}"
+            if not documento:
+                detalhe += " · este tipo não pode ser aberto"
+            tk.Label(textos, text=detalhe, font=("Segoe UI", 8), fg=p["texto2"], bg=p["superficie2"],
+                     anchor="w").pack(fill="x")
+            confirmando = self._confirmar == a["caminho"]
+            tk.Button(linha, text="Confirmar" if confirmando else "Excluir", font=("Segoe UI", 9),
+                      fg="white" if confirmando else p["texto2"], bg="#ef4444" if confirmando else p["superficie3"],
+                      activebackground="#dc2626", relief="flat", padx=8, cursor="hand2",
+                      command=lambda c=a["caminho"]: self._excluir(c)).pack(side="right", padx=(4, 10))
+            if documento:
+                tk.Button(linha, text="Abrir", font=("Segoe UI", 9, "bold"), fg="white", bg=p["destaque"],
+                          activebackground=p["destaque"], relief="flat", padx=12, cursor="hand2",
+                          command=lambda c=a["caminho"]: self._abrir_arquivo(c)).pack(side="right")
+        if len(arquivos) > 7:
+            tk.Label(self.corpo, text=f"e mais {len(arquivos) - 7} arquivo(s)", font=("Segoe UI", 8),
+                     fg=p["texto2"], bg=p["superficie"]).pack(pady=(4, 0))
+
+    def _abrir_arquivo(self, caminho):
+        self.lbl_aviso.config(text="")
+        if not pode_abrir_arquivo(caminho):
+            return
+        programa = programa_que_abre(caminho)
+        liberados = self.app.whitelist_procs
+        if not programa or (liberados and os.path.basename(programa).lower() not in liberados):
+            self.lbl_aviso.config(text="Nenhum programa liberado neste computador abre este arquivo. "
+                                       "Peça ajuda ao atendimento.")
+            return
+        try:
+            os.startfile(caminho)
+            self.app._log(f"Abrindo arquivo: {os.path.basename(caminho)}")
+            self.fechar()
+        except OSError as e:
+            self.lbl_aviso.config(text=f"Não foi possível abrir: {e}")
+
+    def _excluir(self, caminho):
+        if self._confirmar != caminho:
+            self._confirmar = caminho  # primeiro clique: pede confirmação
+        else:
+            self._confirmar = None
+            try:
+                os.remove(caminho)
+            except OSError:
+                self.lbl_aviso.config(text="Não foi possível excluir (o arquivo está aberto em outro programa?).")
+        self._lista = None
+        self._atualizar_agora()
+
+    def _atualizar_agora(self):
+        arquivos = listar_arquivos(pasta_downloads())
+        self._lista = [(a["nome"], a["tamanho"], a["quando"]) for a in arquivos] + [self._confirmar]
+        self._montar(arquivos)
+
+
 class Programacao:
     """Cartazes da programação da biblioteca ao lado dos apps, um de cada vez.
     Vêm do servidor (Configurações → Programação); sem cartaz, a coluna some."""
@@ -1051,6 +1278,7 @@ class AgenteApp:
         self._build_ui()
         self.barra = BarraSessao(self)
         self.notificacoes = Notificacoes(self)
+        self.meus_arquivos = MeusArquivos(self)
         self._start_ws_thread()
 
         # Atalhos
@@ -1560,6 +1788,19 @@ class AgenteApp:
     def alternar_notificacoes(self):
         self.notificacoes.alternar()
 
+    def abrir_meus_arquivos(self):
+        self.meus_arquivos.abrir()
+
+    def _limpar_downloads(self):
+        """Esvazia a pasta Downloads: o próximo cliente não vê o que este baixou."""
+        self.meus_arquivos.fechar()
+        try:
+            apagados = limpar_pasta(pasta_downloads())
+            if apagados:
+                self._log(f"Downloads limpos: {apagados} item(ns)")
+        except Exception as e:
+            self._log(f"Erro ao limpar Downloads: {e}")
+
     def notificacoes_nao_lidas(self):
         return self.notificacoes.nao_lidas()
 
@@ -1643,6 +1884,7 @@ class AgenteApp:
     def _iniciar_sessao(self, dados):
         if dados.get("piso"):
             self._aplicar_cor_piso(dados["piso"])
+        self._limpar_downloads()  # o PC pode ter reiniciado no meio da sessão anterior
         # Captura os PIDs que ja existem ANTES da sessao comecar
         self._pids_pre_sessao = {p.pid for p in psutil.process_iter(["pid"])}
 
@@ -1876,6 +2118,8 @@ class AgenteApp:
         self._encerrar_apps_do_cliente()
         self.barra.esconder()
         self.notificacoes.limpar()
+        # depois de fechar os apps (arquivo aberto não sai)
+        self.root.after(1500, self._limpar_downloads)
         self._programacao.parar()
 
         # Reseta estado imediatamente para parar o countdown e o monitor de processos

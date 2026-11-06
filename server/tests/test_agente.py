@@ -485,3 +485,52 @@ def test_cor_do_piso_no_agente():
     assert 'elif evento == "piso_estacao":' in src
     inicio = src[src.index("    def _iniciar_sessao(self, dados):"):]
     assert "_aplicar_cor_piso" in inicio[:300]
+
+
+def _funcoes_de_arquivos():
+    ns = _carregar("listar_arquivos", "limpar_pasta", "pode_abrir_arquivo", "tamanho_legivel")
+    arvore = ast.parse(_fonte())
+    for no in arvore.body:
+        if isinstance(no, ast.Assign) and getattr(no.targets[0], "id", "") == "EXTENSOES_DOCUMENTOS":
+            ns["EXTENSOES_DOCUMENTOS"] = ast.literal_eval(no.value)
+    ns["os"] = os
+    return ns
+
+
+def test_meus_arquivos_lista_e_so_abre_documentos(tmp_path):
+    # 9.5: tela Meus arquivos mostra os downloads da sessao; so abre documentos e imagens
+    ns = _funcoes_de_arquivos()
+    (tmp_path / "boleto.pdf").write_bytes(b"x" * 2048)
+    (tmp_path / "foto.JPG").write_bytes(b"x")
+    (tmp_path / "virus.exe").write_bytes(b"x")
+    (tmp_path / "baixando.pdf.crdownload").write_bytes(b"x")
+    (tmp_path / "desktop.ini").write_bytes(b"x")
+    (tmp_path / "pasta").mkdir()
+    nomes = [a["nome"] for a in ns["listar_arquivos"](str(tmp_path))]
+    assert sorted(nomes) == ["boleto.pdf", "foto.JPG", "virus.exe"]
+    pode = ns["pode_abrir_arquivo"]
+    assert pode("boleto.pdf") and pode("foto.JPG") and pode("planilha.xlsx")
+    assert not pode("virus.exe") and not pode("script.bat") and not pode("atalho.lnk")
+    assert ns["tamanho_legivel"](2048) == "2 KB" and ns["tamanho_legivel"](3 * 1024 * 1024) == "3,0 MB"
+
+
+def test_downloads_limpos_entre_clientes(tmp_path):
+    # o proximo cliente nao ve o que o anterior baixou
+    ns = _funcoes_de_arquivos()
+    (tmp_path / "a.pdf").write_bytes(b"x")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.txt").write_bytes(b"x")
+    assert ns["limpar_pasta"](str(tmp_path)) == 2
+    assert list(tmp_path.iterdir()) == [] and tmp_path.exists()
+    # nunca limpa a pasta do usuario inteira nem a raiz do disco
+    assert ns["limpar_pasta"](os.path.expanduser("~")) == 0
+    assert ns["limpar_pasta"]("C:\\") == 0
+    src = _fonte()
+    voltar = src[src.index("def _voltar_login"):src.index("def _countdown_encerramento")]
+    assert "self._limpar_downloads" in voltar
+    voltar = voltar[:voltar.index("self._limpar_downloads")]
+    assert "self._encerrar_apps_do_cliente()" in voltar  # fecha os apps antes (arquivos soltos)
+    inicio = src[src.index("    def _iniciar_sessao(self, dados):"):src.index("    def _montar_launcher")]
+    assert "self._limpar_downloads()" in inicio  # PC reiniciou no meio da sessao anterior
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert '"arquivos"' in dock and "abrir_meus_arquivos" in dock
