@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPExcept
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio, json, os
 
 from app.database import get_db, init_db, SessionLocal
@@ -33,8 +33,8 @@ app.include_router(pisos_router.router, prefix="/api")
 app.include_router(agente_router.router, prefix="/api")
 
 # A cada minuto o servidor grava que esta vivo. Ao subir de novo, isso diz
-# quando ele caiu: e ali que as sessoes abertas terminaram de fato (o agente
-# volta ao login quando perde o servidor).
+# quando ele caiu: as sessoes abertas ficam "sem conexao" desde ali (o cliente
+# segue usando no PC; se o PC nunca voltar, so se cobra ate a queda).
 SEGUNDOS_BATIMENTO = 60
 CHAVE_BATIMENTO = "servidor_vivo_em"
 
@@ -48,24 +48,55 @@ def _gravar_batimento(db: Session, quando: datetime):
     db.commit()
 
 
-def encerrar_sessoes_do_desligamento(db: Session) -> int:
-    """Encerra as sessoes que ficaram abertas quando o servidor caiu, contando o
-    uso ate o ultimo batimento e devolvendo o resto ao cliente. Sem batimento
-    (primeira vez com esta versao), nao cobra nada."""
+def marcar_sessoes_sem_conexao(db: Session) -> int:
+    """Na subida: as sessoes abertas continuam (o cliente segue usando no PC e o
+    agente retoma ao reconectar). Ficam marcadas sem conexao desde o ultimo
+    batimento, que e quando o servidor caiu. Sem batimento, desde o inicio: um
+    PC que nunca voltar nao paga nada."""
     cfg = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == CHAVE_BATIMENTO).first()
     try:
         caiu_em = datetime.fromisoformat(cfg.valor) if cfg else None
     except ValueError:
         caiu_em = None
-    abertas = db.query(Sessao).filter(Sessao.encerrada_em == None).all()
+    abertas = db.query(Sessao).filter(Sessao.encerrada_em == None, Sessao.sem_conexao_desde == None).all()
     for sessao in abertas:
-        fim = max(sessao.iniciada_em, min(caiu_em, datetime.utcnow())) if caiu_em else sessao.iniciada_em
-        _, restante = fechar_tempo_da_sessao(sessao, fim)
-        sessao.encerrada_em = fim
-        sessao.motivo_encerramento = "servidor_desligado"
-        sessao.cliente.saldo_segundos = restante
+        sessao.sem_conexao_desde = (max(sessao.iniciada_em, min(caiu_em, datetime.utcnow())) if caiu_em
+                                    else sessao.iniciada_em)
     db.commit()
     return len(abertas)
+
+
+def _tempo_acabou(sessao, agora: datetime) -> bool:
+    """Pelo relogio do servidor, o tempo concedido ja terminou? (sem gravar nada)"""
+    pausas = sessao.tempo_pausado_segundos or 0
+    concedido = max(0, (sessao.tempo_total_segundos or 0) - pausas)
+    if sessao.pausada and sessao.pausada_em:
+        pausas += max(0, int((agora - sessao.pausada_em).total_seconds()))
+    return (agora - sessao.iniciada_em).total_seconds() - pausas >= concedido
+
+
+def encerrar_sessoes_vencidas(db: Session, agora: datetime) -> int:
+    """PC sem conexao que nunca voltou (desligado): encerra a sessao quando o tempo
+    dela acabaria, cobrando so ate a queda e devolvendo o resto ao cliente."""
+    vencidas = [s for s in db.query(Sessao).filter(Sessao.encerrada_em == None, Sessao.sem_conexao_desde != None)
+                if _tempo_acabou(s, agora)]
+    for sessao in vencidas:
+        _fechar_sessao_sem_conexao(sessao)
+        if not manager.estacao_conectada(sessao.estacao.nome) and sessao.estacao.status == "ocupada":
+            sessao.estacao.status = "desligada"
+    db.commit()
+    return len(vencidas)
+
+
+def _fechar_sessao_sem_conexao(sessao) -> int:
+    """Encerra como conexao_perdida, contando o uso ate a queda. Devolve o restante."""
+    fim = max(sessao.iniciada_em, sessao.sem_conexao_desde or datetime.utcnow())
+    _, restante = fechar_tempo_da_sessao(sessao, fim)
+    sessao.encerrada_em = fim
+    sessao.motivo_encerramento = "conexao_perdida"
+    sessao.cliente.saldo_segundos = restante
+    sessao.sem_conexao_desde = None
+    return restante
 
 
 async def _batimento():
@@ -85,6 +116,15 @@ async def _batimento():
                 print(f"Backup do banco: {destino}")
         except Exception as e:
             print(f"Backup do banco: erro ({e})")
+        # PC sem conexao que nao voltou ate o fim do tempo do cliente
+        db = SessionLocal()
+        try:
+            if encerrar_sessoes_vencidas(db, datetime.utcnow()):
+                await manager.broadcast_paineis("sessao_encerrada", {"motivo": "conexao_perdida"})
+        except Exception as e:
+            print(f"Sessoes sem conexao: erro ao encerrar ({e})")
+        finally:
+            db.close()
         await asyncio.sleep(SEGUNDOS_BATIMENTO)
 
 
@@ -93,12 +133,16 @@ async def startup():
     init_db()
     db = SessionLocal()
     try:
-        n = encerrar_sessoes_do_desligamento(db)
+        n = marcar_sessoes_sem_conexao(db)
         if n:
-            print(f"Encerradas {n} sessao(oes) que ficaram abertas com o servidor desligado")
+            print(f"{n} sessao(oes) seguem abertas: o agente retoma ao reconectar")
         # Nenhum agente está conectado quando o servidor acaba de subir
-        # (manutenção é mantida: vale mesmo com o PC desligado)
+        # (manutenção é mantida: vale mesmo com o PC desligado). Com sessão
+        # aberta continua ocupada: o cliente segue usando no PC.
         db.query(Estacao).filter(Estacao.status != "manutencao").update({Estacao.status: "desligada"})
+        for sessao in db.query(Sessao).filter(Sessao.encerrada_em == None):
+            if sessao.estacao.status != "manutencao":
+                sessao.estacao.status = "ocupada"
         db.commit()
     finally:
         db.close()
@@ -130,24 +174,38 @@ async def ws_painel(ws: WebSocket, token: str = ""):
         manager.desconectar_painel(ws)
 
 # ── WebSocket: agente da estação ──────────────────────────────────────────────
-async def _encerrar_sessao_orfa(db: Session, estacao: Estacao, fim: datetime):
-    """Encerra a sessão que ficou aberta quando a conexão do agente caiu,
-    devolvendo ao cliente o tempo não usado até a queda."""
-    sessao = db.query(Sessao).filter(
-        Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
-    if not sessao:
-        return
-    _, restante = fechar_tempo_da_sessao(sessao, fim)
-    sessao.encerrada_em = fim
-    sessao.motivo_encerramento = "conexao_perdida"
-    sessao.cliente.saldo_segundos = restante
+async def _resolver_estado(db: Session, estacao: Estacao, sessao_id) -> dict:
+    """O agente (re)conectou dizendo em que sessao esta (ou nenhuma).
+
+    Mesma sessao aberta: retoma (o servidor caiu, ou a rede, e o cliente seguiu
+    usando). Sessao aberta e o agente sem ela: o PC reiniciou e voltou ao login,
+    encerra cobrando ate a queda. O agente numa sessao ja encerrada (o operador
+    encerrou enquanto estava sem conexao): manda ele voltar ao login.
+    """
+    aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
+    if aberta and sessao_id == aberta.id:
+        aberta.sem_conexao_desde = None
+        estacao.status = "ocupada"
+        db.commit()
+        await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome})
+        return {"evento": "pong"}
+    if aberta:
+        restante = _fechar_sessao_sem_conexao(aberta)
+        await manager.broadcast_paineis("sessao_encerrada", {
+            "estacao": estacao.nome,
+            "cliente": aberta.cliente.login,
+            "motivo": "conexao_perdida",
+            "saldo_restante": restante
+        })
+    if estacao.status != "manutencao":
+        estacao.status = "livre"
     db.commit()
-    await manager.broadcast_paineis("sessao_encerrada", {
-        "estacao": estacao.nome,
-        "cliente": sessao.cliente.login,
-        "motivo": "conexao_perdida",
-        "saldo_restante": restante
-    })
+    await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome})
+    if sessao_id:
+        sessao = db.get(Sessao, sessao_id)
+        saldo = sessao.cliente.saldo_segundos if sessao and sessao.cliente else 0
+        return {"evento": "encerrar_sessao", "dados": {"saldo_restante": saldo}}
+    return {"evento": "pong"}
 
 
 @app.websocket("/ws/estacao/{nome}")
@@ -162,15 +220,15 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 
     await manager.conectar_estacao(nome, ws)
     estacao.ultimo_ping = datetime.utcnow()
-    # Ao perder a conexão o agente volta para a tela de login, então uma
-    # sessão ainda aberta nesta estação ficou órfã.
-    await _encerrar_sessao_orfa(db, estacao, datetime.utcnow())
-    # O agente sempre abre na tela de login: um "manutencao" que sobrou (agente
-    # fechado ou reiniciado na manutencao) travava a estacao e recusava o login.
-    # Se ele so reconectou e continua na manutencao, avisa logo em seguida.
-    estacao.status = "livre"
+    # Com sessao aberta, segue ocupada ate o agente dizer em que estado esta
+    # (evento "estado", a primeira mensagem do agente 1.8). Sem sessao, livre: um
+    # "manutencao" que sobrou (agente fechado ou reiniciado na manutencao) travava
+    # a estacao; se ele continua na manutencao, avisa logo em seguida.
+    tem_sessao = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
+    estacao.status = "ocupada" if tem_sessao else "livre"
     db.commit()
     await manager.broadcast_paineis("estacao_online", {"nome": nome})
+    estado_recebido = False
 
     try:
         while True:
@@ -181,6 +239,22 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
             db.expire_all()
             dados = json.loads(raw)
             evento = dados.get("evento")
+
+            if evento == "teste_conexao":
+                # Configurar conexao -> Testar (agente 1.8): so responde, sem
+                # mexer na sessao da estacao
+                await ws.send_text(json.dumps({"evento": "pong"}))
+                continue
+            if evento == "estado":
+                estado_recebido = True
+                resposta = await _resolver_estado(db, estacao, dados.get("sessao_id"))
+                await ws.send_text(json.dumps(resposta))
+                continue
+            if not estado_recebido and evento in ("ping", "login_cliente"):
+                # Agente antigo (< 1.8): volta ao login quando cai e nao manda
+                # "estado"; a sessao que ficou aberta e de um PC sem ela
+                estado_recebido = True
+                await _resolver_estado(db, estacao, None)
 
             if evento == "ping":
                 estacao.ultimo_ping = datetime.utcnow()
@@ -319,8 +393,16 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 
                 if sessao:
                     agora = datetime.utcnow()
+                    # Encerrada com o PC sem conexao: o agente manda ao reconectar,
+                    # dizendo ha quantos segundos foi (relogio dele, so a diferenca)
+                    try:
+                        atras = max(0, int(dados.get("segundos_atras") or 0))
+                    except (TypeError, ValueError):
+                        atras = 0
+                    agora = max(sessao.iniciada_em, agora - timedelta(seconds=atras))
                     # Calculo pelo servidor — nao confia no valor do agente
                     _, restante = fechar_tempo_da_sessao(sessao, agora)
+                    sessao.sem_conexao_desde = None
                     sessao.encerrada_em = agora
                     sessao.motivo_encerramento = motivo
                     # tempo esgotado zera; manutencao devolve o resto (senao o
@@ -370,14 +452,20 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
         manager.desconectar_estacao(nome, ws)
+        # O cliente segue usando no PC: a sessao continua aberta, marcada sem
+        # conexao desde agora (o agente retoma ao reconectar)
+        db.expire_all()
+        aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
+        if aberta and aberta.sem_conexao_desde is None:
+            aberta.sem_conexao_desde = desconectou_em
+            db.commit()
         # Espera antes de marcar offline: uma queda rápida de rede não deve
-        # fazer a estação "piscar" no painel. Se o agente voltar nesse
-        # intervalo, a nova conexão cuida da sessão órfã.
+        # fazer a estação "piscar" no painel.
         await asyncio.sleep(SEGUNDOS_ATE_OFFLINE)
         if not manager.estacao_conectada(nome):
             db.expire_all()
-            await _encerrar_sessao_orfa(db, estacao, desconectou_em)
-            if estacao.status != "manutencao":
+            aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
+            if estacao.status != "manutencao" and not aberta:
                 estacao.status = "desligada"
             db.commit()
             await manager.broadcast_paineis("estacao_offline", {"nome": nome})

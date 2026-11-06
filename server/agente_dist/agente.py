@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.7.1"
+VERSAO = "1.8.0"
 
 import asyncio
 import json
@@ -573,6 +573,10 @@ class AgenteApp:
         self.loop = None
         self.ws = None
         self.conectado = False
+        # Fim de sessao que aconteceu sem conexao: vai ao servidor ao reconectar
+        # (lista de (mensagem, time.monotonic() do fim); so mexida na thread do Tk
+        # e lida pela do WebSocket ao conectar)
+        self._pendentes = []
 
         # Estado da sessão
         self.sessao_ativa = False
@@ -863,9 +867,17 @@ class AgenteApp:
         while True:
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=20, proxy=proxy) as ws:
+                    # Primeiro o que terminou sem conexao, depois o estado: o
+                    # servidor retoma a sessao em andamento (ele ou a rede caiu e o
+                    # cliente seguiu usando) ou encerra a que ficou aberta.
+                    pendentes, self._pendentes = self._pendentes, []
+                    for msg in mensagens_pendentes(pendentes, time.monotonic()):
+                        await ws.send(json.dumps(msg))
                     # Só fica "online" quando o servidor responder: uma estação
-                    # não cadastrada é fechada antes do pong
-                    await ws.send(json.dumps({"evento": "ping"}))
+                    # não cadastrada é fechada antes da resposta
+                    await ws.send(json.dumps({
+                        "evento": "estado", "versao": VERSAO,
+                        "sessao_id": self.sessao_id if self.sessao_ativa else None}))
                     async for raw in ws:
                         if not self.conectado:
                             self.ws = ws
@@ -888,6 +900,11 @@ class AgenteApp:
             await asyncio.sleep(3)
 
     def _enviar(self, msg: dict):
+        if not (self.loop and self.ws) and msg.get("evento") == "sessao_encerrada":
+            # Sem servidor: guarda o fim da sessao e manda ao reconectar
+            self._pendentes.append((msg, time.monotonic()))
+            self._log("Sem conexao: o fim da sessao vai ao servidor quando reconectar", _remoto=False)
+            return
         if self.loop and self.ws:
             asyncio.run_coroutine_threadsafe(self.ws.send(json.dumps(msg)), self.loop)
             self._log(f"-> enviado: {msg.get('evento')}", _remoto=False)
@@ -922,8 +939,9 @@ class AgenteApp:
             self.btn_login.config(state="disabled")
             self._log("Desconectado - tentando reconectar em 3s...")
             if self.sessao_ativa:
-                self._log("Conexao perdida durante sessao - retornando ao login")
-                self._voltar_login()
+                # O servidor (ou a rede) caiu: o cliente segue usando ate o tempo
+                # acabar; ao reconectar, o servidor retoma a mesma sessao
+                self._log("Conexao perdida durante a sessao - o cliente continua; reconectando")
 
         elif evento == "_info":
             self._log(dados.get("msg", ""))
@@ -1805,6 +1823,17 @@ def carregar_cfg():
             pass
     return cfg
 
+def mensagens_pendentes(pendentes, agora):
+    """Fins de sessao guardados sem conexao, com ha quantos segundos aconteceram
+    (o servidor desconta so ate la). `agora` e `pendentes` em time.monotonic()."""
+    saida = []
+    for msg, quando in pendentes:
+        msg = dict(msg)
+        msg["segundos_atras"] = max(0, int(agora - quando))
+        saida.append(msg)
+    return saida
+
+
 def gravar_cfg(**valores):
     """Atualiza chaves do agente.cfg sem apagar as outras (vazio remove)."""
     cfg = carregar_cfg()
@@ -1846,7 +1875,9 @@ def testar_conexao(servidor, estacao):
 
     async def tentar():
         async with websockets.connect(url, open_timeout=6, proxy=proxy) as ws:
-            await ws.send(json.dumps({"evento": "ping"}))
+            # Abrir mandando ping e coisa de agente antigo: o servidor encerraria a
+            # sessao aberta desta estacao
+            await ws.send(json.dumps({"evento": "teste_conexao"}))
             await asyncio.wait_for(ws.recv(), timeout=6)
 
     try:

@@ -51,11 +51,14 @@ export function AbasPiso({
   piso,
   aoTrocar,
   rotulo,
+  comTotal = false,
 }: {
   pisos: Piso[]
   piso: Piso | null
   aoTrocar: (id: number) => void
   rotulo: string
+  /** Mostra quantos clientes o piso tem (tela Clientes) */
+  comTotal?: boolean
 }) {
   return (
     <div role="tablist" aria-label="Piso" className="flex flex-wrap gap-1">
@@ -77,6 +80,11 @@ export function AbasPiso({
           >
             <span className="size-2.5 rounded-full" style={{ background: p.cor }} />
             {rotulo} do {p.nome}
+            {comTotal && (
+              <span className="rounded-full bg-superficie-3 px-2 text-xs font-medium text-texto-suave tabular-nums">
+                {p.clientes.toLocaleString("pt-BR")}
+              </span>
+            )}
           </button>
         )
       })}

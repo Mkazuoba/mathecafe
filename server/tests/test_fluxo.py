@@ -213,17 +213,27 @@ def test_conexao_antiga_nao_derruba_a_nova(c, cenario):
         nova.__exit__(None, None, None)
 
 
-def test_queda_durante_sessao_devolve_saldo_e_libera_estacao(c, admin, cenario):
-    """O agente volta ao login quando a conexão cai; o servidor não pode deixar
-    a sessão aberta nem a estação presa como ocupada."""
+def _estado(ws, sessao_id=None):
+    """O que o agente manda ao (re)conectar: a sessao em andamento ou nenhuma."""
+    ws.send_json({"evento": "estado", "sessao_id": sessao_id})
+    return ws.receive_json()
+
+
+def _sessao_ativa_da(c, admin, estacao):
+    return [s for s in c.get("/api/sessoes/ativas", headers=admin).json() if s["estacao_nome"] == estacao]
+
+
+def test_pc_que_volta_no_login_encerra_a_sessao_e_devolve_saldo(c, admin, cenario):
+    """O PC reiniciou (o agente volta sem sessao): a sessao que ficou aberta e
+    encerrada, devolvendo ao cliente o tempo nao usado."""
     cid = cenario["cliente_id"]
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
         c.post(f"/api/estacoes/fila/{cid}", headers=admin)
         dados = _logar_no_pc(ws, cenario["cliente"])
         assert dados["ok"]
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
-        assert not [s for s in c.get("/api/sessoes/ativas", headers=admin).json()
-                    if s["estacao_nome"] == cenario["estacao"]]
+        assert _estado(ws)["evento"] == "pong"
+        assert not _sessao_ativa_da(c, admin, cenario["estacao"])
         saldo = c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"]
         assert saldo >= dados["tempo_segundos"] - 5
 
@@ -231,6 +241,72 @@ def test_queda_durante_sessao_devolve_saldo_e_libera_estacao(c, admin, cenario):
         dados = _logar_no_pc(ws, cenario["cliente"])
         assert dados["ok"], dados
         assert dados["tempo_segundos"] == saldo
+
+
+def test_servidor_cai_e_o_cliente_continua_na_sessao(c, admin, cenario):
+    """O servidor (ou a rede) caiu com o cliente logado: o agente segue a sessao e,
+    ao reconectar, ela continua a mesma no servidor."""
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"]
+    sid = dados["sessao_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        assert _estado(ws, sid)["evento"] == "pong"
+        ativas = _sessao_ativa_da(c, admin, cenario["estacao"])
+        assert [s["id"] for s in ativas] == [sid]
+        estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+        assert estacao["status"] == "ocupada"
+        assert _sessao(sid).sem_conexao_desde is None  # retomada
+        _encerrar_pelo_pc(ws, sid, 300)  # e termina normalmente
+        assert _sessao(sid).motivo_encerramento == "cliente"
+
+
+def test_agente_antigo_que_so_manda_ping_encerra_a_sessao_orfa(c, admin, cenario):
+    # agente < 1.8 volta ao login quando cai e reconecta mandando so "ping"
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        assert _logar_no_pc(ws, cenario["cliente"])["ok"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"
+        assert not _sessao_ativa_da(c, admin, cenario["estacao"])
+
+
+def test_sessao_encerrada_sem_conexao_conta_ate_o_fim_no_pc(c, admin, cenario):
+    """O cliente saiu (ou o tempo acabou) com o servidor fora do ar: o agente manda
+    o fim ao reconectar, dizendo ha quanto tempo foi; o uso vai ate la."""
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+    sid = dados["sessao_id"]
+    db = SessionLocal()
+    db.get(Sessao, sid).iniciada_em = datetime.utcnow() - timedelta(minutes=30)
+    db.commit()
+    db.close()
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "sessao_encerrada", "sessao_id": sid, "motivo": "cliente", "segundos_atras": 600})
+        assert _estado(ws)["evento"] == "pong"
+    s = _sessao(sid)
+    assert s.motivo_encerramento == "cliente"
+    assert abs(s.tempo_consumido_segundos - 1200) <= 3  # 30 min - os 10 em que ja estava encerrada
+    saldo = c.get(f"/api/clientes/{cid}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - (dados["tempo_segundos"] - 1200)) <= 3
+
+
+def test_operador_encerrou_enquanto_o_pc_estava_sem_conexao(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+    assert c.post(f"/api/sessoes/encerrar/{sid}", headers=admin).status_code == 200
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        assert _estado(ws, sid)["evento"] == "encerrar_sessao"  # o agente volta ao login
+        estacao = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+        assert estacao["status"] == "livre"
 
 
 # ── 1.5 Status durante a espera de 8s ────────────────────────────────────────
@@ -774,33 +850,59 @@ def _batimento(minutos_atras):
     db.close()
 
 
-def test_servidor_reinicia_e_encerra_sessao_aberta(c, admin, cenario):
-    # Comecou ha 90 min, o servidor caiu ha 30 (ultimo batimento): usou 60 min.
-    # Antes a sessao ficava aberta para sempre e o cliente aparecia "em uso".
-    from app.main import encerrar_sessoes_do_desligamento
+def test_servidor_reinicia_e_mantem_a_sessao_aberta(c, admin, cenario):
+    # Comecou ha 90 min e o servidor caiu ha 30 (ultimo batimento). O cliente
+    # continua usando no PC: a sessao fica aberta, marcada sem conexao desde a queda.
+    from app.main import marcar_sessoes_sem_conexao
     sid = _sessao_aberta(cenario, inicio_min=90)
     _batimento(30)
     db = SessionLocal()
-    assert encerrar_sessoes_do_desligamento(db) >= 1
+    assert marcar_sessoes_sem_conexao(db) >= 1
     db.close()
     s = _sessao(sid)
-    assert s.encerrada_em is not None and s.motivo_encerramento == "servidor_desligado"
-    assert abs(s.tempo_consumido_segundos - 3600) <= 2
-    saldo = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()["saldo_segundos"]
-    assert abs(saldo - 3600) <= 2
-    assert all(x["id"] != sid for x in c.get("/api/sessoes/ativas", headers=admin).json())
-    # e o cliente pode ser liberado de novo
-    assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
+    assert s.encerrada_em is None
+    assert abs((datetime.utcnow() - s.sem_conexao_desde).total_seconds() - 1800) <= 5
+    assert any(x["id"] == sid for x in c.get("/api/sessoes/ativas", headers=admin).json())
 
 
-def test_sem_batimento_nao_cobra_o_tempo_desligado(c, admin, cenario):
-    from app.main import encerrar_sessoes_do_desligamento
+def test_sem_batimento_a_queda_conta_desde_o_inicio(c, admin, cenario):
+    # sem saber quando o servidor caiu, um PC que nunca voltar nao paga nada
+    from app.main import marcar_sessoes_sem_conexao
     sid = _sessao_aberta(cenario, inicio_min=50)
     _batimento(None)
     db = SessionLocal()
-    encerrar_sessoes_do_desligamento(db)
+    marcar_sessoes_sem_conexao(db)
     db.close()
-    assert _sessao(sid).tempo_consumido_segundos == 0
+    s = _sessao(sid)
+    assert s.sem_conexao_desde == s.iniciada_em
+
+
+def test_pc_que_nunca_volta_encerra_quando_o_tempo_acabaria(c, admin, cenario):
+    # 2h concedidas, comecou ha 130 min, caiu aos 30 min de uso: o tempo ja teria
+    # acabado. Encerra cobrando so ate a queda e devolve o resto.
+    from app.main import encerrar_sessoes_vencidas
+    sid = _sessao_aberta(cenario, inicio_min=130)
+    db = SessionLocal()
+    db.get(Sessao, sid).sem_conexao_desde = datetime.utcnow() - timedelta(minutes=100)
+    db.commit()
+    assert encerrar_sessoes_vencidas(db, datetime.utcnow()) >= 1
+    db.close()
+    s = _sessao(sid)
+    assert s.encerrada_em is not None and s.motivo_encerramento == "conexao_perdida"
+    assert abs(s.tempo_consumido_segundos - 1800) <= 3
+    saldo = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()["saldo_segundos"]
+    assert abs(saldo - 5400) <= 3
+
+
+def test_sessao_sem_conexao_com_tempo_sobrando_continua(c, admin, cenario):
+    from app.main import encerrar_sessoes_vencidas
+    sid = _sessao_aberta(cenario, inicio_min=40)
+    db = SessionLocal()
+    db.get(Sessao, sid).sem_conexao_desde = datetime.utcnow() - timedelta(minutes=10)
+    db.commit()
+    encerrar_sessoes_vencidas(db, datetime.utcnow())
+    db.close()
+    assert _sessao(sid).encerrada_em is None
 
 
 # ── Programacao da biblioteca (carrossel no agente) ──────────────────────────
@@ -1117,3 +1219,14 @@ def test_piso_de_texto_do_4_7a_vira_piso_id(c, admin, cenario):
     db.close()
     cliente = c.get(f"/api/clientes/{cenario['cliente_id']}", headers=admin).json()
     assert cliente["piso_nome"] == "Infantil"
+
+
+def test_teste_de_conexao_nao_encerra_a_sessao(c, admin, cenario):
+    cid = cenario["cliente_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        sid = _logar_no_pc(ws, cenario["cliente"])["sessao_id"]
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:  # Configurar conexao -> Testar
+        ws.send_json({"evento": "teste_conexao"})
+        assert ws.receive_json()["evento"] == "pong"
+    assert _sessao(sid).encerrada_em is None

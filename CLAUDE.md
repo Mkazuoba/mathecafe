@@ -44,7 +44,7 @@ Rode os testes antes de dar um ciclo por concluído e acrescente um teste para c
 - **Sem passlib** — bcrypt direto (`app/security.py`).
 - **`db.expire_all()`** a cada mensagem no handler da estação (`main.py`): a sessão do SQLAlchemy vive a conexão WS inteira e ficaria com cache velho. Não remover.
 - **`autorizacoes.cliente_id` é único** — reaproveitar o registro ao reliberar (resetar `usado=False`), nunca criar outro.
-- **Queda do PC encerra a sessão** (`conexao_perdida`): o agente volta ao login quando perde a conexão, então o servidor não pode deixar a sessão aberta.
+- **Queda do servidor ou da rede não derruba o cliente** (agente 1.8): a sessão segue no PC e o agente a retoma ao reconectar (evento `estado`). Só encerra como `conexao_perdida` quando o PC volta sem a sessão (reiniciou) ou nunca volta (quando o tempo acabaria), cobrando até a queda. A primeira mensagem do agente tem de ser `estado` (ou `teste_conexao`): `ping` primeiro é tratado como agente antigo e encerra a sessão aberta da estação.
 - **Nada de emoji em `print`** no servidor — derruba a inicialização num console Windows (cp1252). No agente, emoji só dentro da interface Tkinter.
 - **Saldo sempre em HH:MM:SS** em todo o painel.
 - **Agente roda como o usuário `cliente`, na sessão dele** (tarefa `MatheCafe-Agente`, `LogonType Interactive`). Nunca como SYSTEM nem com senha gravada na tarefa: roda sem área de trabalho e a janela não aparece. Sem admin, o psutil só encerra processos do `cliente`, e basta.

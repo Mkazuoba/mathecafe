@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-06 — Cliente não cai junto com o servidor (agente 1.8.0) e total de clientes por piso
+
+- **Queda do servidor ou da rede não derruba mais o cliente**: antes o agente voltava ao login e o servidor, ao subir, encerrava todas as sessões. Agora o cliente segue usando até o tempo acabar, o agente reconecta sozinho e o servidor retoma a mesma sessão (o tempo continua contado pelo relógio do servidor). A estação aparece ocupada, com o ícone de sem conexão.
+- Se o cliente sair (ou o tempo acabar) enquanto o servidor está fora, o agente guarda e avisa ao reconectar, e o servidor desconta só até a hora em que terminou.
+- Só encerra como "conexão perdida" se o PC reiniciar (volta ao login) ou nunca mais voltar — aí quando o tempo dele acabaria —, cobrando até a queda e devolvendo o resto.
+- Se o operador encerrar a sessão enquanto o PC estava sem conexão, o PC volta ao login ao reconectar.
+- **Total de clientes em cada aba de piso** da tela Clientes (ex.: "Clientes do Infantil 8.349"), para conferir a importação.
+- Agente 1.8.0 (auto-update). Agentes antigos continuam funcionando como antes (caem junto com o servidor).
+
 ## 2026-11-05 — Pisos cadastráveis, mapas por piso e painel separado por piso (Ciclo 4, tarefa 4.7b)
 
 - **Pisos cadastrados no sistema** (Configurações → **Pisos**, só admin): nome e cor de cada piso, um deles o padrão. Adulto (padrão) e Infantil são criados sozinhos; criar outro (ex.: Juvenil) é pela tela. Piso com clientes ou mapas, ou o padrão, não se exclui.

@@ -95,6 +95,10 @@ class Sessao(Base):
     pausada = Column(Boolean, default=False)
     pausada_em = Column(DateTime, nullable=True)
     tempo_pausado_segundos = Column(Integer, default=0)
+    # Quando o PC perdeu a conexao (queda dele, da rede ou do servidor). O cliente
+    # segue usando no PC; a sessao so encerra pelo agente, pelo operador ou, se o
+    # PC nunca voltar, quando o tempo acabaria (cobrando ate aqui). Vazio = conectado.
+    sem_conexao_desde = Column(DateTime, nullable=True)
     cliente = relationship("Usuario", back_populates="sessoes", foreign_keys=[cliente_id])
     estacao = relationship("Estacao", back_populates="sessoes")
 

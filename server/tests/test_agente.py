@@ -408,3 +408,31 @@ def test_reconectar_na_manutencao_avisa_o_servidor():
     conectado = src[src.index('if evento == "_conectado":'):]
     conectado = conectado[:conectado.index("elif evento ==")]
     assert "self.modo_manutencao_ativo" in conectado and '"status": "manutencao"' in conectado
+
+
+def test_queda_do_servidor_nao_derruba_a_sessao():
+    # Antes o agente voltava ao login quando perdia o servidor e o cliente caia
+    # junto; agora segue a sessao e, ao reconectar, diz em que sessao esta
+    src = _fonte()
+    i = src.index('elif evento == "_desconectado":')
+    trecho = src[i:src.index("elif evento ==", i + 10)]
+    assert "_voltar_login" not in trecho
+    conexao = src[src.index("async def _ws_loop"):src.index("def _enviar(")]
+    assert '"evento": "estado"' in conexao and '"evento": "ping"' not in conexao
+    # o fim de sessao sem conexao fica guardado para depois
+    enviar = src[src.index("def _enviar("):src.index("def _processar_fila")]
+    assert "_pendentes.append" in enviar
+
+
+def test_fim_de_sessao_guardado_diz_ha_quanto_tempo_foi():
+    ns = _funcoes_do_agente("mensagens_pendentes")
+    msgs = ns["mensagens_pendentes"]([({"evento": "sessao_encerrada", "sessao_id": 7}, 100.0)], 700.9)
+    assert msgs == [{"evento": "sessao_encerrada", "sessao_id": 7, "segundos_atras": 600}]
+
+
+def test_testar_conexao_nao_mexe_na_sessao_da_estacao():
+    # "ping" como primeira mensagem e o agente antigo: o servidor encerraria a
+    # sessao aberta daquela estacao
+    src = _fonte()
+    trecho = src[src.index("def testar_conexao("):src.index("# Operadores que ja entraram")]
+    assert '"teste_conexao"' in trecho and '"ping"' not in trecho

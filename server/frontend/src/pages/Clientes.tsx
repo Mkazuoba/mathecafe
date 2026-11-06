@@ -102,7 +102,7 @@ export default function Clientes() {
 
       {/* Abas por piso, e a tabela na cor dele (cadastrada em Configurações → Pisos) */}
       <div className="shrink-0 border-b border-borda bg-superficie px-6 pt-3">
-        <AbasPiso pisos={pisos} piso={piso} aoTrocar={trocarPiso} rotulo="Clientes" />
+        <AbasPiso pisos={pisos} piso={piso} aoTrocar={trocarPiso} rotulo="Clientes" comTotal />
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-piso-fundo/40 px-6 py-5">
         <table className="w-full border-collapse overflow-hidden rounded-lg border border-piso-borda text-sm">
