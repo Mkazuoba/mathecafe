@@ -216,7 +216,10 @@ def test_conexao_antiga_nao_derruba_a_nova(c, cenario):
 def _estado(ws, sessao_id=None):
     """O que o agente manda ao (re)conectar: a sessao em andamento ou nenhuma."""
     ws.send_json({"evento": "estado", "sessao_id": sessao_id})
-    return ws.receive_json()
+    resposta = ws.receive_json()
+    piso = ws.receive_json()  # logo depois vem a cor do piso da estacao (agente 1.9)
+    assert piso["evento"] == "piso_estacao"
+    return resposta
 
 
 def _sessao_ativa_da(c, admin, estacao):
@@ -1630,3 +1633,16 @@ def test_zona_de_uma_coluna(c, admin):
     r = c.put(f"/api/estacoes/grupos/{g['id']}", headers=admin, json={"zona": zona})
     assert r.status_code == 200, r.text
     assert r.json()["zona"] == zona
+
+
+
+def test_agente_recebe_a_cor_do_piso(c, admin, cenario):
+    infantil = _estacao_infantil(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{infantil}") as ws:
+        ws.send_json({"evento": "estado", "sessao_id": None})
+        assert ws.receive_json()["evento"] == "pong"
+        piso = ws.receive_json()
+        assert piso == {"evento": "piso_estacao", "dados": {"nome": "Infantil", "cor": "#ec4899"}}
+        cliente, cid = _cliente_infantil(c, admin)
+        c.post(f"/api/estacoes/fila/{cid}", headers=admin)
+        assert _logar_no_pc(ws, cliente)["piso"]["nome"] == "Infantil"

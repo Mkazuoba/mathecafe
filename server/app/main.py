@@ -9,7 +9,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
-from app.pisos import recusa_de_piso
+from app.pisos import cor_para_o_agente, recusa_de_piso
 from app import horario
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
@@ -111,7 +111,7 @@ async def _aplicar_horario(db: Session):
     if decisao["aviso"]:
         texto = horario.texto_do_aviso(config_horario, agora, decisao["aviso"])
         for sessao in db.query(Sessao).filter(Sessao.encerrada_em == None):
-            await manager.enviar_estacao(sessao.estacao.nome, "mensagem_tela", {"texto": texto})
+            await manager.enviar_estacao(sessao.estacao.nome, "mensagem_tela", {"texto": texto, "origem": "horario"})
     if decisao["encerrar"]:
         encerradas = horario.encerrar_sessoes_do_fechamento(db)
         for nome, restante in encerradas:
@@ -279,6 +279,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 estado_recebido = True
                 resposta = await _resolver_estado(db, estacao, dados.get("sessao_id"))
                 await ws.send_text(json.dumps(resposta))
+                # a cor do piso da estacao (o agente usa como destaque)
+                await ws.send_text(json.dumps({"evento": "piso_estacao", "dados": cor_para_o_agente(estacao)}))
                 continue
             if not estado_recebido and evento in ("ping", "login_cliente"):
                 # Agente antigo (< 1.8): volta ao login quando cai e nao manda
@@ -403,7 +405,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                         "cliente_nome": cliente.nome,
                         "tempo_segundos": tempo,
                         "whitelist": whitelist,
-                        "reiniciar_ao_encerrar": reiniciar
+                        "reiniciar_ao_encerrar": reiniciar,
+                        "piso": cor_para_o_agente(estacao),
                     }
                 }))
 

@@ -445,3 +445,29 @@ def test_desligar_pelo_painel():
     assert "_voltar_login" in trecho and "desligar=True" in trecho
     contagem = src[src.index("def _countdown_reinicio"):src.index("def _encerrar_apps_do_cliente")]
     assert '"/s" if desligar else "/r"' in contagem
+
+
+def test_dock_e_notificacoes_do_agente():
+    # 9.4: dock no lugar da barra (fundo transparente, sininho com o numero) e
+    # notificacoes no canto: a mensagem do operador na sessao vira notificacao
+    src = _fonte()
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert "-transparentcolor" in dock and '"sininho"' in dock and "lbl_relogio" in dock
+    msg = src[src.index('elif evento == "mensagem_tela":'):]
+    msg = msg[:msg.index("elif evento ==", 10)]
+    assert "self.notificacoes.notificar(" in msg and 'dados.get("origem") == "horario"' in msg
+    saldo = src[src.index("def _avisar_saldo_baixo"):]
+    assert "messagebox" not in saldo[:saldo.index("\n    def ", 1)]
+    # nada passa para o proximo cliente
+    voltar = src[src.index("def _voltar_login"):src.index("def _countdown_encerramento")]
+    assert "self.notificacoes.limpar()" in voltar
+
+
+def test_cor_do_piso_no_agente():
+    ns = _funcoes_do_agente("escurecer", "cor_valida", re=__import__("re"))
+    assert ns["escurecer"]("#ec4899") == "#c13b7d"
+    assert ns["cor_valida"]("#ec4899") and not ns["cor_valida"]("rosa")
+    src = _fonte()
+    assert 'elif evento == "piso_estacao":' in src
+    inicio = src[src.index("    def _iniciar_sessao(self, dados):"):]
+    assert "_aplicar_cor_piso" in inicio[:300]

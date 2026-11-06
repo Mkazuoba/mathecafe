@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.8.1"
+VERSAO = "1.9.0"
 
 import asyncio
 import json
@@ -32,6 +32,7 @@ import subprocess
 import ctypes
 import atexit
 import hashlib
+import re
 import hmac
 from datetime import datetime
 from io import BytesIO
@@ -300,6 +301,19 @@ CORES_DOS_WIDGETS = ("background", "foreground", "activebackground", "activefore
                      "selectbackground", "disabledforeground", "troughcolor")
 
 
+def escurecer(cor, fator=0.82):
+    """#rrggbb um pouco mais escura (o "destaque_forte" de uma cor de piso)."""
+    try:
+        r, g, b = (int(cor[i:i + 2], 16) for i in (1, 3, 5))
+    except (ValueError, TypeError):
+        return cor
+    return "#%02x%02x%02x" % tuple(max(0, int(v * fator)) for v in (r, g, b))
+
+
+def cor_valida(cor):
+    return isinstance(cor, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", cor) is not None
+
+
 def trocar_cores(widget, mapa):
     """Troca as cores (de `mapa`) neste widget e em todos os de dentro."""
     for opcao in CORES_DOS_WIDGETS:
@@ -387,9 +401,19 @@ class BloqueioTeclado:
 
 
 class BarraSessao:
-    """Barra do MatheCafé na sessão, no lugar da do Windows: Início (volta ao
-    launcher), um botão por app liberado aberto, tema, tempo e Encerrar."""
-    ALTURA = 48
+    """Dock do MatheCafé na sessão, no lugar da barra do Windows (9.4).
+
+    Uma janela só, no rodapé e da largura da tela, com fundo transparente
+    (-transparentcolor: fora do desenho o clique passa para os apps). No meio,
+    o dock: Início, um ícone por app liberado (bolinha nos abertos) e o sininho
+    das notificações; os ícones crescem com o mouse por perto, como no macOS.
+    À direita, um bloco separado com relógio, tempo restante, tema e Encerrar.
+    """
+    CHAVE = "#010203"  # cor que vira transparente
+    ALTURA = 112  # dock + espaço para o ícone crescer e o nome aparecer
+    BASE, MAXIMO, ALCANCE = 44, 62, 150  # px: ícone parado, sob o mouse, raio do efeito
+    ESPACO, BORDA_DOCK = 10, 12
+    CORES_APPS = ("#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6")
 
     def __init__(self, app):
         self.app = app
@@ -398,45 +422,53 @@ class BarraSessao:
         self.top.withdraw()
         self.top.overrideredirect(True)
         self.top.attributes("-topmost", True)
-        self.top.configure(bg=p["superficie"])
-        self._botoes = {}
+        self.top.configure(bg=self.CHAVE)
+        try:
+            self.top.attributes("-transparentcolor", self.CHAVE)
+        except tk.TclError:
+            pass  # fora do Windows o fundo fica liso
+        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Motion>", self._ao_mover)
+        self.canvas.bind("<Leave>", self._ao_sair)
+        self.canvas.bind("<Button-1>", self._ao_clicar)
 
-        self.btn_inicio = tk.Button(self.top, text="⌂  Início", font=app.f_app, bg=p["destaque"],
-                                    fg="white", activebackground=p["destaque_forte"], activeforeground="white",
-                                    relief="flat", padx=14, command=self.inicio)
-        self.btn_inicio.pack(side="left", padx=(8, 6), pady=6, fill="y")
-        self.frame_apps = tk.Frame(self.top, bg=p["superficie"])
-        self.frame_apps.pack(side="left", fill="y")
+        self._itens = []  # [{"chave", "nome", "letra", "cor", "acao", "aberto", "contagem"}]
+        self._tamanhos = []  # tamanho atual de cada ícone (anima até o alvo)
+        self._mouse_x = None
+        self._janelas = {}  # processo -> [hwnd]
+        self._animando = False
 
-        tk.Button(self.top, text="Encerrar sessão", font=app.f_small, bg="#ef4444", fg="white",
-                  activebackground="#dc2626", activeforeground="white", relief="flat", padx=10,
-                  command=app._encerrar_sessao_cliente).pack(side="right", padx=8, pady=8, fill="y")
-        self.lbl_tempo = tk.Label(self.top, text="00:00:00", font=("Consolas", 15, "bold"),
+        # bloco da direita (widgets de verdade, sobre um retângulo arredondado do canvas)
+        self.bloco = tk.Frame(self.canvas, bg=p["superficie"])
+        self.lbl_relogio = tk.Label(self.bloco, text="--:--", font=("Segoe UI", 15, "bold"),
+                                    fg=p["texto"], bg=p["superficie"])
+        self.lbl_relogio.pack(side="left", padx=(12, 8))
+        self.lbl_tempo = tk.Label(self.bloco, text="00:00:00", font=("Consolas", 14, "bold"),
                                   fg="#22c55e", bg=p["superficie"])
-        self.lbl_tempo.pack(side="right", padx=10)
-        self.btn_tema = tk.Button(self.top, text=ROTULO_TEMA[app.tema], font=app.f_small, bg=p["superficie2"],
-                                  fg=p["texto2"], activebackground=p["superficie3"], relief="flat", padx=10,
+        self.lbl_tempo.pack(side="left", padx=8)
+        self.btn_tema = tk.Button(self.bloco, text=ROTULO_TEMA[app.tema], font=app.f_small, bg=p["superficie2"],
+                                  fg=p["texto2"], activebackground=p["superficie3"], relief="flat", padx=8,
                                   command=app.alternar_tema)
-        self.btn_tema.pack(side="right", padx=4, pady=8, fill="y")
+        self.btn_tema.pack(side="left", padx=4, pady=8)
+        tk.Button(self.bloco, text="Encerrar sessão", font=app.f_small, bg="#ef4444", fg="white",
+                  activebackground="#dc2626", activeforeground="white", relief="flat", padx=10,
+                  command=app._encerrar_sessao_cliente).pack(side="left", padx=(4, 10), pady=8)
 
+    # ── janela ──
     def mostrar(self):
         largura, altura = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
-        area = area_da_barra_do_windows()
-        if area and area[1] > altura // 2 and area[2] >= largura // 2 and area[3] >= 30:
-            x, y, w, h = area  # exatamente onde estava a do Windows
-        else:
-            x, y, w, h = 0, altura - self.ALTURA, largura, self.ALTURA
-        self.top.geometry(f"{w}x{h}+{x}+{y}")
+        self.top.geometry(f"{largura}x{self.ALTURA}+0+{altura - self.ALTURA}")
         self.top.deiconify()
         self.top.attributes("-topmost", True)
         self.top.lift()
         barra_do_windows(False)
+        self._montar_itens()
+        self.desenhar()
 
     def esconder(self):
         self.top.withdraw()
-        for b in self._botoes.values():
-            b.destroy()
-        self._botoes = {}
+        self._janelas = {}
         barra_do_windows(True)
 
     def manter(self):
@@ -449,6 +481,7 @@ class BarraSessao:
             self.top.deiconify()
         if barra_do_windows_visivel():
             barra_do_windows(False)
+        self.lbl_relogio.config(text=time.strftime("%H:%M"))
         self.top.lift()
 
     def inicio(self):
@@ -457,23 +490,339 @@ class BarraSessao:
         self.app.root.focus_force()
         self.top.lift()
 
+    # ── itens do dock ──
+    def _montar_itens(self):
+        itens = [{"chave": "inicio", "nome": "Início", "letra": "⌂", "cor": None,
+                  "acao": self.inicio}]
+        for i, a in enumerate(self.app.whitelist_apps):
+            nome = a.get("nome") or a.get("processo") or "?"
+            itens.append({"chave": (a.get("processo") or nome).strip().lower(), "nome": nome,
+                          "letra": nome.strip()[:1].upper(), "cor": self.CORES_APPS[i % len(self.CORES_APPS)],
+                          "acao": lambda app_=a: self._abrir(app_)})
+        itens.append({"chave": "sininho", "nome": "Notificações", "letra": "🔔", "cor": "#334155",
+                      "acao": self._sininho})
+        self._itens = itens
+        self._tamanhos = [self.BASE] * len(itens)
+
     def atualizar_apps(self, janelas):
-        """janelas: [(hwnd, titulo)] dos apps liberados abertos agora."""
-        abertas = dict(janelas)
-        for hwnd in [h for h in self._botoes if h not in abertas]:
-            self._botoes.pop(hwnd).destroy()
-        p, foco = self.app.paleta, janela_em_foco()
-        for hwnd, titulo in janelas:
-            texto = titulo if len(titulo) <= 26 else titulo[:25] + "…"
-            botao = self._botoes.get(hwnd)
-            if botao is None:
-                botao = tk.Button(self.frame_apps, font=self.app.f_small, relief="flat", padx=10,
-                                  command=lambda h=hwnd: trazer_para_frente(h))
-                botao.pack(side="left", padx=3, pady=8, fill="y")
-                self._botoes[hwnd] = botao
-            no_foco = hwnd == foco
-            botao.config(text=texto, bg=p["destaque"] if no_foco else p["superficie2"],
-                         fg="white" if no_foco else p["texto"], activebackground=p["superficie3"])
+        """janelas: [(hwnd, titulo, processo)] dos apps liberados abertos agora."""
+        abertas = {}
+        for hwnd, _titulo, processo in janelas:
+            abertas.setdefault(processo, []).append(hwnd)
+        if abertas != self._janelas:
+            self._janelas = abertas
+            self.desenhar()
+
+    def _abrir(self, app):
+        """App aberto: traz a janela dele para a frente; fechado: abre."""
+        processo = (app.get("processo") or "").strip().lower()
+        janelas = self._janelas.get(processo)
+        if janelas:
+            trazer_para_frente(janelas[0])
+        else:
+            self.app._abrir_app(app)
+
+    def _sininho(self):
+        alternar = getattr(self.app, "alternar_notificacoes", None)
+        if alternar:
+            alternar()
+
+    def contagem_notificacoes(self):
+        contar = getattr(self.app, "notificacoes_nao_lidas", None)
+        return contar() if contar else 0
+
+    # ── desenho e animação ──
+    def _alvos(self):
+        """Tamanho que cada ícone deve ter, pela distância do mouse (efeito do dock)."""
+        if self._mouse_x is None:
+            return [self.BASE] * len(self._itens)
+        alvos = []
+        for x in self._centros(self._tamanhos):
+            perto = max(0.0, 1 - abs(self._mouse_x - x) / self.ALCANCE)
+            alvos.append(self.BASE + (self.MAXIMO - self.BASE) * perto)
+        return alvos
+
+    def _centros(self, tamanhos):
+        largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
+        total = sum(tamanhos) + self.ESPACO * (len(tamanhos) - 1)
+        x = (largura - total) / 2
+        centros = []
+        for t in tamanhos:
+            centros.append(x + t / 2)
+            x += t + self.ESPACO
+        return centros
+
+    def _animar(self):
+        alvos = self._alvos()
+        mudou = False
+        for i, alvo in enumerate(alvos):
+            atual = self._tamanhos[i]
+            if abs(alvo - atual) > 0.5:
+                self._tamanhos[i] = atual + (alvo - atual) * 0.35
+                mudou = True
+            else:
+                self._tamanhos[i] = alvo
+        self.desenhar()
+        if mudou:
+            self.top.after(16, self._animar)
+        else:
+            self._animando = False
+
+    def _iniciar_animacao(self):
+        if not self._animando:
+            self._animando = True
+            self.top.after(16, self._animar)
+
+    def _ao_mover(self, ev):
+        self._mouse_x = ev.x if ev.y > self.ALTURA - (self.MAXIMO + 2 * self.BORDA_DOCK + 8) else None
+        self._iniciar_animacao()
+
+    def _ao_sair(self, _ev):
+        self._mouse_x = None
+        self._iniciar_animacao()
+
+    def _item_em(self, x, y):
+        base = self.ALTURA - self.BORDA_DOCK - 6
+        for item, centro, t in zip(self._itens, self._centros(self._tamanhos), self._tamanhos):
+            if centro - t / 2 <= x <= centro + t / 2 and base - t <= y <= base:
+                return item
+        return None
+
+    def _ao_clicar(self, ev):
+        item = self._item_em(ev.x, ev.y)
+        if item:
+            item["acao"]()
+
+    @staticmethod
+    def _retangulo(c, x1, y1, x2, y2, r, **opcoes):
+        """Retângulo de cantos arredondados no canvas."""
+        r = min(r, (x2 - x1) / 2, (y2 - y1) / 2)
+        pontos = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
+                  x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+        return c.create_polygon(pontos, smooth=True, **opcoes)
+
+    def desenhar(self):
+        c, p = self.canvas, self.app.paleta
+        c.delete("all")
+        if not self._itens:
+            return
+        largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
+        base = self.ALTURA - self.BORDA_DOCK - 6  # linha de baixo dos ícones
+        centros = self._centros(self._tamanhos)
+        # fundo do dock (não cresce: os ícones saem por cima, como no macOS)
+        esquerda = centros[0] - self._tamanhos[0] / 2 - self.BORDA_DOCK
+        direita = centros[-1] + self._tamanhos[-1] / 2 + self.BORDA_DOCK
+        self._retangulo(c, esquerda, base - self.BASE - self.BORDA_DOCK, direita, self.ALTURA - 4, 20,
+                        fill=p["superficie"], outline=p["superficie3"])
+        perto = None
+        for item, x, t in zip(self._itens, centros, self._tamanhos):
+            self._retangulo(c, x - t / 2, base - t, x + t / 2, base, 12, fill=item["cor"] or p["destaque"],
+                            outline="")
+            c.create_text(x, base - t / 2, text=item["letra"], fill="white",
+                          font=("Segoe UI", int(t * 0.38), "bold"))
+            if self._janelas.get(item["chave"]):
+                c.create_oval(x - 2.5, base + 3, x + 2.5, base + 8, fill=p["texto"], outline="")
+            if item["chave"] == "sininho":
+                n = self.contagem_notificacoes()
+                if n:
+                    bx, by = x + t / 2 - 4, base - t + 4
+                    c.create_oval(bx - 9, by - 9, bx + 9, by + 9, fill="#ef4444", outline=p["superficie"], width=2)
+                    c.create_text(bx, by, text=str(min(n, 9)) + ("+" if n > 9 else ""), fill="white",
+                                  font=("Segoe UI", 8, "bold"))
+            if self._mouse_x is not None and abs(self._mouse_x - x) <= t / 2:
+                perto = (item, x, t)
+        if perto:  # nome do app em cima do ícone
+            item, x, t = perto
+            texto = c.create_text(x, base - t - 16, text=item["nome"], fill="white", font=("Segoe UI", 9, "bold"))
+            x1, y1, x2, y2 = c.bbox(texto)
+            fundo = self._retangulo(c, x1 - 8, y1 - 4, x2 + 8, y2 + 4, 8, fill="#111827", outline="")
+            c.tag_raise(texto, fundo)
+        # bloco separado à direita: relógio, tempo, tema e Encerrar
+        self.bloco.update_idletasks()
+        bw, bh = self.bloco.winfo_reqwidth(), self.bloco.winfo_reqheight()
+        bx2, by2 = largura - 12, self.ALTURA - 8
+        self._retangulo(c, bx2 - bw - 12, by2 - bh - 8, bx2, by2, 16, fill=p["superficie"], outline=p["superficie3"])
+        c.create_window(bx2 - 6, by2 - 4, window=self.bloco, anchor="se")
+
+
+class Notificacoes:
+    """Notificações da sessão no canto inferior direito, acima do bloco do
+    relógio (9.4): mensagem do operador, aviso de fechamento, tempo acabando,
+    conexão. Uma nova aparece sozinha por alguns segundos e fica no sininho do
+    dock; o sininho abre a lista inteira (× dispensa uma, Limpar tudo)."""
+    CHAVE = "#010203"
+    LARGURA, ALTURA_CARTAO, ESPACO = 360, 84, 8
+    SEGUNDOS_AVISO = 7
+    MAXIMO = 20
+    CORES = {"operador": "#3b82f6", "horario": "#f59e0b", "tempo": "#ef4444", "conexao": "#14b8a6"}
+    SIMBOLOS = {"operador": "✉", "horario": "🕒", "tempo": "⏳", "conexao": "⚡"}
+
+    def __init__(self, app):
+        self.app = app
+        self.itens = []  # [{"id", "origem", "titulo", "mensagem", "tipo", "quando", "lida"}]
+        self._proximo = 1
+        self.aberta = False  # lista inteira (pelo sininho)
+        self._aviso = None  # id da notificação mostrada sozinha agora
+        self._timer = None
+        self.top = tk.Toplevel(app.root)
+        self.top.withdraw()
+        self.top.overrideredirect(True)
+        self.top.attributes("-topmost", True)
+        self.top.configure(bg=self.CHAVE)
+        try:
+            self.top.attributes("-transparentcolor", self.CHAVE)
+        except tk.TclError:
+            pass
+        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0, width=self.LARGURA)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Button-1>", self._ao_clicar)
+        self.canvas.bind("<Enter>", lambda _e: self._segurar(True))
+        self.canvas.bind("<Leave>", lambda _e: self._segurar(False))
+        self._alvos = []  # [(x1, y1, x2, y2, acao)] áreas clicáveis
+
+    # ── API para o agente ──
+    def notificar(self, origem, titulo, mensagem, tipo="operador"):
+        item = {"id": self._proximo, "origem": origem, "titulo": titulo, "mensagem": mensagem,
+                "tipo": tipo, "quando": time.time(), "lida": False}
+        self._proximo += 1
+        self.itens = ([item] + self.itens)[: self.MAXIMO]
+        if not self.aberta:
+            self._aviso = item["id"]
+            self._agendar_fim_do_aviso()
+        self._mostrar()
+        self.app.barra.desenhar()  # número do sininho
+
+    def nao_lidas(self):
+        return sum(1 for i in self.itens if not i["lida"])
+
+    def alternar(self):
+        self.aberta = not self.aberta
+        if self.aberta:
+            for i in self.itens:
+                i["lida"] = True
+            self._aviso = None
+        self._mostrar()
+        self.app.barra.desenhar()
+
+    def limpar(self):
+        """Fim da sessão: nada passa para o próximo cliente."""
+        self.itens, self.aberta, self._aviso = [], False, None
+        self.top.withdraw()
+
+    # ── comportamento ──
+    def _agendar_fim_do_aviso(self):
+        if self._timer:
+            self.top.after_cancel(self._timer)
+        self._timer = self.top.after(self.SEGUNDOS_AVISO * 1000, self._fim_do_aviso)
+
+    def _fim_do_aviso(self):
+        self._timer = None
+        if not self.aberta:
+            self._aviso = None
+            self._mostrar()
+
+    def _segurar(self, mouse_em_cima):
+        """Com o mouse em cima, o aviso não some; saiu, conta de novo."""
+        if self.aberta or self._aviso is None:
+            return
+        if mouse_em_cima and self._timer:
+            self.top.after_cancel(self._timer)
+            self._timer = None
+        elif not mouse_em_cima:
+            self._agendar_fim_do_aviso()
+
+    def _dispensar(self, ident):
+        self.itens = [i for i in self.itens if i["id"] != ident]
+        if self._aviso == ident:
+            self._aviso = None
+        self._mostrar()
+        self.app.barra.desenhar()
+
+    def _ao_clicar(self, ev):
+        for x1, y1, x2, y2, acao in self._alvos:
+            if x1 <= ev.x <= x2 and y1 <= ev.y <= y2:
+                acao()
+                return
+        if not self.aberta:  # clicar no aviso abre a lista
+            self.alternar()
+
+    # ── desenho ──
+    @staticmethod
+    def _quando(t):
+        s = int(time.time() - t)
+        return "agora" if s < 60 else f"{s // 60} min"
+
+    def _mostrar(self):
+        if self.aberta:
+            visiveis = self.itens[:6]
+        else:
+            visiveis = [i for i in self.itens if i["id"] == self._aviso]
+        if not visiveis and not self.aberta:
+            self.top.withdraw()
+            return
+        cabecalho = 34 if self.aberta else 0
+        n = max(1, len(visiveis))
+        # aviso sozinho: as outras não lidas aparecem como "folhas" atrás
+        atras = 0 if self.aberta else min(2, max(0, self.nao_lidas() - 1))
+        altura = cabecalho + n * (self.ALTURA_CARTAO + self.ESPACO) + atras * 8
+        tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
+        y = tela_a - BarraSessao.ALTURA - altura - 4
+        self.top.geometry(f"{self.LARGURA}x{altura}+{tela_l - self.LARGURA - 16}+{y}")
+        self.canvas.config(height=altura)
+        self._desenhar(visiveis, cabecalho, atras)
+        self.top.deiconify()
+        self.top.lift()
+
+    def _desenhar(self, visiveis, cabecalho, atras):
+        c, p = self.canvas, self.app.paleta
+        c.delete("all")
+        self._alvos = []
+        ret = BarraSessao._retangulo
+        if cabecalho:
+            ret(c, 0, 0, self.LARGURA, cabecalho - 6, 12, fill=p["superficie"], outline=p["superficie3"])
+            c.create_text(12, 14, text="Notificações", anchor="w", fill=p["texto"], font=("Segoe UI", 10, "bold"))
+            if self.itens:
+                lim = c.create_text(self.LARGURA - 12, 14, text="Limpar tudo", anchor="e", fill=p["texto2"],
+                                    font=("Segoe UI", 9, "underline"))
+                x1, y1, x2, y2 = c.bbox(lim)
+                self._alvos.append((x1, y1, x2, y2, self._limpar_tudo))
+        if not visiveis:
+            ret(c, 0, cabecalho, self.LARGURA, cabecalho + self.ALTURA_CARTAO, 16, fill=p["superficie"],
+                outline=p["superficie3"])
+            c.create_text(self.LARGURA / 2, cabecalho + self.ALTURA_CARTAO / 2, text="Nenhuma notificação",
+                          fill=p["texto2"], font=("Segoe UI", 10))
+            return
+        # folhas atrás do aviso (as outras não lidas)
+        for k in range(atras, 0, -1):
+            ret(c, 10 * k, cabecalho + 8 * k, self.LARGURA - 10 * k, cabecalho + 8 * k + self.ALTURA_CARTAO, 16,
+                fill=p["superficie2"], outline=p["superficie3"])
+        for n, item in enumerate(visiveis):
+            y1 = cabecalho + n * (self.ALTURA_CARTAO + self.ESPACO)
+            y2 = y1 + self.ALTURA_CARTAO
+            ret(c, 0, y1, self.LARGURA, y2, 16, fill=p["superficie"], outline=p["superficie3"])
+            cor = self.CORES.get(item["tipo"], p["destaque"])
+            ret(c, 14, y1 + 20, 54, y1 + 60, 10, fill=cor, outline="")
+            c.create_text(34, y1 + 40, text=self.SIMBOLOS.get(item["tipo"], "•"), fill="white",
+                          font=("Segoe UI", 15))
+            c.create_text(66, y1 + 16, text=item["origem"].upper(), anchor="w", fill=p["texto2"],
+                          font=("Segoe UI", 8, "bold"))
+            c.create_text(self.LARGURA - 40, y1 + 16, text=self._quando(item["quando"]), anchor="e",
+                          fill=p["texto2"], font=("Segoe UI", 8))
+            if not item["lida"]:
+                c.create_oval(self.LARGURA - 34, y1 + 12, self.LARGURA - 26, y1 + 20, fill="#3b82f6", outline="")
+            c.create_text(66, y1 + 34, text=item["titulo"], anchor="w", fill=p["texto"],
+                          font=("Segoe UI", 10, "bold"), width=self.LARGURA - 110)
+            msg = item["mensagem"] if len(item["mensagem"]) <= 90 else item["mensagem"][:89] + "…"
+            c.create_text(66, y1 + 50, text=msg, anchor="nw", fill=p["texto2"], font=("Segoe UI", 9),
+                          width=self.LARGURA - 86)
+            fechar = c.create_text(self.LARGURA - 12, y1 + 15, text="✕", fill=p["texto2"], font=("Segoe UI", 9))
+            x1, yy1, x2, yy2 = c.bbox(fechar)
+            self._alvos.append((x1 - 6, yy1 - 6, x2 + 6, yy2 + 6, lambda i=item["id"]: self._dispensar(i)))
+
+    def _limpar_tudo(self):
+        self.itens, self._aviso = [], None
+        self._mostrar()
+        self.app.barra.desenhar()
 
 
 class Programacao:
@@ -608,6 +957,7 @@ class AgenteApp:
         self.tema = carregar_cfg().get("TEMA", "escuro")
         if self.tema not in PALETAS:
             self.tema = "escuro"
+        self.cor_piso = None  # cor do piso da estacao (servidor manda ao conectar)
         self.paleta = PALETAS[self.tema]
         self._definir_cores()
 
@@ -622,6 +972,7 @@ class AgenteApp:
 
         self._build_ui()
         self.barra = BarraSessao(self)
+        self.notificacoes = Notificacoes(self)
         self._start_ws_thread()
 
         # Atalhos
@@ -665,15 +1016,35 @@ class AgenteApp:
         self.c_bg, self.c_bg2, self.c_bg3, self.c_bg4 = p["fundo"], p["superficie"], p["superficie2"], p["superficie3"]
         self.c_text, self.c_text2, self.c_accent = p["texto"], p["texto2"], p["destaque"]
 
+    def _paleta_de(self, tema):
+        """A paleta do tema com o destaque na cor do piso da estacao (Infantil, Adulto...)."""
+        paleta = dict(PALETAS[tema])
+        if self.cor_piso:
+            paleta["destaque"], paleta["destaque_forte"] = self.cor_piso, escurecer(self.cor_piso)
+        return paleta
+
+    def _aplicar_cor_piso(self, piso):
+        """O servidor manda o piso da estacao; a cor dele vira o destaque da tela."""
+        cor = (piso or {}).get("cor")
+        if not cor_valida(cor) or cor.lower() == (self.cor_piso or "").lower():
+            return
+        self.cor_piso = cor.lower()
+        antiga, nova = self.paleta, self._paleta_de(self.tema)
+        trocar_cores(self.root, {antiga[k].lower(): nova[k] for k in ("destaque", "destaque_forte")})
+        self.paleta = nova
+        self._log(f"Piso da estacao: {(piso or {}).get('nome')} ({cor})")
+        self.barra.desenhar()
+
     def alternar_tema(self):
         """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
         novo = "claro" if self.tema == "escuro" else "escuro"
-        antiga, nova = PALETAS[self.tema], PALETAS[novo]
+        antiga, nova = self.paleta, self._paleta_de(novo)
         trocar_cores(self.root, {antiga[k].lower(): nova[k] for k in antiga})
         self.tema, self.paleta = novo, nova
         self._definir_cores()
         for botao in (self.btn_tema, self.barra.btn_tema):
             botao.config(text=ROTULO_TEMA[novo])
+        self.barra.desenhar()
         salvar_tema(novo)
 
     def _ao_redimensionar(self, event):
@@ -929,6 +1300,9 @@ class AgenteApp:
             self.lbl_status.config(text="online", fg="#22c55e")
             self.btn_login.config(state="normal")
             self._log("Conectado ao servidor")
+            if self.sessao_ativa and getattr(self, "_avisou_queda", False):
+                self.notificacoes.notificar("Sistema", "Conexão restabelecida", "Tudo certo de novo.", "conexao")
+            self._avisou_queda = False
             if self.modo_manutencao_ativo:
                 # Caiu e voltou durante a manutencao: o servidor marca livre
                 # a cada conexao nova, entao lembra que ainda esta nela
@@ -942,6 +1316,10 @@ class AgenteApp:
                 # O servidor (ou a rede) caiu: o cliente segue usando ate o tempo
                 # acabar; ao reconectar, o servidor retoma a mesma sessao
                 self._log("Conexao perdida durante a sessao - o cliente continua; reconectando")
+                if not getattr(self, "_avisou_queda", False):
+                    self._avisou_queda = True
+                    self.notificacoes.notificar("Sistema", "Sem conexão com o servidor",
+                                                "Você continua usando normalmente; o tempo segue contando.", "conexao")
 
         elif evento == "_info":
             self._log(dados.get("msg", ""))
@@ -1017,7 +1395,14 @@ class AgenteApp:
         elif evento == "mensagem_tela":
             texto = dados.get("texto", "")
             self._log(f"<- mensagem_tela: {texto}")
-            self.root.after(0, lambda t=texto: self._exibir_mensagem_operador(t))
+            if self.sessao_ativa:
+                # na sessão vira notificação (canto de baixo, sininho do dock)
+                if dados.get("origem") == "horario":
+                    self.notificacoes.notificar("Biblioteca", "A biblioteca vai fechar", texto, "horario")
+                else:
+                    self.notificacoes.notificar("Atendimento", "Mensagem do operador", texto, "operador")
+            else:
+                self.root.after(0, lambda t=texto: self._exibir_mensagem_operador(t))
 
         elif evento == "ativar_manutencao":
             self._log("<- ativar_manutencao do operador")
@@ -1028,6 +1413,9 @@ class AgenteApp:
             self._log("<- desativar_manutencao do operador")
             if self.modo_manutencao_ativo:
                 self.root.after(0, self._sair_modo_manutencao)
+
+        elif evento == "piso_estacao":
+            self._aplicar_cor_piso(dados)
 
         elif evento == "iniciar_sessao_direta":
             self._log(f"<- iniciar_sessao_direta: {dados}")
@@ -1091,14 +1479,16 @@ class AgenteApp:
         except Exception as ex:
             self._log(f"Erro na captura de tela: {ex}")
 
+    def alternar_notificacoes(self):
+        self.notificacoes.alternar()
+
+    def notificacoes_nao_lidas(self):
+        return self.notificacoes.nao_lidas()
+
     def _avisar_saldo_baixo(self, restante_segundos: int):
-        mins = restante_segundos // 60
-        try:
-            import tkinter.messagebox as mb
-            mb.showwarning("Saldo acabando",
-                           f"Atencao: restam {mins} minutos de saldo.\nProcure o operador para renovar.")
-        except Exception:
-            pass
+        mins = max(1, restante_segundos // 60)
+        self.notificacoes.notificar("Sessão", "Seu tempo está acabando",
+                                    f"Restam {mins} minutos. Salve o que estiver fazendo.", "tempo")
 
     def _pausar_sessao(self):
         self._sessao_pausada = True
@@ -1173,6 +1563,8 @@ class AgenteApp:
         self._enviar({"evento": "login_cliente", "login": login, "senha": senha})
 
     def _iniciar_sessao(self, dados):
+        if dados.get("piso"):
+            self._aplicar_cor_piso(dados["piso"])
         # Captura os PIDs que ja existem ANTES da sessao comecar
         self._pids_pre_sessao = {p.pid for p in psutil.process_iter(["pid"])}
 
@@ -1405,6 +1797,7 @@ class AgenteApp:
         """Encerra apps, exibe tela de encerramento por 6s e volta ao login."""
         self._encerrar_apps_do_cliente()
         self.barra.esconder()
+        self.notificacoes.limpar()
         self._programacao.parar()
 
         # Reseta estado imediatamente para parar o countdown e o monitor de processos
@@ -1716,7 +2109,7 @@ class AgenteApp:
         self.root.after(1000, self._verificar_processos)
 
     def _janelas_dos_apps(self, pid_atual):
-        """[(hwnd, titulo)] das janelas dos apps liberados, para a barra."""
+        """[(hwnd, titulo, processo)] das janelas dos apps liberados, para o dock."""
         janelas = []
         for pid, lista in janelas_visiveis().items():
             if pid == pid_atual:
@@ -1730,7 +2123,7 @@ class AgenteApp:
             for hwnd, _classe in lista:
                 titulo = titulo_da_janela(hwnd)
                 if titulo:
-                    janelas.append((hwnd, titulo))
+                    janelas.append((hwnd, titulo, nome))
         return janelas
 
     def _fechar_janelas_fora_da_whitelist(self, pid_atual, permitidos):

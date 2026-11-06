@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-06 — Visual do agente: dock, notificações e cor do piso (Ciclo 9, tarefa 9.4; agente 1.9.0)
+
+- **Dock** no lugar da barra de tarefas própria: centralizado embaixo, com fundo arredondado, Início, um ícone por app liberado (cada um com sua cor e a inicial) e o sininho. Os ícones crescem com o mouse por perto (os vizinhos menos), o nome aparece em cima e os apps abertos têm uma bolinha; clicar traz o app aberto para a frente ou o abre. Fora do desenho a janela é transparente e o clique passa.
+- **Bloco separado no canto** com relógio (hora atual), tempo restante, tema e Encerrar sessão.
+- **Notificações** no canto inferior direito: a mensagem do operador (antes uma janela no meio da tela), os avisos de fechamento da biblioteca, o tempo acabando (antes uma caixa do Windows) e a conexão perdida/de volta. A nova aparece sozinha por alguns segundos (com o mouse em cima não some) e fica no **sininho do dock**, com o número das não lidas; o sininho abre a lista (× dispensa, Limpar tudo). Ao fim da sessão a lista é apagada.
+- **Cor do piso**: o servidor manda o piso da estação ao agente (`piso_estacao`) e a cor dele (Infantil rosa, Adulto roxo, ou a cadastrada em Pisos) vira o destaque da tela, também no tema claro.
+
 ## 2026-11-06 — Mapa: zonas em qualquer lugar, colunas e zoom
 
 - **Zonas vão para qualquer lugar**: no modo configuração o quadro tem folga à direita e embaixo, a tela rola sozinha quando o arrasto chega na beirada e a zona se move pegando em qualquer ponto vazio dela (não só no cabeçalho). Antes ela ficava presa à área visível.

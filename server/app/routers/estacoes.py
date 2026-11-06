@@ -10,7 +10,7 @@ from app.registro import registrar
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
-from app.pisos import piso_da_estacao, piso_do_cliente, recusa_de_piso, resumo
+from app.pisos import cor_para_o_agente, piso_da_estacao, piso_do_cliente, recusa_de_piso, resumo
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
 
@@ -479,6 +479,7 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
 
     payload = {
         "ok": True,
+        "piso": cor_para_o_agente(e),
         "sessao_id": sessao.id,
         "cliente_nome": cliente.nome,
         "tempo_segundos": tempo,

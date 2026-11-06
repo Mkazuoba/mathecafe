@@ -45,6 +45,12 @@ def resumo(piso: Optional[Piso]) -> dict:
             "piso_cor": piso.cor if piso else None}
 
 
+def cor_para_o_agente(estacao) -> dict:
+    """Piso da estacao como o agente usa (cor de destaque da tela, 9.4)."""
+    piso = piso_da_estacao(estacao)
+    return {"nome": piso.nome, "cor": piso.cor} if piso else {}
+
+
 def _colunas(db: Session, tabela: str) -> set:
     if db.get_bind().dialect.name != "sqlite":
         return set()
