@@ -15,3 +15,6 @@ dist/
 !*.env.example
 .secret_key
 Arquivos VSCyber/
+
+# Capturas de tela do painel de teste (podem ter dados de clientes)
+capturas/

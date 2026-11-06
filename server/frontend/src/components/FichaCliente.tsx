@@ -4,13 +4,13 @@ import { IconInfoCircle, IconHistory, IconLock, IconPencil, IconTrash } from "@t
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
-import { reduzirImagem } from "@/lib/imagens"
 import { EtiquetaPiso, textoIdade } from "@/lib/piso"
 import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { ModalSaldo } from "@/components/ModalSaldo"
-import { LADO_FOTO, PainelFoto, QuadroFoto } from "@/components/QuadroFoto"
+import { PainelFoto, QuadroFoto } from "@/components/QuadroFoto"
+import { useFotoDoCliente } from "@/lib/fotos"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
@@ -104,48 +104,18 @@ export function FichaCliente({ clienteId, aoFechar, abaInicial = "geral" }: {
 
 // ── Foto ─────────────────────────────────────────────────────────────────────
 
-/** A foto vem com o token (uma <img src> não manda o login), então vira um blob local. */
-function useFoto(cliente: Cliente) {
-  const [url, setUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!cliente.tem_foto) {
-      setUrl(null)
-      return
-    }
-    let objeto: string | null = null
-    let cancelado = false
-    fetch(`/api/clientes/${cliente.id}/foto?v=${encodeURIComponent(cliente.foto_em ?? "")}`, {
-      headers: { Authorization: `Bearer ${Api.token()}` },
-    })
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((b) => {
-        if (b && !cancelado) {
-          objeto = URL.createObjectURL(b)
-          setUrl(objeto)
-        }
-      })
-      .catch(() => setUrl(null))
-    return () => {
-      cancelado = true
-      if (objeto) URL.revokeObjectURL(objeto)
-    }
-  }, [cliente.id, cliente.tem_foto, cliente.foto_em])
-  return url
-}
-
 function FotoCliente({ cliente, tamanho }: { cliente: Cliente; tamanho: "pequena" | "grande" }) {
-  return <QuadroFoto url={useFoto(cliente)} alt={`Foto de ${cliente.nome}`} tamanho={tamanho} />
+  return <QuadroFoto url={useFotoDoCliente(cliente)} alt={`Foto de ${cliente.nome}`} tamanho={tamanho} />
 }
 
 function EditorFoto({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Cliente) => void }) {
   const avisar = useAvisos()
-  const url = useFoto(cliente)
+  const url = useFotoDoCliente(cliente)
   const [enviando, setEnviando] = useState(false)
 
-  async function escolher(arquivo: File) {
+  async function escolher(imagem: string) {
     setEnviando(true)
     try {
-      const imagem = await reduzirImagem(arquivo, LADO_FOTO)
       aoSalvar(await Api.put<Cliente>(`/api/clientes/${cliente.id}/foto`, { imagem }))
       avisar("Foto salva")
     } catch (e) {

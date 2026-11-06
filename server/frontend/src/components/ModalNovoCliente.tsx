@@ -2,21 +2,23 @@ import { useState } from "react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
-import { reduzirImagem } from "@/lib/imagens"
 import { EtiquetaPiso, textoIdade } from "@/lib/piso"
-import { lerTempo } from "@/lib/tempo"
 import type { Cliente } from "@/lib/tipos"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, MensagemErro, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
-import { LADO_FOTO, PainelFoto } from "@/components/QuadroFoto"
+import { PainelFoto } from "@/components/QuadroFoto"
 
 /**
  * Cadastro de cliente (aba Clientes e Painel), no mesmo formato da ficha: a foto
  * à esquerda (vai junto ao criar) e os dados à direita. Ao criar, quem chamou
  * abre a ficha.
  */
-export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
+export function ModalNovoCliente({
+  aberto,
+  aoFechar,
+  aoCriar,
+}: {
   aberto: boolean
   aoFechar: () => void
   aoCriar: (c: Cliente) => void
@@ -29,11 +31,9 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
   const [documento, setDocumento] = useState("")
   const [email, setEmail] = useState("")
   const [nascimento, setNascimento] = useState("")
-  const [saldo, setSaldo] = useState("")
   const [obs, setObs] = useState("")
-  /** data URL já reduzida, enviada depois de criar o cliente */
+  /** foto já ajustada (data URL), enviada depois de criar o cliente */
   const [foto, setFoto] = useState<string | null>(null)
-  const [preparandoFoto, setPreparandoFoto] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState("")
   const [estavaAberto, setEstavaAberto] = useState(false)
@@ -48,21 +48,9 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
       setDocumento("")
       setEmail("")
       setNascimento("")
-      setSaldo("")
       setObs("")
       setFoto(null)
       setErro("")
-    }
-  }
-
-  async function escolherFoto(arquivo: File) {
-    setPreparandoFoto(true)
-    try {
-      setFoto(await reduzirImagem(arquivo, LADO_FOTO))
-    } catch (e) {
-      avisar((e as Error).message, "erro")
-    } finally {
-      setPreparandoFoto(false)
     }
   }
 
@@ -71,8 +59,6 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
     setErro("")
     if (!login.trim() || !nome.trim()) return setErro("Preencha login e nome")
     if (!senha) return setErro("Senha obrigatória para novo cliente")
-    const saldoSegundos = saldo.trim() ? lerTempo(saldo) : 0
-    if (saldoSegundos === null) return setErro("Tempo de hoje no formato HH:MM:SS")
     setSalvando(true)
     try {
       let criado = await Api.post<Cliente>("/api/clientes/", {
@@ -85,8 +71,6 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
         observacao: obs.trim() || null,
         piso_id: piso?.id, // nasce no piso escolhido no cabeçalho
       })
-      if (saldoSegundos > 0)
-        criado = await Api.put<Cliente>(`/api/clientes/${criado.id}`, { saldo_segundos: saldoSegundos })
       if (foto) {
         try {
           criado = await Api.put<Cliente>(`/api/clientes/${criado.id}/foto`, { imagem: foto })
@@ -112,13 +96,7 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
         <span className="text-texto-fraco">(troque no topo da tela, se for o caso)</span>
       </p>
       <div className="flex flex-col gap-6 sm:flex-row">
-        <PainelFoto
-          url={foto}
-          alt="Foto do cliente novo"
-          ocupado={preparandoFoto}
-          aoEscolher={escolherFoto}
-          aoRemover={() => setFoto(null)}
-        />
+        <PainelFoto url={foto} alt="Foto do cliente novo" aoEscolher={setFoto} aoRemover={() => setFoto(null)} />
         <form onSubmit={salvar} className="flex min-w-0 flex-1 flex-col gap-3.5">
           <Campo rotulo="Nome" id="cli-nome">
             <Input id="cli-nome" autoComplete="off" value={nome} onChange={(e) => setNome(e.target.value)} />
@@ -158,17 +136,9 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
             <Campo rotulo="Data de nascimento" id="cli-nasc">
               <Input id="cli-nasc" type="date" value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
             </Campo>
-            <Campo rotulo="Tempo de hoje (HH:MM:SS)" id="cli-saldo">
-              <Input
-                id="cli-saldo"
-                placeholder="Em branco: o dia cheio"
-                value={saldo}
-                onChange={(e) => setSaldo(e.target.value)}
-              />
-            </Campo>
-            {textoIdade(nascimento || null) && (
-              <div className="-mt-2 text-sm text-texto-suave sm:col-span-2">{textoIdade(nascimento || null)}</div>
-            )}
+            <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave">
+              {textoIdade(nascimento || null) ?? ""}
+            </div>
           </div>
           <Campo rotulo="Observações" id="cli-obs">
             <Textarea id="cli-obs" rows={2} value={obs} onChange={(e) => setObs(e.target.value)} />
@@ -178,7 +148,7 @@ export function ModalNovoCliente({ aberto, aoFechar, aoCriar }: {
             <Button type="button" variant="outline" className="flex-1" onClick={aoFechar}>
               Cancelar
             </Button>
-            <Button type="submit" className="flex-1" disabled={salvando || preparandoFoto}>
+            <Button type="submit" className="flex-1" disabled={salvando}>
               {salvando ? "Criando..." : "Criar e abrir a ficha"}
             </Button>
           </div>

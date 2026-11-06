@@ -58,7 +58,7 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 | `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`, só do piso escolhido) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
-| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente` (mesmo formato da ficha, com a foto), `QuadroFoto` (foto e botões, usados pelos dois), `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente` (mesmo formato da ficha, com a foto), `QuadroFoto` (foto, botões e o ajuste de enquadramento, usados pelos dois), `AvatarCliente` (miniatura nas listas; fotos em cache em `lib/fotos.ts`), `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
 | `src/pages/` | uma tela por arquivo |
 
 O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.

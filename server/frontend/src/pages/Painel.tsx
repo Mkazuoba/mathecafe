@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/campos"
 import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
 import { FichaCliente } from "@/components/FichaCliente"
 import { AcoesEmMassa } from "@/components/AcoesEmMassa"
+import { AvatarCliente } from "@/components/AvatarCliente"
 import { textoIdade } from "@/lib/piso"
 import { FiltrosBusca } from "@/components/FiltrosBusca"
 import { ModalNovoCliente } from "@/components/ModalNovoCliente"
@@ -1266,9 +1267,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
                   : "cursor-grab border-borda bg-superficie-2 hover:border-borda-forte",
               )}
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-superficie-3 text-xs font-semibold text-destaque uppercase">
-                {c.nome.slice(0, 2)}
-              </span>
+              <AvatarCliente cliente={c} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 truncate text-sm font-medium">
                   {c.nome}

@@ -10,6 +10,9 @@
 
 - **Cadastro novo no mesmo formato da ficha**: foto à esquerda (Enviar/Trocar/Remover, com prévia) e os dados à direita. A foto vai junto ao criar; antes só dava para pôr depois, na ficha.
 - **E-mail** no cadastro novo e na ficha (opcional; guardado em minúsculas, formato conferido, vazio apaga).
+- **Ajustar a foto**: ao escolher (ou em **Ajustar**, numa foto já salva) abre um quadro para arrastar a foto e aproximar; ela sai quadrada, 480x480.
+- **Miniatura da foto no avatar** dos clientes na coluna Clientes do Painel (sem foto, as iniciais). Cada foto é baixada uma vez e reaproveitada (`lib/fotos.ts`).
+- O cadastro novo não tem mais o campo "Tempo de hoje": o tempo do dia vem de Configurações → Comportamento (e o tempo extra continua na ficha).
 
 ## 2026-11-06 — Desligar pelo painel e ações em massa (Ciclo 7, tarefas 7.1 e 7.2; agente 1.8.1)
 
