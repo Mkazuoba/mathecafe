@@ -548,7 +548,7 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
 
     # Whitelist: os apps ligados no piso da estacao
     from app.models import ConfiguracaoSistema
-    from app.pisos import apps_do_piso
+    from app.pisos import apps_do_piso, whitelist_para_o_agente
     apps = apps_do_piso(db, piso_da_estacao(e))
 
     cfg_reiniciar = db.query(ConfiguracaoSistema).filter(
@@ -562,8 +562,7 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
         "cliente_nome": cliente.nome,
         "tempo_segundos": tempo,
         "reiniciar_ao_encerrar": reiniciar,
-        "whitelist": [{"nome": a.nome, "processo": a.processo, "caminho": a.caminho,
-                       "imagem_url": a.imagem_url} for a in apps],
+        "whitelist": whitelist_para_o_agente(apps),
     }
     await manager.enviar_estacao(nome, "iniciar_sessao_direta", payload)
     await manager.broadcast_paineis("estacao_atualizada", {"nome": nome})

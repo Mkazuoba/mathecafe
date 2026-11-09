@@ -9,6 +9,14 @@
 - Estações já cadastradas continuam como estão: ao receberem a 1.14, adotam o identificador do agente.
 - Registro de ações: aprovar, recusar e renomear estação.
 
+
+## 2026-11-09 — Tela de apps do agente em estilo loja, com categorias (9.8; agente 1.15.0)
+
+- **Banner largo da Programação** no topo da tela de apps (antes era uma coluna estreita à direita): o cartaz aparece inteiro à direita sobre ele mesmo ampliado e desfocado, com o título grande à esquerda; troca com fade e bolinhas para escolher o cartaz.
+- **Pesquisa** pelo nome do app (sem diferenciar acento nem maiúscula) e **categorias** à esquerda: Todos, as categorias cadastradas e Outros (apps sem categoria). A grade de capas fica embaixo, com o número de apps.
+- **Categorias cadastráveis**: Configurações → Apps permitidos → botão **Categorias** (criar, renomear, mudar a ordem, excluir); cada app escolhe a sua na edição. A tela de apps também filtra por categoria e o cartão mostra a dela.
+- Servidor: tabela `categorias_apps`, `apps_permitidos.categoria_id`, rotas `/api/categorias/`; a whitelist mandada ao agente leva `categoria` e `categoria_ordem`.
+
 ## 2026-11-09 — Apps por piso e capa do app no dock (agente 1.13.0)
 
 - **Cada piso tem os seus apps**: a tela Apps permitidos segue o piso do topo (abas "Apps do Adulto" / "Apps do Infantil") e o interruptor do cartão liga o app **só naquele piso**. O cartão mostra em que outros pisos o app também está ligado; "N de M apps ligados no piso X". Ações em massa: ligar/desligar no piso, excluir. App novo entra ligado no piso escolhido.

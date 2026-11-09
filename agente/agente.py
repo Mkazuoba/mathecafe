@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.14.0"
+VERSAO = "1.15.0"
 
 import asyncio
 import json
@@ -1255,29 +1255,175 @@ def icone_pasta(tamanho, tem_arquivos=True):
     return im.resize((tamanho, tamanho), Image.LANCZOS)
 
 
+def normalizar_busca(texto):
+    """Minúsculas e sem acento: 'Paciência' acha 'paciencia'."""
+    import unicodedata
+    texto = unicodedata.normalize("NFKD", str(texto or "")).lower()
+    return "".join(c for c in texto if not unicodedata.combining(c)).strip()
+
+
+def categorias_da_tela(apps):
+    """A coluna da esquerda da tela de apps: [(chave, rótulo, quantidade)].
+    Todos primeiro; as categorias na ordem do painel; "Outros" (apps sem
+    categoria) no fim, só quando há categorias e algum app ficou sem."""
+    ordem = {}
+    sem = 0
+    for a in apps:
+        nome = (a.get("categoria") or "").strip()
+        if not nome:
+            sem += 1
+            continue
+        pos = a.get("categoria_ordem")
+        anterior = ordem.get(nome, (pos, 0))
+        ordem[nome] = (anterior[0], anterior[1] + 1)
+    lista = [("todos", "Todos", len(apps))]
+    for nome, (pos, n) in sorted(ordem.items(), key=lambda kv: (kv[1][0] is None, kv[1][0] or 0, normalizar_busca(kv[0]))):
+        lista.append(("cat:" + nome, nome, n))
+    if ordem and sem:
+        lista.append(("outros", "Outros", sem))
+    return lista
+
+
+def filtrar_apps(apps, chave, busca):
+    """Os apps da categoria escolhida (chave de categorias_da_tela) cujo nome
+    contém a busca (sem diferenciar acento nem maiúscula)."""
+    termo = normalizar_busca(busca)
+    saida = []
+    for a in apps:
+        cat = (a.get("categoria") or "").strip()
+        if chave == "outros" and cat:
+            continue
+        if chave.startswith("cat:") and cat != chave[4:]:
+            continue
+        if termo and termo not in normalizar_busca(a.get("nome")):
+            continue
+        saida.append(a)
+    return saida
+
+
+def _cor_rgb(cor):
+    try:
+        return tuple(int(cor[i:i + 2], 16) for i in (1, 3, 5))
+    except (ValueError, TypeError):
+        return (15, 17, 23)
+
+
+def _cantos(img, raio, fundo):
+    """A imagem com cantos arredondados sobre a cor do fundo (sem franja)."""
+    S = 3
+    mascara = Image.new("L", (img.width * S, img.height * S), 0)
+    ImageDraw.Draw(mascara).rounded_rectangle((0, 0, mascara.width - 1, mascara.height - 1), raio * S, fill=255)
+    mascara = mascara.resize(img.size, Image.LANCZOS)
+    base = Image.new("RGB", img.size, _cor_rgb(fundo))
+    base.paste(img.convert("RGB"), (0, 0), mascara)
+    return base
+
+
+def _preencher(img, largura, altura):
+    """Amplia e corta o centro até cobrir largura x altura (sem deformar)."""
+    escala = max(largura / img.width, altura / img.height)
+    nova = img.resize((max(1, round(img.width * escala)), max(1, round(img.height * escala))), Image.LANCZOS)
+    x0, y0 = (nova.width - largura) // 2, (nova.height - altura) // 2
+    return nova.crop((x0, y0, x0 + largura, y0 + altura))
+
+
+def montar_banner(cartaz, largura, altura, fundo):
+    """Banner largo da Programação a partir de um cartaz em pé: o fundo é o
+    próprio cartaz ampliado, desfocado e escurecido; o cartaz inteiro fica à
+    direita com sombra; à esquerda, um degradê escuro para o título (que o
+    Tkinter escreve por cima). Devolve (imagem RGB, largura ocupada pelo cartaz)."""
+    cartaz = cartaz.convert("RGB")
+    pequeno = _preencher(cartaz, max(1, largura // 4), max(1, altura // 4))
+    fundo_img = pequeno.filter(ImageFilter.GaussianBlur(6)).resize((largura, altura), Image.BILINEAR)
+    fundo_img = Image.blend(fundo_img, Image.new("RGB", fundo_img.size, (0, 0, 0)), 0.45)
+    # degradê da esquerda (onde fica o título): preto 70% -> 0% em 65% da largura
+    faixa = Image.linear_gradient("L").rotate(90, expand=True).resize((largura, altura))
+    faixa = faixa.point(lambda v: int(max(0.0, 1 - (v / 255) / 0.65) * 180))
+    fundo_img.paste((0, 0, 0), (0, 0), faixa)
+    # o cartaz inteiro, à direita
+    margem = max(12, altura // 14)
+    alto = altura - 2 * margem
+    largo = max(1, round(cartaz.width * alto / cartaz.height))
+    if largo > largura * 0.45:  # cartaz deitado: limita pela largura
+        largo = int(largura * 0.45)
+        alto = max(1, round(cartaz.height * largo / cartaz.width))
+    peca = cartaz.resize((largo, alto), Image.LANCZOS)
+    x = largura - largo - margem * 2
+    y = (altura - alto) // 2
+    sombra = Image.new("L", (largura, altura), 0)
+    ImageDraw.Draw(sombra).rounded_rectangle((x + 4, y + 8, x + largo + 4, y + alto + 8), 10, fill=150)
+    sombra = sombra.filter(ImageFilter.GaussianBlur(10))
+    fundo_img.paste((0, 0, 0), (0, 0), sombra)
+    fundo_img.paste(_cantos(peca, 8, "#000000"), (x, y),
+                    _cantos(Image.new("RGB", peca.size, (255, 255, 255)), 8, "#000000").convert("L"))
+    return _cantos(fundo_img, 16, fundo), largo + margem * 3
+
+
+def montar_cartao(dados, largura, altura, fundo, cor_vazia, contorno=None):
+    """Cartão em pé da grade de apps: a capa cobre o cartão (cortada no centro)
+    com um degradê escuro embaixo para o nome. Sem capa (dados None), um cartão
+    liso de cor_vazia. contorno: borda colorida (mouse em cima). Imagem RGB."""
+    img = None
+    if dados:
+        try:
+            img = _preencher(Image.open(BytesIO(dados)).convert("RGB"), largura, altura)
+        except Exception:
+            img = None
+    if img is None:
+        img = Image.new("RGB", (largura, altura), _cor_rgb(cor_vazia))
+    sombra = Image.linear_gradient("L").resize((largura, altura))  # 0 em cima, 255 embaixo
+    sombra = sombra.point(lambda v: int(max(0, (v / 255 - 0.45) / 0.55) * 215))
+    img.paste((0, 0, 0), (0, 0), sombra)
+    if contorno:
+        S = 3
+        borda = Image.new("L", (largura * S, altura * S), 0)
+        d = ImageDraw.Draw(borda)
+        d.rounded_rectangle((0, 0, largura * S - 1, altura * S - 1), 12 * S, fill=255)
+        d.rounded_rectangle((3 * S, 3 * S, largura * S - 1 - 3 * S, altura * S - 1 - 3 * S), 10 * S, fill=0)
+        img.paste(_cor_rgb(contorno), (0, 0), borda.resize((largura, altura), Image.LANCZOS))
+    return _cantos(img, 12, fundo)
+
+
+def baixar_imagem(url, timeout=8):
+    """Bytes da imagem (http/https ou data:), ou None."""
+    try:
+        if url.startswith("data:"):
+            import base64
+            cabeca, corpo = url.split(",", 1)
+            return base64.b64decode(corpo) if ";base64" in cabeca else urllib.parse.unquote(corpo).encode("utf-8")
+        with abrir_url(url, timeout=timeout) as r:
+            return r.read()
+    except Exception:
+        return None
+
+
 class Programacao:
-    """Cartazes da programação da biblioteca ao lado dos apps, um de cada vez.
-    Vêm do servidor (Configurações → Programação); sem cartaz, a coluna some."""
-    LARGURA = 380
+    """Banner largo no topo da tela de apps com os cartazes da programação da
+    biblioteca, um de cada vez (troca com fade). Os cartazes são em pé: cada um
+    aparece inteiro à direita sobre ele mesmo ampliado e desfocado, com o
+    título à esquerda. Vêm do servidor (Configurações → Programação); sem
+    cartaz, o banner some e a grade de apps sobe."""
 
     def __init__(self, app, frame):
         self.app = app
         self.frame = frame
-        p = app.paleta
-        self.frame.pack_propagate(False)
-        tk.Label(frame, text="PROGRAMAÇÃO DA BIBLIOTECA", font=app.f_small,
-                 fg=p["texto2"], bg=p["fundo"]).pack(anchor="w", pady=(0, 6))
-        self.lbl_img = tk.Label(frame, bg=p["fundo"])
-        self.lbl_img.pack()
-        self.lbl_legenda = tk.Label(frame, text="", font=app.f_normal, fg=p["texto"], bg=p["fundo"],
-                                    wraplength=self.LARGURA - 20, justify="center")
-        self.lbl_legenda.pack(pady=6)
-        self.itens = []
-        self._foto = None
+        self.canvas = tk.Canvas(frame, bg=app.paleta["fundo"], highlightthickness=0, height=200, cursor="arrow")
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", self._ao_mudar_tamanho)
+        self.itens = []  # [(titulo, imagem PIL)]
         self.indice = 0
         self.segundos = 10
         self._timer = None
+        self._fade = None
         self._geracao = 0
+        self._prontos = {}  # (indice, largura, altura, fundo) -> (imagem PIL, largura do cartaz)
+        self._foto = None
+        self._tam = (0, 0)
+        self._atual = None  # imagem PIL na tela (o fade parte dela)
+
+    @staticmethod
+    def altura_para(tela):
+        return max(170, min(320, int(tela * 0.28)))
 
     def recarregar(self):
         if not PIL_AVAILABLE:
@@ -1307,39 +1453,393 @@ class Programacao:
         self.segundos = max(3, int(segundos or 10))
         self.itens = imagens
         self.indice = 0
+        self._prontos = {}
+        self._atual = None
         if not imagens or not self.app.sessao_ativa:
             self.parar()
             return
-        self.frame.configure(width=self.LARGURA)
-        self.frame.pack(side="right", fill="y", padx=(0, 20), pady=(0, 10), before=self.app.frame_launcher)
-        self._exibir()
+        altura = self.altura_para(self.app.root.winfo_screenheight())
+        self.frame.configure(height=altura)
+        self.frame.pack(side="top", fill="x", padx=24, pady=(16, 0), before=self.app.frame_launcher)
+        self.frame.pack_propagate(False)
+        self.app.root.after(30, lambda: self._exibir(fade=False))
 
-    def _exibir(self):
+    def _ao_mudar_tamanho(self, event):
+        tam = (event.width, event.height)
+        if tam != self._tam and self.itens:
+            self._tam = tam
+            self._atual = None
+            self._desenhar(self._quadro(self._mostrando()), self._mostrando())
+
+    def _mostrando(self):
+        return (self.indice - 1) % len(self.itens) if self.itens else 0
+
+    def _quadro(self, i):
+        """O banner pronto do cartaz i no tamanho atual (montado uma vez)."""
+        w, h = max(50, self.canvas.winfo_width()), max(50, self.canvas.winfo_height())
+        chave = (i, w, h, self.app.paleta["fundo"])
+        if chave not in self._prontos:
+            self._prontos[chave] = montar_banner(self.itens[i][1], w, h, self.app.paleta["fundo"])
+        return self._prontos[chave]
+
+    def _exibir(self, fade=True):
         if self._timer:
             self.app.root.after_cancel(self._timer)
             self._timer = None
         if not self.itens:
             return
-        titulo, img = self.itens[self.indice % len(self.itens)]
-        largura = self.LARGURA - 20
-        altura = max(200, self.app.root.winfo_height() - 300)
-        escala = min(largura / img.width, altura / img.height, 1.0)
-        self._foto = ImageTk.PhotoImage(img.resize((max(1, int(img.width * escala)), max(1, int(img.height * escala))),
-                                                   Image.LANCZOS))
-        self.lbl_img.config(image=self._foto)
-        self.lbl_legenda.config(text=titulo)
-        self.indice += 1
+        antes = self._mostrando()
+        i = self.indice % len(self.itens)
+        novo = self._quadro(i)
+        self.indice = i + 1
+        if fade and self._atual is not None and self._atual.size == novo[0].size:
+            self._animar(self._atual, novo, 1, antes, i)
+        else:
+            self._desenhar(novo, i)
         if len(self.itens) > 1:
             self._timer = self.app.root.after(self.segundos * 1000, self._exibir)
 
+    def ir_para(self, i):
+        self.indice = i
+        self._exibir()
+
+    def _animar(self, de, para, passo, i_de, i_para, passos=10):
+        """Fade entre dois cartazes (~0,3 s); o texto troca no meio."""
+        if self._fade:
+            self.app.root.after_cancel(self._fade)
+            self._fade = None
+        if passo >= passos:
+            self._desenhar(para, i_para)
+            return
+        mistura = Image.blend(de, para[0], passo / passos)
+        self._desenhar((mistura, para[1]), i_para if passo >= passos // 2 else i_de, guardar=False)
+        self._fade = self.app.root.after(30, lambda: self._animar(de, para, passo + 1, i_de, i_para, passos))
+
+    def _desenhar(self, quadro, i, guardar=True):
+        c, p = self.canvas, self.app.paleta
+        img, largura_cartaz = quadro
+        self._foto = ImageTk.PhotoImage(img)
+        if guardar:
+            self._atual = img
+        c.delete("all")
+        c.create_image(0, 0, anchor="nw", image=self._foto)
+        if not self.itens:
+            return
+        i %= len(self.itens)
+        h = img.height
+        x = max(28, h // 7)
+        livre = max(120, img.width - largura_cartaz - x - 24)
+        c.create_text(x, h * 0.26, anchor="w", text="PROGRAMAÇÃO DA BIBLIOTECA", fill=p["destaque"],
+                      font=("Segoe UI", 10, "bold"))
+        titulo = self.itens[i][0] or ""
+        tamanho = 26 if len(titulo) < 40 else 20
+        c.create_text(x, h * 0.26 + 18, anchor="nw", text=titulo, fill="#ffffff", width=livre,
+                      font=("Segoe UI", tamanho, "bold"))
+        # bolinhas: qual cartaz está na tela (clicar troca)
+        if len(self.itens) > 1:
+            for k in range(len(self.itens)):
+                cx, cy = x + k * 18 + 5, h - x * 0.7
+                atual = k == i
+                bol = c.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, outline="",
+                                    fill="#ffffff" if atual else "#6b7280")
+                c.tag_bind(bol, "<Button-1>", lambda e, k=k: self.ir_para(k))
+                c.tag_bind(bol, "<Enter>", lambda e: c.config(cursor="hand2"))
+                c.tag_bind(bol, "<Leave>", lambda e: c.config(cursor="arrow"))
+
+    def redesenhar(self):
+        """Tema trocado: o canto arredondado e o destaque mudam de cor."""
+        self.canvas.config(bg=self.app.paleta["fundo"])
+        if self.itens:
+            self._atual = None
+            self._desenhar(self._quadro(self._mostrando()), self._mostrando())
+
     def parar(self):
-        if self._timer:
-            self.app.root.after_cancel(self._timer)
-            self._timer = None
+        for t in (self._timer, self._fade):
+            if t:
+                self.app.root.after_cancel(t)
+        self._timer = self._fade = None
         self.itens = []
+        self._prontos = {}
         self._foto = None
-        self.lbl_img.config(image="")
+        self._atual = None
+        self.canvas.delete("all")
         self.frame.pack_forget()
+
+
+class TelaApps:
+    """A tela de apps da sessão, no estilo de loja de games: à esquerda a
+    pesquisa (filtra pelo nome) e as categorias (Todos, as do painel, Outros);
+    à direita a grade de cartões com a capa de cada app. Clicar abre o app."""
+    CARD_W, CARD_H = 168, 224
+    ESPACO = 18
+    LARGURA_LADO = 240
+
+    def __init__(self, app, frame):
+        self.app = app
+        self.frame = frame
+        self.apps = []
+        self.chave = "todos"
+        self.cartoes = {}  # índice do app -> {"canvas", "normal", "hover", "app"}
+        self._capas = {}  # url -> bytes (None = falhou; ... = baixando)
+        self._colunas = 0
+        self._linhas_cat = []
+        self._montar()
+
+    # ── estrutura (uma vez) ──
+    def _montar(self):
+        p = self.app.paleta
+        f = self.frame
+        self.lado = tk.Frame(f, bg=p["superficie"], width=self.LARGURA_LADO)
+        self.lado.pack(side="left", fill="y", padx=(24, 0), pady=16)
+        self.lado.pack_propagate(False)
+
+        # pesquisa
+        caixa = tk.Frame(self.lado, bg=p["superficie2"])
+        caixa.pack(fill="x", padx=14, pady=(16, 14))
+        tk.Label(caixa, text="⌕", font=("Segoe UI", 14), fg=p["texto2"], bg=p["superficie2"]).pack(side="left", padx=(10, 2))
+        self.var_busca = tk.StringVar()
+        self.entry_busca = tk.Entry(caixa, textvariable=self.var_busca, font=("Segoe UI", 11), bg=p["superficie2"],
+                                    fg=p["texto"], insertbackground=p["texto"], relief="flat", highlightthickness=0)
+        self.entry_busca.pack(side="left", fill="x", expand=True, ipady=7)
+        self.lbl_dica = tk.Label(caixa, text="Pesquisar apps", font=("Segoe UI", 11), fg=p["fraco"],
+                                 bg=p["superficie2"], cursor="xterm")
+        self.lbl_dica.place(x=34, rely=0.5, anchor="w")
+        self.lbl_dica.bind("<Button-1>", lambda e: self.entry_busca.focus_set())
+        self.btn_limpar = tk.Label(caixa, text="✕", font=("Segoe UI", 12), fg=p["texto2"], bg=p["superficie2"],
+                                   cursor="hand2")
+        self.btn_limpar.bind("<Button-1>", lambda e: self.var_busca.set(""))
+        self.var_busca.trace_add("write", lambda *a: self._ao_digitar())
+        self.entry_busca.bind("<Escape>", lambda e: self.var_busca.set(""))
+
+        tk.Label(self.lado, text="CATEGORIAS", font=("Segoe UI", 9, "bold"), fg=p["texto2"],
+                 bg=p["superficie"]).pack(anchor="w", padx=18, pady=(4, 6))
+        self.lista_cat = tk.Frame(self.lado, bg=p["superficie"])
+        self.lista_cat.pack(fill="x", padx=10)
+
+        # área da direita: título + grade com rolagem
+        direita = tk.Frame(f, bg=p["fundo"])
+        direita.pack(side="left", fill="both", expand=True, padx=(24, 12), pady=(16, 0))
+        topo = tk.Frame(direita, bg=p["fundo"])
+        topo.pack(fill="x", pady=(0, 10))
+        self.lbl_titulo = tk.Label(topo, text="", font=("Segoe UI", 15, "bold"), fg=p["texto"], bg=p["fundo"])
+        self.lbl_titulo.pack(side="left")
+        self.lbl_qtd = tk.Label(topo, text="", font=("Segoe UI", 10), fg=p["texto2"], bg=p["fundo"])
+        self.lbl_qtd.pack(side="left", padx=10, pady=(4, 0))
+
+        self.canvas = tk.Canvas(direita, bg=p["fundo"], highlightthickness=0)
+        # barra de rolagem fina, desenhada na cor do tema (a do Windows é branca)
+        self.trilho = tk.Canvas(direita, width=10, bg=p["fundo"], highlightthickness=0)
+        self.trilho.bind("<Button-1>", self._arrastar_trilho)
+        self.trilho.bind("<B1-Motion>", self._arrastar_trilho)
+        self._rolagem = (0.0, 1.0)
+        self.grade = tk.Frame(self.canvas, bg=p["fundo"])
+        self._janela_grade = self.canvas.create_window((0, 0), window=self.grade, anchor="nw")
+        self.canvas.configure(yscrollcommand=self._mover_trilho)
+        self.trilho.pack(side="right", fill="y", pady=(0, 16))
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.grade.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._ao_mudar_largura)
+        self.canvas.bind_all("<MouseWheel>", self._rolar)
+        self.lbl_vazio = tk.Label(self.grade, text="", font=("Segoe UI", 11), fg=p["texto2"], bg=p["fundo"],
+                                  justify="left")
+
+    def _mover_trilho(self, primeiro, ultimo):
+        self._rolagem = (float(primeiro), float(ultimo))
+        self._desenhar_trilho()
+
+    def _desenhar_trilho(self):
+        t = self.trilho
+        t.delete("all")
+        primeiro, ultimo = self._rolagem
+        if primeiro <= 0 and ultimo >= 1:
+            return  # cabe tudo: sem barra
+        h = t.winfo_height()
+        y0, y1 = max(5, primeiro * h), min(h - 5, ultimo * h)
+        t.create_line(5, y0, 5, max(y0 + 1, y1), width=6, capstyle="round", fill=self.app.paleta["superficie3"])
+
+    def _arrastar_trilho(self, event):
+        primeiro, ultimo = self._rolagem
+        meio = (ultimo - primeiro) / 2
+        self.canvas.yview_moveto(max(0.0, event.y / max(1, self.trilho.winfo_height()) - meio))
+
+    def _rolar(self, event):
+        if not self.app.sessao_ativa:
+            return
+        if self.grade.winfo_reqheight() > self.canvas.winfo_height():
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    # ── dados da sessão ──
+    def mostrar(self, apps):
+        """Apps da whitelist com caminho (os que dá para abrir)."""
+        for c in self.cartoes.values():
+            c["canvas"].destroy()
+        self.cartoes = {}
+        self.apps = list(apps)
+        self.chave = "todos"
+        self.var_busca.set("")
+        for i, a in enumerate(self.apps):
+            cv = tk.Canvas(self.grade, width=self.CARD_W, height=self.CARD_H, bg=self.app.paleta["fundo"],
+                           highlightthickness=0, cursor="hand2")
+            self.cartoes[i] = {"canvas": cv, "app": a, "normal": None, "hover": None, "sobre": False}
+            cv.bind("<Button-1>", lambda e, a=a: self.app._abrir_app(a))
+            cv.bind("<Enter>", lambda e, i=i: self._sobre(i, True))
+            cv.bind("<Leave>", lambda e, i=i: self._sobre(i, False))
+            self._desenhar_cartao(i)
+            url = (a.get("imagem_url") or "").strip()
+            if url and PIL_AVAILABLE and url not in self._capas:
+                self._capas[url] = ...
+                threading.Thread(target=self._baixar_capa, args=(url,), daemon=True).start()
+        self._montar_categorias()
+        self._filtrar()
+        self.canvas.yview_moveto(0)
+
+    def _baixar_capa(self, url):
+        dados = baixar_imagem(url)  # thread: nada de Tkinter aqui
+        self.app.root.after(0, lambda: self._capa_baixada(url, dados))
+
+    def _capa_baixada(self, url, dados):
+        self._capas[url] = dados
+        for i, c in self.cartoes.items():
+            if (c["app"].get("imagem_url") or "").strip() == url:
+                c["normal"] = c["hover"] = None
+                self._desenhar_cartao(i)
+
+    # ── cartões ──
+    def _desenhar_cartao(self, i):
+        c = self.cartoes.get(i)
+        if not c:
+            return
+        p = self.app.paleta
+        a = c["app"]
+        dados = self._capas.get((a.get("imagem_url") or "").strip())
+        if dados is ...:
+            dados = None
+        cv = c["canvas"]
+        cv.delete("all")
+        cv.config(bg=p["fundo"])
+        if PIL_AVAILABLE:
+            if c["normal"] is None:
+                args = (dados, self.CARD_W, self.CARD_H, p["fundo"], p["superficie3"])
+                c["normal"] = ImageTk.PhotoImage(montar_cartao(*args))
+                c["hover"] = ImageTk.PhotoImage(montar_cartao(*args, contorno=p["destaque"]))
+            cv.create_image(0, 0, anchor="nw", image=c["hover"] if c["sobre"] else c["normal"], tags="capa")
+        else:
+            cv.create_rectangle(0, 0, self.CARD_W, self.CARD_H, fill=p["superficie3"], outline="", tags="capa")
+        if not dados:  # sem capa: a inicial grande no meio
+            cv.create_text(self.CARD_W / 2, self.CARD_H * 0.42, text=(a.get("nome") or "?")[:1].upper(),
+                           fill=p["texto2"], font=("Segoe UI", 40, "bold"))
+        cv.create_text(self.CARD_W / 2, self.CARD_H - 14, anchor="s", text=(a.get("nome") or "").upper(),
+                       fill="#ffffff", width=self.CARD_W - 18, justify="center", font=("Segoe UI", 10, "bold"))
+
+    def _sobre(self, i, sim):
+        c = self.cartoes.get(i)
+        if not c or c["sobre"] == sim:
+            return
+        c["sobre"] = sim
+        if c["normal"] is not None:  # só troca a imagem: sem redesenhar (não pisca)
+            c["canvas"].itemconfig("capa", image=c["hover"] if sim else c["normal"])
+
+    # ── categorias e filtro ──
+    def _montar_categorias(self):
+        for w in self.lista_cat.winfo_children():
+            w.destroy()
+        self._linhas_cat = []
+        p = self.app.paleta
+        for chave, rotulo, n in categorias_da_tela(self.apps):
+            linha = tk.Frame(self.lista_cat, bg=p["superficie"], cursor="hand2")
+            linha.pack(fill="x", pady=1)
+            nome = tk.Label(linha, text=rotulo, font=("Segoe UI", 11), anchor="w", bg=p["superficie"], fg=p["texto"])
+            nome.pack(side="left", fill="x", expand=True, padx=(10, 4), pady=7)
+            qtd = tk.Label(linha, text=str(n), font=("Segoe UI", 9), bg=p["superficie"], fg=p["texto2"])
+            qtd.pack(side="right", padx=10)
+            for w in (linha, nome, qtd):
+                w.bind("<Button-1>", lambda e, k=chave: self.escolher(k))
+                w.bind("<Enter>", lambda e, k=chave: self._pintar_categorias(sobre=k))
+                w.bind("<Leave>", lambda e: self._pintar_categorias())
+            self._linhas_cat.append((chave, rotulo, linha, nome, qtd))
+        self._pintar_categorias()
+
+    def _pintar_categorias(self, sobre=None):
+        p = self.app.paleta
+        for chave, _, linha, nome, qtd in self._linhas_cat:
+            if chave == self.chave:
+                fundo, cor, cor2 = p["destaque"], "#ffffff", "#ffffff"
+            else:
+                fundo = p["superficie2"] if chave == sobre else p["superficie"]
+                cor, cor2 = p["texto"], p["texto2"]
+            linha.config(bg=fundo)
+            nome.config(bg=fundo, fg=cor)
+            qtd.config(bg=fundo, fg=cor2)
+
+    def escolher(self, chave):
+        self.chave = chave
+        self._pintar_categorias()
+        self._filtrar()
+        self.canvas.yview_moveto(0)
+
+    def _ao_digitar(self):
+        texto = self.var_busca.get()
+        if texto:
+            self.lbl_dica.place_forget()
+            self.btn_limpar.pack(side="right", padx=8)
+            if self.chave != "todos":  # a pesquisa procura em todos os apps
+                self.chave = "todos"
+                self._pintar_categorias()
+        else:
+            self.lbl_dica.place(x=34, rely=0.5, anchor="w")
+            self.btn_limpar.pack_forget()
+        self._filtrar()
+        self.canvas.yview_moveto(0)
+
+    def _rotulo(self, chave):
+        for k, rotulo, _ in categorias_da_tela(self.apps):
+            if k == chave:
+                return rotulo
+        return "Todos"
+
+    def _filtrar(self):
+        busca = self.var_busca.get().strip()
+        visiveis = filtrar_apps(self.apps, self.chave, busca)
+        ids = {id(a) for a in visiveis}
+        if busca:
+            self.lbl_titulo.config(text=f'Resultados para "{busca}"')
+        else:
+            self.lbl_titulo.config(text="Todos os apps" if self.chave == "todos" else self._rotulo(self.chave))
+        self.lbl_qtd.config(text=f"{len(visiveis)} app" + ("" if len(visiveis) == 1 else "s"))
+        for c in self.cartoes.values():
+            c["canvas"].grid_forget()
+        self.lbl_vazio.grid_forget()
+        self._visiveis = [i for i, c in self.cartoes.items() if id(c["app"]) in ids]
+        if not self.apps:
+            self.lbl_vazio.config(text="Nenhum app liberado nesta estação.\nPeça ajuda a um funcionário.")
+            self.lbl_vazio.grid(row=0, column=0, sticky="w", pady=20)
+        elif not self._visiveis:
+            self.lbl_vazio.config(text=f'Nenhum app encontrado com "{busca}".' if busca else "Nenhum app aqui.")
+            self.lbl_vazio.grid(row=0, column=0, sticky="w", pady=20)
+        self._posicionar()
+
+    def _ao_mudar_largura(self, event):
+        colunas = max(1, (event.width + self.ESPACO) // (self.CARD_W + self.ESPACO))
+        if colunas != self._colunas:
+            self._colunas = colunas
+            self._posicionar()
+
+    def _posicionar(self):
+        colunas = self._colunas or 4
+        for n, i in enumerate(getattr(self, "_visiveis", [])):
+            linha, col = divmod(n, colunas)
+            self.cartoes[i]["canvas"].grid(row=linha, column=col, padx=(0, self.ESPACO), pady=(0, self.ESPACO))
+
+    def redesenhar(self):
+        """Tema ou cor do piso trocados: refaz os cartões e a coluna."""
+        for i, c in self.cartoes.items():
+            c["normal"] = c["hover"] = None
+            self._desenhar_cartao(i)
+        self._pintar_categorias()
+        self._desenhar_trilho()
+
+    def limpar(self):
+        self.mostrar([])
 
 
 class AgenteApp:
@@ -1470,6 +1970,8 @@ class AgenteApp:
         self.paleta = nova
         self._log(f"Piso da estacao: {(piso or {}).get('nome')} ({cor})")
         self.barra.desenhar()
+        self._tela_apps.redesenhar()
+        self._programacao.redesenhar()
 
     def alternar_tema(self):
         """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
@@ -1481,6 +1983,8 @@ class AgenteApp:
         for botao in (self.btn_tema, self.barra.btn_tema):
             botao.config(text=ROTULO_TEMA[novo])
         self.barra.desenhar()
+        self._tela_apps.redesenhar()
+        self._programacao.redesenhar()
         salvar_tema(novo)
 
     def _ao_redimensionar(self, event):
@@ -1592,15 +2096,14 @@ class AgenteApp:
                   bg="#ef4444", fg="white", relief="flat", activebackground="#dc2626",
                   command=self._encerrar_sessao_cliente).pack(side="right", padx=8, pady=8, ipady=2)
 
-        tk.Label(self.frame_sessao, text="Selecione um aplicativo para abrir",
-                 font=small_font, fg=text2, bg=bg).pack(pady=(16, 8))
-
         self.frame_corpo = tk.Frame(self.frame_sessao, bg=bg)
         self.frame_corpo.pack(expand=True, fill="both")
         self.frame_launcher = tk.Frame(self.frame_corpo, bg=bg)
-        self.frame_launcher.pack(side="left", expand=True, fill="both", padx=20)
-        # coluna da programação: aparece quando há cartaz (Programacao.recarregar)
-        self.frame_programacao = tk.Frame(self.frame_corpo, bg=bg, width=Programacao.LARGURA)
+        self.frame_launcher.pack(side="bottom", expand=True, fill="both")
+        # tela de apps: pesquisa e categorias à esquerda, grade de capas à direita
+        self._tela_apps = TelaApps(self, self.frame_launcher)
+        # banner largo da programação no topo: aparece quando há cartaz (Programacao.recarregar)
+        self.frame_programacao = tk.Frame(self.frame_corpo, bg=bg)
         self._programacao = Programacao(self, self.frame_programacao)
 
         self.frame_login.pack(fill="both", expand=True)
@@ -2119,88 +2622,8 @@ class AgenteApp:
             self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | sem restricao")
 
     def _montar_launcher(self):
-        for widget in self.frame_launcher.winfo_children():
-            widget.destroy()
-        self._img_refs = []
-
-        apps = [a for a in self.whitelist_apps if a.get("caminho")]
-
-        if not apps:
-            tk.Label(self.frame_launcher,
-                     text="Nenhum app configurado com caminho de execucao.\n"
-                          "Peca ao administrador para configurar a whitelist.",
-                     font=self.f_small, fg=self.c_text2, bg=self.c_bg,
-                     justify="center").pack(expand=True)
-            return
-
-        canvas = tk.Canvas(self.frame_launcher, bg=self.c_bg, highlightthickness=0)
-        scrollbar = tk.Scrollbar(self.frame_launcher, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas, bg=self.c_bg)
-
-        scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        COLUNAS = 4
-        CARD_W, CARD_H = 160, 200
-        IMG_W, IMG_H = 160, 140
-
-        f_nome = tkfont.Font(family="Segoe UI", size=11)
-        f_inicial = tkfont.Font(family="Segoe UI", size=36, weight="bold")
-
-        for idx, app in enumerate(apps):
-            row, col = divmod(idx, COLUNAS)
-
-            card = tk.Frame(scroll_frame, bg=self.c_bg3, width=CARD_W, height=CARD_H, cursor="hand2")
-            card.grid(row=row, column=col, padx=10, pady=10)
-            card.grid_propagate(False)
-
-            inicial = (app.get("nome", "?")[:1] or "?").upper()
-            img_lbl = tk.Label(card, text=inicial, font=f_inicial, fg=self.c_accent, bg=self.c_bg3)
-            img_lbl.place(x=0, y=0, width=CARD_W, height=IMG_H)
-
-            nome_raw = app.get("nome", "")
-            nome_txt = (nome_raw[:18] + "...") if len(nome_raw) > 18 else nome_raw
-            nome_lbl = tk.Label(card, text=nome_txt, font=f_nome,
-                                 fg=self.c_text, bg=self.c_bg3, justify="center")
-            nome_lbl.place(x=4, y=IMG_H + 4, width=CARD_W - 8, height=CARD_H - IMG_H - 8)
-
-            for w in (card, img_lbl, nome_lbl):
-                w.bind("<Button-1>", lambda e, a=app: self._abrir_app(a))
-
-            ws = [card, img_lbl, nome_lbl]
-            def _enter(e, widgets=ws):
-                for w in widgets:
-                    try: w.config(bg=self.c_bg4)
-                    except Exception: pass
-            def _leave(e, widgets=ws):
-                for w in widgets:
-                    try: w.config(bg=self.c_bg3)
-                    except Exception: pass
-
-            for w in (card, img_lbl, nome_lbl):
-                w.bind("<Enter>", _enter)
-                w.bind("<Leave>", _leave)
-
-            url = app.get("imagem_url")
-            if url:
-                def _load_img(u=url, lbl=img_lbl, refs=self._img_refs):
-                    img = carregar_imagem_url(u, IMG_W, IMG_H)
-                    if img:
-                        refs.append(img)
-                        lbl.after(0, lambda i=img, l=lbl: l.config(image=i, text="") if l.winfo_exists() else None)
-                threading.Thread(target=_load_img, daemon=True).start()
+        """A tela de apps da sessão (TelaApps): só os apps com caminho abrem."""
+        self._tela_apps.mostrar([a for a in self.whitelist_apps if a.get("caminho")])
 
     def _abrir_app(self, app):
         caminho = app.get("caminho")
@@ -2311,6 +2734,7 @@ class AgenteApp:
         # depois de fechar os apps (arquivo aberto não sai)
         self.root.after(1500, self._limpar_downloads)
         self._programacao.parar()
+        self._tela_apps.limpar()
 
         # Reseta estado imediatamente para parar o countdown e o monitor de processos
         self.sessao_ativa = False

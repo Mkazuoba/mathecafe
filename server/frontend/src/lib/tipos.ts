@@ -125,6 +125,17 @@ export interface AppPermitido {
   ativo: boolean
   /** pisos em que o app está ligado (aparece no menu das estações do piso) */
   pisos: number[]
+  /** categoria (filtro da tela de apps do agente); vazio = "Outros" */
+  categoria_id?: number | null
+  categoria_nome?: string | null
+}
+
+export interface CategoriaApp {
+  id: number
+  nome: string
+  ordem: number
+  /** quantos apps estão nela */
+  apps: number
 }
 
 export interface ConfigSistema {

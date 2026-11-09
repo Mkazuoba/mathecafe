@@ -115,6 +115,15 @@ class Sessao(Base):
     estacao = relationship("Estacao", back_populates="sessoes")
 
 
+class CategoriaApp(Base):
+    """Categoria dos apps (Internet, Jogos...), cadastrada pelo admin. Filtra a
+    tela de apps do agente; app sem categoria fica em "Outros"."""
+    __tablename__ = "categorias_apps"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(40), nullable=False, unique=True)
+    ordem = Column(Integer, nullable=False, default=0)
+
+
 class AppPermitido(Base):
     __tablename__ = "apps_permitidos"
     id = Column(Integer, primary_key=True, index=True)
@@ -122,11 +131,13 @@ class AppPermitido(Base):
     processo = Column(String(100), nullable=False)
     caminho = Column(String(500), nullable=True)
     imagem_url = Column(String(500), nullable=True)
+    categoria_id = Column(Integer, ForeignKey("categorias_apps.id"), nullable=True)
     # antigo (ate 09/11/2026): o app valia num mapa ou em todos. Agora vale por
     # piso (apps_pisos); grupo_id e ativo ficam so para a conversao.
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)
     ativo = Column(Boolean, default=True)
     grupo = relationship("GrupoEstacao")
+    categoria = relationship("CategoriaApp")
     pisos_ligados = relationship("AppPiso", cascade="all, delete-orphan")
 
 

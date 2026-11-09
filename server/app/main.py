@@ -10,11 +10,11 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
-from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso
+from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso, whitelist_para_o_agente
 from app import horario
 from app.estacoes_novas import AGUARDANDO, estacao_do_agente, info_para_o_agente
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
-from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
+from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router, categorias
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
 
@@ -34,6 +34,7 @@ app.include_router(relatorios.router, prefix="/api")
 app.include_router(programacao.router, prefix="/api")
 app.include_router(pisos_router.router, prefix="/api")
 app.include_router(agente_router.router, prefix="/api")
+app.include_router(categorias.router, prefix="/api")
 
 # A cada minuto o servidor grava que esta vivo. Ao subir de novo, isso diz
 # quando ele caiu: as sessoes abertas ficam "sem conexao" desde ali (o cliente
@@ -412,15 +413,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
 
                 # os apps ligados no piso desta estacao
                 apps_permitidos = apps_do_piso(db, piso_da_estacao(estacao))
-                whitelist = [
-                    {
-                        "nome": a.nome,
-                        "processo": a.processo,
-                        "caminho": a.caminho,
-                        "imagem_url": a.imagem_url
-                    }
-                    for a in apps_permitidos
-                ]
+                whitelist = whitelist_para_o_agente(apps_permitidos)
 
                 config_reiniciar = db.query(ConfiguracaoSistema).filter(
                     ConfiguracaoSistema.chave == "reiniciar_ao_encerrar").first()

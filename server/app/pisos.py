@@ -92,6 +92,22 @@ def apps_do_piso(db: Session, piso) -> list:
             .filter(AppPiso.piso_id == piso.id).order_by(AppPermitido.nome).all())
 
 
+def whitelist_para_o_agente(apps) -> list:
+    """Os apps como o agente recebe no inicio da sessao (login e liberar direto).
+    categoria/categoria_ordem: o filtro da tela de apps (None = "Outros")."""
+    return [
+        {
+            "nome": a.nome,
+            "processo": a.processo,
+            "caminho": a.caminho,
+            "imagem_url": a.imagem_url,
+            "categoria": a.categoria.nome if a.categoria else None,
+            "categoria_ordem": a.categoria.ordem if a.categoria else None,
+        }
+        for a in apps
+    ]
+
+
 def migrar_apps_para_pisos(db: Session, forcar: bool = False):
     """Uma vez so: o app que valia em todos os mapas fica ligado em todos os
     pisos; o de um mapa, no piso desse mapa; o desligado, em nenhum. Depois
