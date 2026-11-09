@@ -204,3 +204,36 @@ def salvar_horario(data: Horario, db: Session = Depends(get_db), quem=Depends(re
     horario.gravar(db, data.model_dump())
     registrar(db, quem, "horario", detalhe="ligado" if data.ativo else "desligado")
     return horario.carregar(db)
+
+
+# ── Reiniciar o servidor pelo painel ─────────────────────────────────────────
+# O iniciar_servidor.bat (tarefa MatheCafe-Servidor) sobe o servidor de novo
+# sempre que ele termina e marca MATHECAFE_SUPERVISIONADO=1. Assim o admin do
+# MatheCafe reinicia sem precisar de PowerShell de administrador do Windows.
+
+NO_AR_DESDE = datetime.utcnow()
+
+
+def _supervisionado() -> bool:
+    return os.environ.get("MATHECAFE_SUPERVISIONADO") == "1"
+
+
+def _encerrar_processo():
+    os._exit(3)  # o .bat sobe de novo em seguida
+
+
+@router.get("/servidor")
+def ver_servidor(_=Depends(requer_perfil("admin"))):
+    return {"pode_reiniciar": _supervisionado(), "no_ar_desde": NO_AR_DESDE.isoformat() + "Z"}
+
+
+@router.post("/reiniciar")
+async def reiniciar_servidor(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    if not _supervisionado():
+        raise HTTPException(400, "Este servidor foi aberto à mão (sem o iniciar_servidor.bat): "
+                                 "ninguém o subiria de novo. Reinicie no terminal onde ele está rodando.")
+    registrar(db, quem, "reiniciar_servidor")
+    print("Reiniciando o servidor a pedido do painel")
+    import asyncio
+    asyncio.get_running_loop().call_later(1.0, _encerrar_processo)  # depois de responder
+    return {"ok": True}

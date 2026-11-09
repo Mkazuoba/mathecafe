@@ -610,3 +610,15 @@ def test_notificacoes_com_fade_e_deslize():
     mostrar = notif[notif.index("def _mostrar("):notif.index("def _posicionar(")]
     assert "self._alpha_alvo, self._dx_alvo = 0.0" in mostrar  # some com fade, para a direita
     assert "self.top.withdraw()" not in mostrar  # nao some de uma vez
+
+
+def test_dock_usa_a_capa_do_app():
+    # 09/11: o icone do app no dock e a imagem cadastrada em Apps permitidos
+    src = _fonte()
+    assert "def icone_do_app(dados, lado, raio, fundo)" in src
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert '"imagem_url": (a.get("imagem_url") or "").strip() or None' in dock
+    desenho = dock[dock.index("def desenhar(self)"):]
+    assert "self._icone_do_item(item)" in desenho and "create_image(x, topo + t / 2, image=capa" in desenho
+    # a imagem nao leva a etiqueta icone{k} (o _marcar_sobre muda o contorno, que imagem nao tem)
+    assert 'image=capa, tags="desenho")' in desenho

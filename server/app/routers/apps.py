@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
-from app.models import AppPermitido, GrupoEstacao
+from app.models import AppPermitido, AppPiso, GrupoEstacao, Piso
+from app.pisos import piso_padrao
 from app.security import requer_perfil
 
 router = APIRouter(prefix="/apps", tags=["apps"])
@@ -12,8 +13,9 @@ class AppCreate(BaseModel):
     nome: str
     processo: str
     caminho: Optional[str] = None
-    grupo_id: Optional[int] = None
+    grupo_id: Optional[int] = None  # antigo: ignorado
     imagem_url: Optional[str] = None
+    piso_id: Optional[int] = None  # nasce ligado neste piso (vazio: o padrao)
 
 class AppUpdate(BaseModel):
     nome: Optional[str] = None
@@ -21,6 +23,8 @@ class AppUpdate(BaseModel):
     caminho: Optional[str] = None
     ativo: Optional[bool] = None
     imagem_url: Optional[str] = None
+    # mapa (grupo): o que vier substitui (null = todos os mapas); o que nao vier fica
+    grupo_id: Optional[int] = None
 
 def validar_caminho(caminho: Optional[str]) -> Optional[str]:
     """O agente executa o caminho diretamente: precisa ser o arquivo .exe."""
@@ -40,7 +44,13 @@ def serial(a: AppPermitido):
         "grupo_id": a.grupo_id,
         "grupo_nome": a.grupo.nome if a.grupo else "Todos os grupos",
         "ativo": a.ativo,
+        # pisos em que o app esta ligado
+        "pisos": sorted(p.piso_id for p in a.pisos_ligados),
     }
+
+
+class PisoLigado(BaseModel):
+    ligado: bool
 
 @router.get("/")
 def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
@@ -52,23 +62,38 @@ def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfi
     if not processo.endswith(".exe"):
         processo += ".exe"
 
-    if data.grupo_id is not None:
-        if not db.query(GrupoEstacao).filter(GrupoEstacao.id == data.grupo_id).first():
-            raise HTTPException(404, "Grupo não encontrado")
-
-    if db.query(AppPermitido).filter(
-        AppPermitido.processo == processo,
-        AppPermitido.grupo_id == data.grupo_id
-    ).first():
-        raise HTTPException(400, "Esse app já está na whitelist para esse grupo")
+    piso = db.get(Piso, data.piso_id) if data.piso_id is not None else piso_padrao(db)
+    if piso is None:
+        raise HTTPException(404, "Piso não encontrado")
+    if db.query(AppPermitido).filter(AppPermitido.processo == processo).first():
+        raise HTTPException(400, "Esse app já está cadastrado: ligue-o no interruptor do piso")
 
     app_p = AppPermitido(
         nome=data.nome.strip(), processo=processo,
         caminho=validar_caminho(data.caminho),
-        grupo_id=data.grupo_id,
         imagem_url=data.imagem_url.strip() if data.imagem_url else None
     )
+    app_p.pisos_ligados.append(AppPiso(piso_id=piso.id))
     db.add(app_p); db.commit(); db.refresh(app_p)
+    return serial(app_p)
+
+
+@router.put("/{id}/pisos/{piso_id}")
+def ligar_no_piso(id: int, piso_id: int, data: PisoLigado, db: Session = Depends(get_db),
+                  _=Depends(requer_perfil("admin"))):
+    """Liga ou desliga o app num piso (o interruptor do cartao)."""
+    app_p = db.get(AppPermitido, id)
+    if not app_p:
+        raise HTTPException(404, "App não encontrado")
+    if not db.get(Piso, piso_id):
+        raise HTTPException(404, "Piso não encontrado")
+    linha = db.get(AppPiso, (id, piso_id))
+    if data.ligado and not linha:
+        db.add(AppPiso(app_id=id, piso_id=piso_id))
+    elif not data.ligado and linha:
+        db.delete(linha)
+    db.commit()
+    db.refresh(app_p)
     return serial(app_p)
 
 @router.put("/{id}")
@@ -85,6 +110,10 @@ def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends
     if data.imagem_url is not None:
         app_p.imagem_url = data.imagem_url.strip() or None
     if data.ativo is not None: app_p.ativo = data.ativo
+    if "grupo_id" in data.model_fields_set:
+        if data.grupo_id is not None and not db.query(GrupoEstacao).filter(GrupoEstacao.id == data.grupo_id).first():
+            raise HTTPException(404, "Grupo não encontrado")
+        app_p.grupo_id = data.grupo_id
     db.commit()
     return serial(app_p)
 

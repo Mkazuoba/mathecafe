@@ -118,9 +118,20 @@ class AppPermitido(Base):
     processo = Column(String(100), nullable=False)
     caminho = Column(String(500), nullable=True)
     imagem_url = Column(String(500), nullable=True)
+    # antigo (ate 09/11/2026): o app valia num mapa ou em todos. Agora vale por
+    # piso (apps_pisos); grupo_id e ativo ficam so para a conversao.
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)
     ativo = Column(Boolean, default=True)
     grupo = relationship("GrupoEstacao")
+    pisos_ligados = relationship("AppPiso", cascade="all, delete-orphan")
+
+
+class AppPiso(Base):
+    """O app esta ligado neste piso: aparece no menu das estacoes do piso e nao
+    e fechado nelas. Sem linha, desligado no piso."""
+    __tablename__ = "apps_pisos"
+    app_id = Column(Integer, ForeignKey("apps_permitidos.id"), primary_key=True)
+    piso_id = Column(Integer, ForeignKey("pisos.id"), primary_key=True)
 
 
 class ConfiguracaoSistema(Base):

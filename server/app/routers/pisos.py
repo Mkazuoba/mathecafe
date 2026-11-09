@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import GrupoEstacao, Piso, Usuario
+from app.models import AppPiso, GrupoEstacao, Piso, Usuario
 from app.security import requer_perfil
 
 router = APIRouter(prefix="/pisos", tags=["pisos"])
@@ -86,6 +86,7 @@ def excluir(piso_id: int, db: Session = Depends(get_db), _=Depends(requer_perfil
     if uso["clientes"] or uso["grupos"]:
         raise HTTPException(400, f"O piso tem {uso['clientes']} cliente(s) e {uso['grupos']} mapa(s). "
                                  "Passe-os para outro piso antes de excluir.")
+    db.query(AppPiso).filter(AppPiso.piso_id == p.id).delete()
     db.delete(p)
     db.commit()
     return {"ok": True}

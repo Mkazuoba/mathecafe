@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.12.0"
+VERSAO = "1.13.0"
 
 import asyncio
 import json
@@ -111,6 +111,28 @@ def carregar_imagem_url(url, largura=160, altura=140):
         img = Image.open(BytesIO(data))
         img = img.resize((largura, altura), Image.LANCZOS)
         return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
+
+
+def icone_do_app(dados, lado, raio, fundo):
+    """Ícone do dock a partir da capa do app: o quadrado do centro da imagem, de
+    cantos arredondados, já aplicado sobre a cor do fundo do dock (a janela do
+    dock é transparente por cor-chave: uma borda semitransparente ficaria com
+    franja). Devolve uma imagem PIL RGB de lado x lado, ou None."""
+    if not PIL_AVAILABLE or not dados:
+        return None
+    try:
+        img = Image.open(BytesIO(dados)).convert("RGBA")
+        menor = min(img.width, img.height)
+        x0, y0 = (img.width - menor) // 2, (img.height - menor) // 2
+        escala = 4  # desenha grande e reduz: cantos lisos
+        img = img.crop((x0, y0, x0 + menor, y0 + menor)).resize((lado * escala, lado * escala), Image.LANCZOS)
+        mascara = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mascara).rounded_rectangle((0, 0, img.width - 1, img.height - 1), raio * escala, fill=255)
+        base = Image.new("RGBA", img.size, fundo)
+        base.paste(img, (0, 0), mascara)
+        return base.convert("RGB").resize((lado, lado), Image.LANCZOS)
     except Exception:
         return None
 
@@ -570,7 +592,10 @@ class BarraSessao:
         self.lbl_balao = tk.Label(self.balao, font=("Segoe UI", 9, "bold"), fg="white", bg="#111827", padx=8, pady=3)
         self.lbl_balao.pack()
 
-        self._itens = []  # [{"chave", "nome", "letra", "cor", "acao"}]
+        self._itens = []  # [{"chave", "nome", "letra", "cor", "acao", "imagem_url"}]
+        # capa de cada app como ícone: url -> bytes baixados (None = falhou)
+        self._capas = {}
+        self._icones = {}  # (url, cor do fundo) -> PhotoImage pronto (guardado para o Tk não perder)
         self._sobre = None  # índice do ícone sob o mouse
         self._janelas = {}  # processo -> [hwnd] (só apps liberados abertos)
         self._foco = None
@@ -657,6 +682,7 @@ class BarraSessao:
             nome = a.get("nome") or processo
             itens.append({"chave": processo, "nome": nome, "letra": nome.strip()[:1].upper(),
                           "cor": self.CORES_APPS[i % len(self.CORES_APPS)],
+                          "imagem_url": (a.get("imagem_url") or "").strip() or None,
                           "acao": lambda p=processo: self._trazer(p)})
         self._itens = itens
         self._sobre = None
@@ -672,6 +698,47 @@ class BarraSessao:
         if abertas != self._janelas or foco != self._foco:
             self._janelas, self._foco = abertas, foco
             self._montar_itens()
+            self.desenhar()
+
+    def _icone_do_item(self, item):
+        """O ícone pronto da capa do app, ou None (ainda baixando, sem capa ou
+        falhou: o dock mostra a letra). O download é feito uma vez, em segundo plano."""
+        url = item.get("imagem_url")
+        if not url or not PIL_AVAILABLE:
+            return None
+        if url not in self._capas:
+            self._capas[url] = ...  # baixando
+
+            def baixar(u=url):
+                try:
+                    with abrir_url(u, timeout=8) as r:
+                        dados = r.read()
+                except Exception:
+                    dados = None
+                self.root.after(0, lambda: self._capa_baixada(u, dados))
+            if url.startswith("data:"):
+                import base64
+                try:
+                    self._capas[url] = base64.b64decode(url.split(",", 1)[1]) if ";base64," in url \
+                        else urllib.parse.unquote(url.split(",", 1)[1]).encode("utf-8")
+                except Exception:
+                    self._capas[url] = None
+            else:
+                threading.Thread(target=baixar, daemon=True).start()
+                return None
+        dados = self._capas.get(url)
+        if not dados or dados is ...:
+            return None
+        fundo = self.app.paleta["superficie"]
+        chave = (url, fundo)
+        if chave not in self._icones:
+            img = icone_do_app(dados, self.ICONE, 9, fundo)
+            self._icones[chave] = ImageTk.PhotoImage(img) if img else None
+        return self._icones[chave]
+
+    def _capa_baixada(self, url, dados):
+        self._capas[url] = dados
+        if dados:
             self.desenhar()
 
     def _trazer(self, processo):
@@ -789,11 +856,20 @@ class BarraSessao:
                     self._icone_pasta()
                     c.create_image(x, topo + t / 2, image=self._img_pasta, tags="desenho")
                     continue
-                self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"],
-                                outline=p["texto"] if k == self._sobre else "", width=2,
-                                tags=("desenho", f"icone{k}"))
-                c.create_text(x, topo + t / 2, text=item["letra"], fill="white",
-                              font=("Segoe UI", int(t * 0.4), "bold"), tags="desenho")
+                capa = self._icone_do_item(item)
+                if capa:
+                    # a capa do app cadastrada no painel (Apps permitidos)
+                    c.create_image(x, topo + t / 2, image=capa, tags="desenho")
+                    # contorno vazio por cima: é ele que _marcar_sobre acende (imagem não tem contorno)
+                    self._retangulo(c, x - t / 2 - 1, topo - 1, x + t / 2 + 1, topo + t + 1, 10, fill="",
+                                    outline=p["texto"] if k == self._sobre else "", width=2,
+                                    tags=("desenho", f"icone{k}"))
+                else:
+                    self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"],
+                                    outline=p["texto"] if k == self._sobre else "", width=2,
+                                    tags=("desenho", f"icone{k}"))
+                    c.create_text(x, topo + t / 2, text=item["letra"], fill="white",
+                                  font=("Segoe UI", int(t * 0.4), "bold"), tags="desenho")
                 if item["chave"] == self._foco:
                     c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="", tags="desenho")
         # bloco separado à direita: sininho, relógio, tempo, tema e Encerrar

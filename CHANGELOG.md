@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-09 — Apps por piso e capa do app no dock (agente 1.13.0)
+
+- **Cada piso tem os seus apps**: a tela Apps permitidos segue o piso do topo (abas "Apps do Adulto" / "Apps do Infantil") e o interruptor do cartão liga o app **só naquele piso**. O cartão mostra em que outros pisos o app também está ligado; "N de M apps ligados no piso X". Ações em massa: ligar/desligar no piso, excluir. App novo entra ligado no piso escolhido.
+- O vínculo por mapa saiu: a estação recebe os apps ligados no piso dela (login no PC e liberar direto). Tabela `apps_pisos`; `PUT /api/apps/{id}/pisos/{piso_id}`.
+- Conversão automática (uma vez, ao subir): app de todos os mapas → ligado em todos os pisos; de um mapa → no piso desse mapa; desligado → em nenhum.
+- **Dock do agente com a capa do app**: o ícone de cada app aberto é a imagem cadastrada (o quadrado do centro, de cantos arredondados); sem imagem, a letra, como antes.
+
+## 2026-11-09 — Apps permitidos em grade de cartões
+
+- **Configurações → Apps permitidos** virou uma grade de cartões em pé: a capa cobre o cartão, o nome embaixo e o mapa em cima. O **interruptor** no canto liga e desliga o app na hora; desligado, o cartão fica apagado.
+- O primeiro cartão é **Adicionar app**; clicar num cartão abre a edição (com prévia do cartão e Excluir).
+- Filtros: busca pelo nome, Todos/Ligados/Desligados, fichas por mapa (e "Valem em todos"), Limpar e ordem (nome ou mais novos). Paginação com 23 por página.
+- **Ações em massa**: o interruptor deixa marcar vários cartões e ligar, desligar, mudar de mapa ou excluir de uma vez.
+- Corrigido: mudar o mapa na edição de um app não era salvo (o servidor ignorava o campo).
+
+## 2026-11-09 — Reiniciar o servidor pelo painel
+
+- **Configurações → Servidor → Reiniciar servidor** (admin): reinicia sem precisar de PowerShell de administrador do Windows (o servidor da biblioteca roda como SYSTEM e só um administrador elevado mexe na tarefa). O painel mostra "Reiniciando..." e avisa quando o servidor voltou.
+- `iniciar_servidor.bat` agora sobe o servidor de novo sempre que ele termina (3 s depois) e marca `MATHECAFE_SUPERVISIONADO=1`; o botão só aparece quando o servidor foi aberto por ele. `LOG` muda o arquivo de log (para testar outra cópia).
+- **Vale depois de um reinício do computador** (o `.bat` em execução é o antigo).
+
 ## 2026-11-09 — Meus arquivos no Explorador de verdade e notificações com movimento (9.5, 9.4; agente 1.12.0)
 
 - O leque de arquivos saiu (não funcionou bem). O ícone de pasta do dock abre o **Explorador do Windows** na pasta Downloads do cliente.

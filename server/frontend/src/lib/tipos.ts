@@ -119,6 +119,8 @@ export interface AppPermitido {
   grupo_id: number | null
   grupo_nome: string
   ativo: boolean
+  /** pisos em que o app está ligado (aparece no menu das estações do piso) */
+  pisos: number[]
 }
 
 export interface ConfigSistema {

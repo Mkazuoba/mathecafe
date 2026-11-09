@@ -50,7 +50,7 @@ powershell -ExecutionPolicy Bypass -File registrar_servidor.ps1
 Ele cria a tarefa `MatheCafe-Servidor` (na inicialização do Windows, como SYSTEM, reabrindo se cair), libera a porta 8000 no firewall e já sobe o servidor. Feche antes o servidor que estiver rodando num terminal (os dois não usam a mesma porta).
 
 - Log: `server\logs\servidor.log`.
-- Parar / subir de novo (reiniciar depois de atualizar o código ou trocar o banco): `schtasks /end /tn MatheCafe-Servidor` e `schtasks /run /tn MatheCafe-Servidor`, como Administrador.
+- **Reiniciar** (depois de atualizar o código ou trocar o banco): painel → Configurações → Servidor → **Reiniciar servidor** (admin do MatheCafé, sem precisar de administrador do Windows). O servidor termina e o `iniciar_servidor.bat` o sobe de novo em 3 s; as estações com agente 1.8+ seguem a sessão. Pela linha de comando, num PowerShell **como administrador** ("Executar como administrador"): `schtasks /end /tn MatheCafe-Servidor` e `schtasks /run /tn MatheCafe-Servidor`.
 - Outra porta: `registrar_servidor.ps1 -Porta 8080`. Desfazer: `registrar_servidor.ps1 -Remover`.
 - Para subir à mão do mesmo jeito (sem `--reload`): `iniciar_servidor.bat`.
 

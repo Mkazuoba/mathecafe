@@ -131,6 +131,7 @@ export function SecaoBanco() {
           </>
         )}
       </form>
+      <SecaoReiniciar />
       <SecaoBackup />
     </div>
   )
@@ -154,6 +155,92 @@ function tamanho(bytes: number) {
 }
 
 /** Backup diário do SQLite: lista, "fazer agora" e baixar uma cópia. */
+interface InfoServidor {
+  pode_reiniciar: boolean
+  no_ar_desde: string
+}
+
+/**
+ * Reiniciar o servidor sem PowerShell de administrador: o servidor termina e o
+ * iniciar_servidor.bat (tarefa MatheCafe-Servidor) o sobe de novo em segundos.
+ * Os PCs com agente 1.8+ seguem a sessão e reconectam sozinhos.
+ */
+function SecaoReiniciar() {
+  const avisar = useAvisos()
+  const [info, setInfo] = useState<InfoServidor | null>(null)
+  const [estado, setEstado] = useState<"parado" | "reiniciando">("parado")
+
+  const carregar = useCallback(
+    () =>
+      Api.get<InfoServidor>("/api/config/servidor")
+        .then(setInfo)
+        .catch(() => setInfo(null)),
+    [],
+  )
+  useEffect(() => {
+    carregar()
+  }, [carregar])
+
+  async function reiniciar() {
+    if (!info) return
+    if (
+      !window.confirm(
+        "Reiniciar o servidor agora?\n\nO painel e os computadores ficam sem conexão por alguns segundos. " +
+          "Quem estiver usando continua a sessão normalmente.",
+      )
+    )
+      return
+    const antes = info.no_ar_desde
+    setEstado("reiniciando")
+    try {
+      await Api.post("/api/config/reiniciar")
+    } catch (e) {
+      setEstado("parado")
+      avisar((e as Error).message, "erro")
+      return
+    }
+    // espera o servidor voltar (no_ar_desde muda quando ele sobe de novo)
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 1000))
+      try {
+        const novo = await Api.get<InfoServidor>("/api/config/servidor")
+        if (novo.no_ar_desde !== antes) {
+          setInfo(novo)
+          setEstado("parado")
+          avisar("Servidor reiniciado")
+          return
+        }
+      } catch {
+        /* ainda subindo */
+      }
+    }
+    setEstado("parado")
+    avisar("O servidor não voltou em 1 minuto. Veja server\\logs\\servidor.log no computador do servidor.", "erro")
+  }
+
+  if (!info) return null
+  return (
+    <div className="mt-10">
+      <h3 className="mb-2 font-semibold">Reiniciar o servidor</h3>
+      <p className="mb-4 text-sm text-texto-suave">
+        Para aplicar uma atualização do sistema (depois do git pull) ou se algo travar. O servidor fica alguns segundos
+        fora do ar e volta sozinho; quem estiver usando os computadores continua a sessão. No ar desde{" "}
+        {new Date(info.no_ar_desde).toLocaleString("pt-BR")}.
+      </p>
+      {info.pode_reiniciar ? (
+        <Button type="button" variant="outline" disabled={estado === "reiniciando"} onClick={reiniciar}>
+          {estado === "reiniciando" ? "Reiniciando..." : "Reiniciar servidor"}
+        </Button>
+      ) : (
+        <p className="text-sm text-texto-fraco">
+          Este servidor foi aberto à mão (sem o iniciar_servidor.bat da tarefa MatheCafe-Servidor): reinicie no terminal
+          onde ele está rodando.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function SecaoBackup() {
   const avisar = useAvisos()
   const [info, setInfo] = useState<InfoBackup | null>(null)

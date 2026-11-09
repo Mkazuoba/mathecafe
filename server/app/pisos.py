@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session, object_session
 
-from app.models import GrupoEstacao, Piso, Usuario
+from app.models import AppPermitido, AppPiso, ConfiguracaoSistema, GrupoEstacao, Piso, Usuario
 
 # Criados na primeira subida (e os do 4.7a, que eram texto, viram estes)
 PISOS_INICIAIS = [("Adulto", "#6366f1", True), ("Infantil", "#ec4899", False)]
@@ -77,3 +77,42 @@ def garantir_pisos(db: Session):
     # o grupo "Padrao" criado sozinho pelo sistema ja nasce com piso
     db.query(GrupoEstacao).filter(GrupoEstacao.nome == "Padrao", GrupoEstacao.piso_id == None).update(
         {GrupoEstacao.piso_id: padrao.id}, synchronize_session=False)
+
+
+# ── Apps por piso ────────────────────────────────────────────────────────────
+
+CHAVE_APPS_POR_PISO = "apps_por_piso"
+
+
+def apps_do_piso(db: Session, piso) -> list:
+    """Os apps ligados neste piso (o que vai para o agente)."""
+    if piso is None:
+        return []
+    return (db.query(AppPermitido).join(AppPiso, AppPiso.app_id == AppPermitido.id)
+            .filter(AppPiso.piso_id == piso.id).order_by(AppPermitido.nome).all())
+
+
+def migrar_apps_para_pisos(db: Session, forcar: bool = False):
+    """Uma vez so: o app que valia em todos os mapas fica ligado em todos os
+    pisos; o de um mapa, no piso desse mapa; o desligado, em nenhum. Depois
+    disso quem decide e a tela de apps (por isso nao roda de novo)."""
+    feito = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == CHAVE_APPS_POR_PISO).first()
+    if feito and not forcar:
+        return
+    pisos = db.query(Piso).all()
+    padrao = piso_padrao(db)
+    ja = {a for (a,) in db.query(AppPiso.app_id).distinct()}
+    for app in db.query(AppPermitido).all():
+        if app.id in ja or not app.ativo:
+            continue
+        if app.grupo_id is None:
+            alvos = pisos
+        else:
+            grupo = db.get(GrupoEstacao, app.grupo_id)
+            alvos = [grupo.piso if grupo and grupo.piso else padrao]
+        for piso in alvos:
+            if piso:
+                db.add(AppPiso(app_id=app.id, piso_id=piso.id))
+    if not feito:
+        db.add(ConfiguracaoSistema(chave=CHAVE_APPS_POR_PISO, valor="feito"))
+    db.flush()

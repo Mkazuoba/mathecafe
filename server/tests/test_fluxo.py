@@ -1668,3 +1668,126 @@ def test_painel_sabe_a_versao_do_agente_e_as_desatualizadas(c, admin, cenario):
         ws.send_json({"evento": "estado", "sessao_id": None, "versao": atual})
         ws.receive_json()
         assert estacao()["agente_desatualizado"] is False
+
+
+# ── Reiniciar o servidor pelo painel ─────────────────────────────────────────
+
+def test_reiniciar_servidor_pelo_painel(c, admin, operador, monkeypatch):
+    import app.routers.config as cfg
+    encerrados = []
+    monkeypatch.setattr(cfg, "_encerrar_processo", lambda: encerrados.append(True))
+    # aberto a mao (sem o iniciar_servidor.bat): ninguem o subiria de novo
+    monkeypatch.delenv("MATHECAFE_SUPERVISIONADO", raising=False)
+    assert c.get("/api/config/servidor", headers=admin).json()["pode_reiniciar"] is False
+    r = c.post("/api/config/reiniciar", headers=admin)
+    assert r.status_code == 400 and "iniciar_servidor" in r.json()["detail"]
+    # pela tarefa (o .bat sobe de novo quando o servidor termina)
+    monkeypatch.setenv("MATHECAFE_SUPERVISIONADO", "1")
+    info = c.get("/api/config/servidor", headers=admin).json()
+    assert info["pode_reiniciar"] is True and info["no_ar_desde"]
+    assert c.post("/api/config/reiniciar", headers=operador).status_code == 403
+    assert c.post("/api/config/reiniciar", headers=admin).status_code == 200
+    import time
+    time.sleep(1.5)  # encerra depois de responder
+    assert encerrados == [True]
+    acoes = c.get("/api/relatorios/acoes", headers=admin, params={"acao": "reiniciar_servidor"}).json()
+    assert acoes and acoes[0]["operador"] == "Administrador"
+
+
+def test_iniciar_servidor_bat_sobe_de_novo():
+    import os
+    bat = open(os.path.join(os.path.dirname(__file__), "..", "iniciar_servidor.bat"), encoding="utf-8").read()
+    assert "MATHECAFE_SUPERVISIONADO=1" in bat
+    assert ":subir" in bat and "goto subir" in bat
+    assert "timeout " not in bat  # timeout nao funciona sem console (a tarefa roda como SYSTEM)
+
+
+# ── Apps permitidos: editar o mapa (grupo) do app ────────────────────────────
+
+def test_editar_app_muda_o_mapa(c, admin):
+    piso = c.get("/api/pisos/", headers=admin).json()[0]["id"]
+    g = c.post(f"/api/estacoes/grupos?nome=Sala%20de%20jogos&piso_id={piso}", headers=admin).json()
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Bloco", "processo": f"bloco{next(_contador)}.exe"})
+    aid = r.json()["id"]
+    assert r.json()["grupo_id"] is None
+    r = c.put(f"/api/apps/{aid}", headers=admin, json={"grupo_id": g["id"]})
+    assert r.status_code == 200 and r.json()["grupo_id"] == g["id"]  # antes era ignorado
+    r = c.put(f"/api/apps/{aid}", headers=admin, json={"nome": "Bloco 2"})
+    assert r.json()["grupo_id"] == g["id"]  # nao mandar o grupo nao mexe nele
+    r = c.put(f"/api/apps/{aid}", headers=admin, json={"grupo_id": None})
+    assert r.json()["grupo_id"] is None  # null volta para todos os mapas
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"grupo_id": 99999}).status_code == 404
+
+
+# ── Apps por piso (cada piso liga os seus) ───────────────────────────────────
+
+def _processos(dados):
+    return {a["processo"] for a in dados["whitelist"]}
+
+
+def test_app_fica_ligado_so_no_piso_escolhido(c, admin, cenario):
+    infantil, adulto = _id_piso(c, admin, "Infantil"), _id_piso(c, admin, "Adulto")
+    proc = f"jogo{next(_contador)}.exe"
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Jogo", "processo": proc, "caminho": f"C:\{proc}",
+                                                  "piso_id": infantil})
+    assert r.status_code == 200, r.text
+    aid = r.json()["id"]
+    assert r.json()["pisos"] == [infantil]  # nasce ligado so no piso em que foi criado
+    # PC do adulto: nao vem
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"] and proc not in _processos(dados)
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+    # liga tambem no adulto
+    r = c.put(f"/api/apps/{aid}/pisos/{adulto}", headers=admin, json={"ligado": True})
+    assert r.status_code == 200 and set(r.json()["pisos"]) == {infantil, adulto}
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert proc in _processos(dados)
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+    r = c.put(f"/api/apps/{aid}/pisos/{infantil}", headers=admin, json={"ligado": False})
+    assert r.json()["pisos"] == [adulto]
+    assert c.put(f"/api/apps/{aid}/pisos/99999", headers=admin, json={"ligado": True}).status_code == 404
+
+
+def test_liberar_direto_usa_os_apps_do_piso(c, admin, cenario):
+    infantil = _id_piso(c, admin, "Infantil")
+    proc = f"so_infantil{next(_contador)}.exe"
+    c.post("/api/apps/", headers=admin, json={"nome": "So infantil", "processo": proc, "piso_id": infantil})
+    estacao = _estacao_infantil(c, admin)
+    _, cid = _cliente_infantil(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{estacao}") as ws:
+        _estado(ws)
+        r = c.post(f"/api/estacoes/{estacao}/iniciar_direto", headers=admin, json={"cliente_id": cid})
+        assert r.status_code == 200, r.text
+        msg = ws.receive_json()
+        while msg["evento"] != "iniciar_sessao_direta":
+            msg = ws.receive_json()
+        assert proc in {a["processo"] for a in msg["dados"]["whitelist"]}
+
+
+def test_apps_antigos_viram_por_piso(c, admin):
+    # antes de existir o piso no app: valia para um mapa (grupo) ou para todos
+    from app.models import AppPermitido, AppPiso, GrupoEstacao, Piso
+    from app.pisos import migrar_apps_para_pisos
+    db = SessionLocal()
+    infantil = db.query(Piso).filter(Piso.nome == "Infantil").one()
+    sala = GrupoEstacao(nome="Sala antiga infantil", piso_id=infantil.id)
+    db.add(sala)
+    db.flush()
+    todos = AppPermitido(nome="Antigo global", processo=f"antigo{next(_contador)}.exe", ativo=True)
+    do_mapa = AppPermitido(nome="Antigo do mapa", processo=f"antigo{next(_contador)}.exe", ativo=True, grupo_id=sala.id)
+    desligado = AppPermitido(nome="Antigo desligado", processo=f"antigo{next(_contador)}.exe", ativo=False)
+    db.add_all([todos, do_mapa, desligado])
+    db.commit()
+    migrar_apps_para_pisos(db, forcar=True)
+    db.commit()
+    pisos_de = lambda a: {p.piso_id for p in db.query(AppPiso).filter(AppPiso.app_id == a.id)}
+    assert pisos_de(todos) == {p.id for p in db.query(Piso)}
+    assert pisos_de(do_mapa) == {infantil.id}
+    assert pisos_de(desligado) == set()
+    db.close()

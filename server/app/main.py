@@ -9,7 +9,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
-from app.pisos import cor_para_o_agente, recusa_de_piso
+from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso
 from app import horario
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
@@ -382,10 +382,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 db.commit()
                 db.refresh(sessao)
 
-                apps_permitidos = db.query(AppPermitido).filter(
-                    AppPermitido.ativo == True,
-                    (AppPermitido.grupo_id == estacao.grupo_id) | (AppPermitido.grupo_id == None)
-                ).all()
+                # os apps ligados no piso desta estacao
+                apps_permitidos = apps_do_piso(db, piso_da_estacao(estacao))
                 whitelist = [
                     {
                         "nome": a.nome,

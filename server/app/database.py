@@ -110,8 +110,9 @@ def init_db():
             db.add(GrupoEstacao(nome="Padrao", tempo_padrao_segundos=7200))
         db.flush()
 
-        from app.pisos import garantir_pisos
+        from app.pisos import garantir_pisos, migrar_apps_para_pisos
         garantir_pisos(db)
+        migrar_apps_para_pisos(db)
 
         configs_padrao = {
             "reiniciar_ao_encerrar": "false",

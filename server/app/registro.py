@@ -31,6 +31,7 @@ ROTULOS = {
     "zerar_tempo_dia": "Zerou o tempo do dia",
     "horario": "Mudou o horário de funcionamento",
     "configuracao": "Mudou as configurações",
+    "reiniciar_servidor": "Reiniciou o servidor",
     "criar_operador": "Cadastrou operador",
     "editar_operador": "Editou operador",
     "excluir_operador": "Excluiu operador",

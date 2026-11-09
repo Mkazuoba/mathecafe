@@ -4,13 +4,14 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, lerTempo } from "@/lib/tempo"
-import type { AppPermitido, ConfigSistema, Grupo, Operador } from "@/lib/tipos"
+import type { ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoPisos } from "@/components/SecaoPisos"
+import { SecaoApps } from "@/components/SecaoApps"
 import { SecaoHorario } from "@/components/SecaoHorario"
 import { SecaoProgramacao } from "@/components/SecaoProgramacao"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
@@ -55,7 +56,8 @@ export default function Configuracoes() {
         ))}
       </nav>
       <div className="min-h-0 flex-1 overflow-auto px-8 py-6">
-        <div className="max-w-2xl">
+        {/* a grade de apps usa a largura toda */}
+        <div className={secao === "apps" ? "max-w-6xl" : "max-w-2xl"}>
           {secao === "operadores" && <SecaoOperadores />}
           {secao === "comportamento" && <SecaoComportamento />}
           {secao === "horario" && <SecaoHorario />}
@@ -331,211 +333,6 @@ function SecaoComportamento() {
 }
 
 // ── Apps permitidos ─────────────────────────────────────────────────────────
-
-function SecaoApps() {
-  const avisar = useAvisos()
-  const { todosGrupos: grupos } = useDados()
-  const [apps, setApps] = useState<AppPermitido[] | null>(null)
-  const [form, setForm] = useState({ nome: "", processo: "", grupo: "", caminho: "", imagem: "" })
-  const [editando, setEditando] = useState<AppPermitido | null>(null)
-  const [erro, setErro] = useState("")
-
-  const carregar = useCallback(async () => {
-    setApps(await Api.get<AppPermitido[]>("/api/apps/"))
-  }, [])
-  useEffect(() => {
-    carregar().catch((e) => avisar((e as Error).message, "erro"))
-  }, [carregar, avisar])
-
-  const campo = (k: keyof typeof form) => ({
-    value: form[k],
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value }),
-  })
-
-  async function adicionar(ev: React.FormEvent) {
-    ev.preventDefault()
-    setErro("")
-    if (!form.nome.trim() || !form.processo.trim()) return setErro("Preencha nome e processo (.exe)")
-    try {
-      await Api.post("/api/apps/", {
-        nome: form.nome.trim(),
-        processo: form.processo.trim(),
-        caminho: form.caminho.trim() || null,
-        grupo_id: form.grupo ? Number(form.grupo) : null,
-        imagem_url: form.imagem.trim() || null,
-      })
-      setForm({ nome: "", processo: "", grupo: form.grupo, caminho: "", imagem: "" })
-      avisar("App adicionado")
-      await carregar()
-    } catch (e) {
-      setErro((e as Error).message)
-    }
-  }
-
-  async function remover(a: AppPermitido) {
-    if (!window.confirm(`Remover ${a.nome} dos apps permitidos?`)) return
-    try {
-      await Api.del(`/api/apps/${a.id}`)
-      avisar("App removido")
-      await carregar()
-    } catch (e) {
-      avisar((e as Error).message, "erro")
-    }
-  }
-
-  return (
-    <>
-      <Titulo>Apps permitidos</Titulo>
-      <form onSubmit={adicionar} className="mb-5 flex flex-col gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Input aria-label="Nome do app" placeholder="Nome (ex: Google Chrome)" className="h-9 min-w-40 flex-1" {...campo("nome")} />
-          <Input aria-label="Processo" placeholder="processo.exe" className="h-9 min-w-32 flex-1" {...campo("processo")} />
-          <Select aria-label="Grupo" className="h-9 w-44" {...campo("grupo")}>
-            <option value="">Todos os grupos</option>
-            {grupos.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.nome}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Input aria-label="Caminho do executável" placeholder="Caminho completo do .exe" className="h-9 min-w-60 flex-[2]" {...campo("caminho")} />
-          <Input aria-label="URL da imagem de capa" placeholder="URL da imagem (capa)" className="h-9 min-w-40 flex-1" {...campo("imagem")} />
-          <Button type="submit" size="sm" className="h-9">
-            + Adicionar
-          </Button>
-        </div>
-        <MensagemErro>{erro}</MensagemErro>
-      </form>
-
-      {apps === null ? (
-        <Vazio>Carregando...</Vazio>
-      ) : apps.length ? (
-        apps.map((a) => (
-          <Linha key={a.id}>
-            {a.imagem_url && (
-              <img
-                src={a.imagem_url}
-                alt=""
-                className="size-12 shrink-0 rounded-md object-cover"
-                onError={(e) => (e.currentTarget.style.display = "none")}
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                {a.nome}
-                <span className="rounded-full bg-superficie-3 px-2 text-[0.66rem] text-texto-suave">{a.grupo_nome}</span>
-              </div>
-              <div className="truncate font-mono text-xs text-texto-fraco">
-                {a.processo} · {a.caminho || "(sem caminho: não aparece no launcher)"}
-              </div>
-            </div>
-            <Button variant="outline" size="xs" onClick={() => setEditando(a)}>
-              Editar
-            </Button>
-            <Button variant="perigo" size="xs" onClick={() => remover(a)}>
-              Remover
-            </Button>
-          </Linha>
-        ))
-      ) : (
-        <Vazio>Nenhum app cadastrado. Sem apps na lista, nenhum programa é bloqueado.</Vazio>
-      )}
-      <ModalApp app={editando} grupos={grupos} aoFechar={() => setEditando(null)} aoSalvar={carregar} />
-    </>
-  )
-}
-
-function ModalApp({
-  app,
-  grupos,
-  aoFechar,
-  aoSalvar,
-}: {
-  app: AppPermitido | null
-  grupos: { id: number; nome: string }[]
-  aoFechar: () => void
-  aoSalvar: () => Promise<void>
-}) {
-  const avisar = useAvisos()
-  const [nome, setNome] = useState("")
-  const [processo, setProcesso] = useState("")
-  const [caminho, setCaminho] = useState("")
-  const [imagem, setImagem] = useState("")
-  const [grupoId, setGrupoId] = useState("")
-  const [ativo, setAtivo] = useState(true)
-  const [erro, setErro] = useState("")
-  const [aberto, setAberto] = useState<AppPermitido | null>(null)
-
-  if (app !== aberto) {
-    setAberto(app)
-    setNome(app?.nome ?? "")
-    setProcesso(app?.processo ?? "")
-    setCaminho(app?.caminho ?? "")
-    setImagem(app?.imagem_url ?? "")
-    setGrupoId(app?.grupo_id != null ? String(app.grupo_id) : "")
-    setAtivo(app?.ativo ?? true)
-    setErro("")
-  }
-
-  async function salvar(ev: React.FormEvent) {
-    ev.preventDefault()
-    if (!app) return
-    if (!nome.trim() || !processo.trim()) return setErro("Preencha nome e processo")
-    try {
-      await Api.put(`/api/apps/${app.id}`, {
-        nome: nome.trim(),
-        processo: processo.trim(),
-        caminho: caminho.trim() || null,
-        imagem_url: imagem.trim() || null,
-        ativo,
-        grupo_id: grupoId ? Number(grupoId) : null,
-      })
-      avisar("App atualizado")
-      aoFechar()
-      await aoSalvar()
-    } catch (e) {
-      setErro((e as Error).message)
-    }
-  }
-
-  return (
-    <Modal titulo="Editar app" aberto={!!app} aoFechar={aoFechar}>
-      <form onSubmit={salvar} className="flex flex-col gap-4">
-        <Campo rotulo="Nome" id="app-nome">
-          <Input id="app-nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Processo (.exe)" id="app-proc">
-          <Input id="app-proc" value={processo} onChange={(e) => setProcesso(e.target.value)} />
-        </Campo>
-        <Campo rotulo="Caminho do .exe" id="app-cam">
-          <Input id="app-cam" value={caminho} onChange={(e) => setCaminho(e.target.value)} placeholder="C:\\...\\app.exe" />
-        </Campo>
-        <Campo rotulo="URL da imagem" id="app-img">
-          <Input id="app-img" value={imagem} onChange={(e) => setImagem(e.target.value)} placeholder="https://..." />
-        </Campo>
-        <Campo rotulo="Grupo" id="app-grupo">
-          <Select id="app-grupo" value={grupoId} onChange={(e) => setGrupoId(e.target.value)}>
-            <option value="">Todos os grupos</option>
-            {grupos.map((g) => (
-              <option key={g.id} value={g.id}>{g.nome}</option>
-            ))}
-          </Select>
-        </Campo>
-        <div className="flex items-center justify-between">
-          <label htmlFor="app-ativo" className="text-sm text-texto-suave">Ativo</label>
-          <Interruptor id="app-ativo" rotulo="App ativo" ligado={ativo} aoMudar={setAtivo} />
-        </div>
-        <MensagemErro>{erro}</MensagemErro>
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={aoFechar}>Cancelar</Button>
-          <Button type="submit" className="flex-1">Salvar</Button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
 
 // ── Grupos ──────────────────────────────────────────────────────────────────
 

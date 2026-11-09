@@ -470,13 +470,10 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, db: Session = Depen
     registrar(db, operador, "liberar_direto", cliente=cliente, estacao=nome)
     db.refresh(cliente)
 
-    # Whitelist: apps do grupo da estacao + apps globais (grupo_id=None)
-    from app.models import AppPermitido, ConfiguracaoSistema
-    from sqlalchemy import or_ as _or
-    apps = db.query(AppPermitido).filter(
-        AppPermitido.ativo == True,
-        _or(AppPermitido.grupo_id == e.grupo_id, AppPermitido.grupo_id == None)
-    ).all()
+    # Whitelist: os apps ligados no piso da estacao
+    from app.models import ConfiguracaoSistema
+    from app.pisos import apps_do_piso
+    apps = apps_do_piso(db, piso_da_estacao(e))
 
     cfg_reiniciar = db.query(ConfiguracaoSistema).filter(
         ConfiguracaoSistema.chave == "reiniciar_ao_encerrar").first()

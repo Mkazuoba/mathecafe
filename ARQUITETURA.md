@@ -41,6 +41,7 @@ O WebSocket (e não um heartbeat HTTP, como no sistema de Banners) é necessári
 | `importados.py` | sessões importadas do VSCyber (motivo `vscyber`): guardadas, mas fora de todos os históricos e relatórios enquanto `configuracoes.historico_vscyber_visivel` não for `true` (`so_visiveis`) |
 | `registro.py` | `registrar(db, quem, acao, cliente, estacao, detalhe)`, chamado pelas rotas que mudam algo (liberar, tempo extra, encerrar, desligar, trocar piso...); `ROTULOS` dá o nome de cada ação no painel e no CSV |
 | `horario.py` | horário de funcionamento (chave `horario_funcionamento` em `configuracoes`, um dia por linha, 0 = segunda): `decidir` diz, a cada batimento, se avisa (10 e 5 min antes de fechar) ou encerra as sessões (motivo `horario`, devolvendo o tempo); `esta_fechada` recusa o login no PC e o liberar direto |
+| `routers/config.py` → `/reiniciar` | botão **Reiniciar servidor**: só com `MATHECAFE_SUPERVISIONADO=1` (posto pelo `iniciar_servidor.bat`, que sobe o servidor de novo sempre que ele termina); o servidor responde e sai com código 3 um segundo depois. Aberto à mão, recusa (ninguém o subiria de volta) |
 | `backup.py` | backup diário do SQLite (`sqlite3.backup`, cópia consistente com o servidor gravando), um arquivo por dia em `BACKUP_PASTA`, guarda `BACKUP_DIAS` dias |
 | `agente_dist/agente.py` | arquivo distribuído para auto-update; versão lida da constante `VERSAO` no topo |
 | `static/` | **build** do painel React (gerado por `npm run build`; não editar à mão) |
@@ -60,7 +61,7 @@ React 19 + Vite + Tailwind 4, no mesmo molde do `central/frontend` do sistema de
 | `src/lib/buscaClientes.ts` | busca de clientes no servidor (`useBuscaClientes`, só do piso escolhido) e os filtros, os mesmos no Painel e na aba Clientes |
 | `src/lib/acoes.ts` | liberar, tirar da fila, encerrar sessão |
 | `src/lib/tempo.ts` | formato HH:MM:SS e cálculo do tempo restante |
-| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente` (mesmo formato da ficha, com a foto), `QuadroFoto` (foto, botões e o ajuste de enquadramento, usados pelos dois), `AvatarCliente` (miniatura nas listas; fotos em cache em `lib/fotos.ts`), `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
+| `src/components/` | `Layout` (menu lateral e cabeçalho), `FichaCliente` (dados, foto, histórico e segurança do cliente), `ModalNovoCliente` (mesmo formato da ficha, com a foto), `QuadroFoto` (foto, botões e o ajuste de enquadramento, usados pelos dois), `AvatarCliente` (miniatura nas listas; fotos em cache em `lib/fotos.ts`), `SecaoApps` (Apps permitidos em grade de cartões, interruptor, filtros e ações em massa), `ModalSaldo`, `SeletorCliente`, `FiltrosBusca`, `ColunasAjustaveis` (colunas do Painel com largura e ordem do operador) e `ui/` (botão, campos, modal, selos de status) |
 | `src/pages/` | uma tela por arquivo |
 
 O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualquer outra rota que não seja `/api` ou `/ws`; assim, recarregar a página em `/clientes` funciona.
@@ -78,7 +79,8 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `estacoes` | PCs cadastrados, status (livre / ocupada / desligada / manutencao), `pos_x`/`pos_y` no mapa, `ativa` |
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo (`vscyber` = importada do VSCyber por `importar_historico.py`, em estações inativas "... (VS)"/"(VSI)") |
-| `apps_permitidos` | programas que podem rodar (processo, caminho, imagem de capa), por grupo ou para todos |
+| `apps_permitidos` | programas (processo, caminho, imagem de capa); `grupo_id`/`ativo` são do modelo antigo, só usados na conversão |
+| `apps_pisos` | em que piso cada app está ligado (`app_id`, `piso_id`); a estação recebe os apps do piso dela (`pisos.apps_do_piso`) |
 | `configuracoes` | chave/valor: `tempo_padrao_segundos` (tempo de uso por dia), `reiniciar_ao_encerrar` |
 
 ## Fluxo de uma sessão
