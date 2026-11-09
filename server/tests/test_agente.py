@@ -545,24 +545,27 @@ def test_downloads_presos_na_pasta_downloads():
     assert '"PromptForDownloadLocation" -Value 0' in pol
 
 
-def test_meus_arquivos_e_o_icone_do_dock_que_abre_no_hover():
-    # 1.10.1 abria uma pasta grande separada em cima do icone; o pedido era o
-    # proprio icone virar a pasta e os arquivos sairem dela com o mouse em cima,
-    # animados (cada quadro troca uma imagem so: nada de redesenhar o dock)
+def test_meus_arquivos_abre_o_explorador_preso_em_downloads():
+    # 9.5 refeito (09/11): o leque nao funcionou bem. O icone de pasta do dock
+    # abre o Explorador de verdade na pasta Downloads, e um vigia (PowerShell
+    # escondido, COM Shell.Application) traz de volta para Downloads qualquer
+    # janela do Explorador que saia dela.
     src = _fonte()
-    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
-    assert "icone_pasta" in dock  # o icone desenhado como pasta
-    mover = dock[dock.index("def _ao_mover"):dock.index("def _ao_sair")]
-    assert "espiar(" in mover
-    sair = dock[dock.index("def _ao_sair"):dock.index("def _marcar_sobre")]
-    assert "espiar(False)" in sair
-    tela = src[src.index("class MeusArquivos:"):src.index("class Programacao:")]
-    assert "def espiar(self" in tela and "after(16" in tela
-    assert ".delete(" not in tela and "itemconfig(self._item, image=" in tela
-    abrir = tela[tela.index("def _abrir_arquivo"):]
+    assert "class MeusArquivos:" not in src
+    abrir = src[src.index("def abrir_meus_arquivos(self"):]
     abrir = abrir[:abrir.index("\n    def ", 10)]
-    # direto no programa: pelo Windows vinha o aviso de seguranca
-    assert "subprocess.Popen([programa, caminho])" in abrir and "startfile" not in abrir
+    assert "explorer.exe" in abrir and "_ligar_vigia" in abrir
+    mover = src[src.index("def _ao_mover(self"):src.index("def _ao_sair(self")]
+    assert "espiar" not in mover
+    # o vigia liga na sessao e desliga ao voltar ao login
+    assert "self._ligar_vigia()" in src[src.index("def _iniciar_sessao("):src.index("def _iniciar_sessao(") + 3000]
+    voltar = src[src.index("def _voltar_login(self"):]
+    assert "self._desligar_vigia()" in voltar[:voltar.index("\n    def ", 10)]
+    # o agente nao mata o proprio vigia, e com ele ligado o Explorador e permitido
+    processos = src[src.index("def _verificar_processos(self"):src.index("def _fechar_janelas_fora_da_whitelist")]
+    assert "self._pids_proprios" in processos
+    janelas = src[src.index("def _fechar_janelas_fora_da_whitelist"):src.index("# ── Auto-update")]
+    assert "_vigia" in janelas
 
 
 def test_agente_so_se_atualiza_na_manutencao():
@@ -586,3 +589,24 @@ def test_compara_versoes_do_agente():
     assert ns["ha_versao_nova"]("1.10.2", "1.10.2") is False
     assert ns["ha_versao_nova"]("1.9.9", "1.10.0") is False  # numero, nao texto
     assert ns["ha_versao_nova"](None, "1.0.0") is False
+
+
+def test_script_do_vigia_volta_para_downloads():
+    ns = _funcoes_do_agente("script_vigia")
+    script = ns["script_vigia"](r"C:\Users\cli'ente\Downloads", 4321)
+    assert r"C:\Users\cli''ente\Downloads" in script  # aspas escapadas para o PowerShell
+    assert "Shell.Application" in script and "Navigate2" in script
+    assert "Get-Process -Id 4321" in script  # termina sozinho se o agente cair
+
+
+def test_notificacoes_com_fade_e_deslize():
+    # 09/11: fade ao aparecer e deslize para a direita ao fechar
+    src = _fonte()
+    notif = src[src.index("class Notificacoes:"):src.index("def _fonte_pil(")]
+    assert '"-alpha"' in notif  # fade da janela (aparece e some)
+    dispensar = notif[notif.index("def _dispensar("):notif.index("def _tirar(")]
+    assert 'item["saindo"] = True' in dispensar and "self.LARGURA" in dispensar  # sai pela direita
+    assert "self._tirar(ident)" in notif  # so sai da lista depois de deslizar
+    mostrar = notif[notif.index("def _mostrar("):notif.index("def _posicionar(")]
+    assert "self._alpha_alvo, self._dx_alvo = 0.0" in mostrar  # some com fade, para a direita
+    assert "self.top.withdraw()" not in mostrar  # nao some de uma vez

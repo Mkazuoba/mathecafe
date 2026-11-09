@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-09 — Meus arquivos no Explorador de verdade e notificações com movimento (9.5, 9.4; agente 1.12.0)
+
+- O leque de arquivos saiu (não funcionou bem). O ícone de pasta do dock abre o **Explorador do Windows** na pasta Downloads do cliente.
+- O cliente não sai da pasta: se tentar ir para C:, Este Computador ou outra pasta (pela barra de endereço, painel lateral ou "voltar"), a janela volta sozinha para Downloads em até meio segundo. Feito com um PowerShell escondido que o próprio agente sobe na sessão (COM do Windows, nada a instalar) e que termina com ela.
+- Programas baixados continuam sendo fechados pela lista de apps permitidos; a pasta continua sendo esvaziada entre clientes.
+- **Notificações com movimento**: a pilha aparece com fade (e um leve deslize vindo da direita) e some com fade deslizando para a direita; uma notificação nova entra deslizando da direita e a fechada (×) sai deslizando para a direita antes de sumir.
+
 ## 2026-11-09 — Agente só se atualiza pela manutenção (6.13; agente 1.11.0)
 
 - **O agente não se atualiza mais sozinho** (antes reiniciava ao abrir, até com cliente esperando na tela de login). Ele só confere se há versão nova; na faixa do modo manutenção o botão mostra **Atualizar para a versão X** (ou "Agente em dia" / "Verificar atualização"), e o operador confirma a hora.

@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.11.0"
+VERSAO = "1.12.0"
 
 import asyncio
 import json
@@ -173,6 +173,41 @@ def pasta_downloads():
     except Exception:
         pass
     return os.path.join(os.path.expanduser("~"), "Downloads")
+
+
+# Vigia do Explorador (9.5): o cliente usa a pasta Downloads no Explorador de
+# verdade; este PowerShell escondido (COM Shell.Application, que o Windows ja
+# tem) traz de volta para Downloads qualquer janela que saia dela. Termina
+# sozinho se o agente cair.
+def script_vigia(pasta, pid_agente):
+    pasta_ps = pasta.rstrip("\\").replace("'", "''")
+    return f"""
+$pasta = '{pasta_ps}'
+$shell = New-Object -ComObject Shell.Application
+while ($true) {{
+    if (-not (Get-Process -Id {int(pid_agente)} -ErrorAction SilentlyContinue)) {{ exit }}
+    foreach ($w in @($shell.Windows())) {{
+        try {{
+            if ($w.FullName -notlike '*explorer.exe') {{ continue }}
+            $p = $w.Document.Folder.Self.Path
+            if (-not $p -or -not ($p -ieq $pasta -or $p.StartsWith($pasta + '\\', [StringComparison]::OrdinalIgnoreCase))) {{
+                $w.Navigate2($pasta)
+            }}
+        }} catch {{}}
+    }}
+    Start-Sleep -Milliseconds 500
+}}
+"""
+
+
+def iniciar_vigia(pasta):
+    """Sobe o vigia (sem janela) e devolve o processo."""
+    import base64
+    codigo = base64.b64encode(script_vigia(pasta, os.getpid()).encode("utf-16-le")).decode("ascii")
+    return subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-EncodedCommand", codigo],
+        creationflags=0x08000000)  # CREATE_NO_WINDOW
 
 
 def listar_arquivos(pasta):
@@ -684,20 +719,13 @@ class BarraSessao:
 
     def _ao_mover(self, ev):
         k = self._item_em(ev.x)
-        pasta = self._indice("arquivos")
-        espiar = getattr(self.app, "espiar_arquivos", None)
-        if espiar:
-            espiar(k is not None and k == pasta)  # a pasta abre com o mouse em cima
         if k == self._sobre:
             return  # nada mudou: não mexe em nada (é o que evita o pisca)
         self._sobre = k
         self._marcar_sobre()
-        self._mostrar_balao(None if k == pasta else k)
+        self._mostrar_balao(k)
 
     def _ao_sair(self, _ev):
-        espiar = getattr(self.app, "espiar_arquivos", None)
-        if espiar:
-            espiar(False)
         if self._sobre is not None:
             self._sobre = None
             self._marcar_sobre()
@@ -802,7 +830,16 @@ class Notificacoes:
     mouse em cima a pilha se abre em lista, e fecha ao sair. Uma nova aparece
     sozinha por alguns segundos e depois fica no sininho do dock (que mostra
     e esconde a pilha). Cabeçalho com "N novas" e Limpar tudo; × dispensa.
+
+    Movimento: a pilha aparece com fade (e um leve deslize da direita) e some
+    com fade deslizando para a direita; um cartão novo entra deslizando da
+    direita e o dispensado sai deslizando para a direita. O fade é da janela
+    inteira (-alpha): o fundo é transparente, então um cartão sozinho não tem
+    com o que misturar a cor.
     """
+    QUADRO_MS = 16          # ~60 quadros por segundo
+    SUAVIDADE = 0.28        # fração do caminho por quadro (ease-out, ~0,2 s)
+    DESLIZE_JANELA = 28     # px que a pilha anda ao aparecer/sumir
     CHAVE = "#010203"
     LARGURA, ALTURA_CARTAO, ESPACO = 384, 84, 8
     CABECALHO = 40
@@ -825,6 +862,13 @@ class Notificacoes:
         self._aberta = 0.0  # 0 = pilha, 1 = lista (anima)
         self._alvo = 0.0
         self._animando = False
+        # efeitos de entrada e saída
+        self._na_tela = False
+        self._alpha, self._alpha_alvo = 0.0, 0.0
+        self._dx, self._dx_alvo = 0.0, 0.0  # deslocamento da janela para a direita
+        self._base = (0, 0)  # posição da janela sem deslocamento
+        self._desloc = {}  # id do cartão -> [deslocamento atual, alvo] (entrando/saindo)
+        self._efeitos = False
         self.top = tk.Toplevel(app.root)
         self.top.withdraw()
         self.top.overrideredirect(True)
@@ -851,6 +895,9 @@ class Notificacoes:
                 "tipo": tipo, "quando": time.time(), "lida": False}
         self._proximo += 1
         self.itens = ([item] + self.itens)[: self.MAXIMO]
+        if self._na_tela:
+            self._desloc[item["id"]] = [self.LARGURA * 0.6, 0.0]  # entra deslizando da direita
+            self._efeito()
         self.visivel = True
         if not self.fixa:
             self._agendar_sumir()
@@ -869,9 +916,12 @@ class Notificacoes:
         self._mostrar()
 
     def limpar(self):
-        """Fim da sessão: nada passa para o próximo cliente."""
+        """Fim da sessão: nada passa para o próximo cliente (sem animação)."""
         self.itens, self.visivel, self.fixa = [], False, False
         self._aberta = self._alvo = 0.0
+        self._desloc = {}
+        self._na_tela = False
+        self._alpha = self._alpha_alvo = 0.0
         self.top.withdraw()
 
     # ── comportamento ──
@@ -919,6 +969,16 @@ class Notificacoes:
         self._abrir(x1 <= ev.x <= x2 and y1 <= ev.y <= y2)
 
     def _dispensar(self, ident):
+        """× : o cartão sai deslizando para a direita e só então é tirado."""
+        item = next((i for i in self.itens if i["id"] == ident), None)
+        if item is None or item.get("saindo"):
+            return
+        item["saindo"] = True
+        atual = self._desloc.get(ident, [0.0, 0.0])[0]
+        self._desloc[ident] = [atual, float(self.LARGURA + 20)]
+        self._efeito()
+
+    def _tirar(self, ident):
         self.itens = [i for i in self.itens if i["id"] != ident]
         if not self.itens:
             self._alvo = self._aberta = 0.0
@@ -945,14 +1005,63 @@ class Notificacoes:
 
     def _mostrar(self):
         if not self.visivel:
-            self.top.withdraw()
+            if self._na_tela:  # some com fade, deslizando para a direita
+                self._alpha_alvo, self._dx_alvo = 0.0, float(self.DESLIZE_JANELA)
+                self._efeito()
             return
         tela_l, tela_a = self.app.root.winfo_screenwidth(), self.app.root.winfo_screenheight()
-        y = tela_a - self.app.barra.altura - self.altura - 8
-        self.top.geometry(f"{self.LARGURA}x{self.altura}+{tela_l - self.LARGURA - 12}+{y}")
+        self._base = (tela_l - self.LARGURA - 12, tela_a - self.app.barra.altura - self.altura - 8)
         self._desenhar()
-        self.top.deiconify()
+        if not self._na_tela:  # aparece com fade, vindo um pouco da direita
+            self._na_tela = True
+            self._alpha, self._dx = 0.0, float(self.DESLIZE_JANELA)
+            self._posicionar()
+            self.top.deiconify()
+        self._alpha_alvo, self._dx_alvo = 1.0, 0.0
         self.top.lift()
+        self._efeito()
+
+    def _posicionar(self):
+        x, y = self._base
+        self.top.geometry(f"{self.LARGURA}x{self.altura}+{int(x + self._dx)}+{y}")
+        try:
+            self.top.attributes("-alpha", max(0.0, min(1.0, self._alpha)))
+        except tk.TclError:
+            pass
+
+    def _efeito(self):
+        if not self._efeitos:
+            self._efeitos = True
+            self.top.after(self.QUADRO_MS, self._animar_efeitos)
+
+    @classmethod
+    def _passo(cls, atual, alvo, perto):
+        """Um quadro do ease-out: anda uma fração do que falta; chega se está perto."""
+        novo = atual + (alvo - atual) * cls.SUAVIDADE
+        return alvo if abs(alvo - novo) < perto else novo
+
+    def _animar_efeitos(self):
+        """Fade/deslize da janela e deslize dos cartões, ~60 quadros por segundo."""
+        self._alpha = self._passo(self._alpha, self._alpha_alvo, 0.02)
+        self._dx = self._passo(self._dx, self._dx_alvo, 0.5)
+        self._posicionar()
+        for ident, (atual, alvo) in list(self._desloc.items()):
+            novo = self._passo(atual, alvo, 1.0)
+            if novo == alvo:
+                del self._desloc[ident]
+                if alvo > 0:  # saiu pela direita: agora sim tira da lista
+                    self._tirar(ident)
+            else:
+                self._desloc[ident] = [novo, alvo]
+        self._desenhar()
+        parado = self._alpha == self._alpha_alvo and self._dx == self._dx_alvo and not self._desloc
+        if self._alpha_alvo == 0.0 and self._alpha == 0.0 and self._na_tela:
+            self._na_tela = False
+            self.top.withdraw()
+        if parado:
+            self._efeitos = False
+        else:
+            self.top.after(self.QUADRO_MS, self._animar_efeitos)
 
     def _desenhar(self):
         c, p = self.canvas, self.app.paleta
@@ -997,10 +1106,11 @@ class Notificacoes:
             y1 = y_pilha + (y_lista - y_pilha) * a
             encolhe = (1 - 0.05 * min(pos, self.ESPIANDO - 1)) * (1 - a) + a  # atrás, um pouco mais estreito
             m = L * (1 - encolhe) / 2
-            ret(c, m, y1, L - m, y1 + H, 16, fill=p["superficie"], outline=p["superficie3"])
-            if pos > 0 and a < 0.5:
+            dx = self._desloc.get(item["id"], (0.0, 0.0))[0]  # entrando ou saindo pela direita
+            ret(c, m + dx, y1, L - m + dx, y1 + H, 16, fill=p["superficie"], outline=p["superficie3"])
+            if pos > 0 and a < 0.5 and not dx:
                 continue  # atrás da pilha: só a borda espiando
-            self._cartao(c, item, m, y1, L - m)
+            self._cartao(c, item, m + dx, y1, L - m + dx)
 
     def _cartao(self, c, item, x1, y1, x2):
         p = self.app.paleta
@@ -1066,397 +1176,6 @@ def icone_pasta(tamanho, tem_arquivos=True):
     ImageDraw.Draw(mascara).rounded_rectangle([1 * S, 13 * S, 31 * S, 28 * S], radius=3 * S, fill=255)
     im.paste(frente, (0, 0), mascara)
     return im.resize((tamanho, tamanho), Image.LANCZOS)
-
-
-class MeusArquivos:
-    """"Meus arquivos" (9.5) no próprio ícone de pasta do dock: com o mouse em
-    cima, os arquivos baixados na sessão saem da pasta em leque, animados, logo
-    acima do dock (as fotos com miniatura). Mouse num cartão o levanta, clicar
-    abre (só documentos e imagens, e só no programa liberado), o × exclui com
-    confirmação; tirar o mouse guarda os cartões. O Explorador continua
-    bloqueado; a pasta é esvaziada quando a sessão termina.
-
-    O leque é uma janela transparente com UMA imagem (Pillow), trocada a cada
-    quadro da animação: nada é apagado e recriado, então não pisca. Os cartões
-    ficam prontos em cache; por quadro só se giram e se juntam."""
-    L, A = 900, 260  # janela do leque
-    PASSO = 146  # distância entre os cartões no leque
-    CARTAO_L, CARTAO_A = 176, 116
-    MAX_CARTOES = 5
-    ABRIR_MS, LEVANTAR_MS = 260, 120
-    LEVANTA = 16
-    CHAVE = "#010203"
-    CORES_TIPO = {"pdf": (239, 68, 68), "doc": (59, 130, 246), "docx": (59, 130, 246), "odt": (59, 130, 246),
-                  "rtf": (59, 130, 246), "txt": (100, 116, 139), "xls": (34, 197, 94), "xlsx": (34, 197, 94),
-                  "ods": (34, 197, 94), "csv": (34, 197, 94), "ppt": (249, 115, 22), "pptx": (249, 115, 22),
-                  "odp": (249, 115, 22)}
-    IMAGENS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
-
-    def __init__(self, app):
-        self.app = app
-        self.arquivos = []
-        self._assinatura = None
-        self._pagina = 0
-        self._sobre = None  # caminho do cartão sob o mouse
-        self._confirmar = None  # caminho esperando o segundo clique no ×
-        self._abertura, self._alvo = 0.0, 0.0  # 0 guardado, 1 aberto
-        self._levante = {}  # caminho -> 0..1 (cartão levantado)
-        self._animando = False
-        self._ultimo = 0.0
-        self._timer = None
-        self._lido_em = 0.0
-        self._ix = self.L / 2  # x do ícone dentro da janela
-        self._cartoes = []  # [{"caminho", "poligonos", "fechar"}] de cima para baixo
-        self._botao = None  # (x, y, raio) do botão "+N"
-        self._miniaturas, self._prontos = {}, {}
-        self._foto = None
-        self.top = tk.Toplevel(app.root)
-        self.top.withdraw()
-        self.top.overrideredirect(True)
-        self.top.attributes("-topmost", True)
-        self.top.configure(bg=self.CHAVE)
-        try:
-            self.top.attributes("-transparentcolor", self.CHAVE)
-        except tk.TclError:
-            pass
-        self.canvas = tk.Canvas(self.top, bg=self.CHAVE, highlightthickness=0, bd=0, width=self.L, height=self.A)
-        self.canvas.pack(fill="both", expand=True)
-        self._item = self.canvas.create_image(0, 0, anchor="nw")
-        self.canvas.bind("<Motion>", self._ao_mover)
-        self.canvas.bind("<Leave>", lambda _e: self.espiar(False))
-        self.canvas.bind("<Button-1>", self._ao_clicar)
-
-    # ── abrir e guardar ──
-    def espiar(self, sim):
-        """Mouse no ícone (ou no leque): abre. Saiu: guarda, se não voltou em 0,2 s."""
-        if not PIL_AVAILABLE:
-            return
-        if self._timer:
-            self.top.after_cancel(self._timer)
-            self._timer = None
-        if sim:
-            if self._alvo == 0:
-                if time.monotonic() - self._lido_em > 1:
-                    self._recarregar()
-                self._posicionar()
-                self.top.deiconify()
-                self.top.lift()
-            self._alvo = 1.0
-            self._animar_ja()
-        elif self._alvo:
-            self._timer = self.top.after(200, self._talvez_guardar)
-
-    def _talvez_guardar(self):
-        self._timer = None
-        px, py = self.top.winfo_pointerxy()
-        x, y = px - self.top.winfo_rootx(), py - self.top.winfo_rooty()
-        if self._cartao_em(x, y) or self._no_botao(x, y) or self.app.barra.mouse_no_item("arquivos"):
-            return
-        self._alvo, self._sobre, self._confirmar = 0.0, None, None
-        self._animar_ja()
-
-    def fechar(self):
-        """Guarda na hora (fim da sessão, arquivo aberto)."""
-        self._alvo = self._abertura = 0.0
-        self._sobre = self._confirmar = None
-        self._levante = {}
-        self.top.withdraw()
-
-    def _posicionar(self):
-        tela_l = self.app.root.winfo_screenwidth()
-        centro = self.app.barra.centro_do_item("arquivos") or tela_l // 2
-        x = int(min(max(0, centro - self.L / 2), tela_l - self.L))
-        self._ix = centro - x
-        y = self.app.barra.top.winfo_rooty() - self.A + 14  # os cartões saem de dentro do ícone
-        self.top.geometry(f"{self.L}x{self.A}+{x}+{y}")
-
-    # ── animação ──
-    def _animar_ja(self):
-        if not self._animando:
-            self._animando = True
-            self._ultimo = time.perf_counter()
-            self.top.after(16, self._animar)
-
-    @staticmethod
-    def _aproximar(valor, alvo, passo):
-        return min(alvo, valor + passo) if valor < alvo else max(alvo, valor - passo)
-
-    def _animar(self):
-        agora = time.perf_counter()
-        dt = min(0.05, agora - self._ultimo) * 1000
-        self._ultimo = agora
-        self._abertura = self._aproximar(self._abertura, self._alvo, dt / self.ABRIR_MS)
-        mexendo = self._abertura != self._alvo
-        for c in list(self._levante):
-            alvo = 1.0 if c == self._sobre else 0.0
-            self._levante[c] = self._aproximar(self._levante[c], alvo, dt / self.LEVANTAR_MS)
-            mexendo = mexendo or self._levante[c] != alvo
-        if self._abertura == 0 and self._alvo == 0:
-            self._animando = False
-            self.top.withdraw()
-            return
-        self._desenhar()
-        if mexendo:  # ~60 quadros/s: desconta o tempo gasto desenhando
-            gasto = (time.perf_counter() - agora) * 1000
-            self.top.after(max(1, int(16 - gasto)), self._animar)
-        else:
-            self._animando = False
-
-    # ── dados ──
-    def _recarregar(self):
-        self._lido_em = time.monotonic()
-        self.arquivos = listar_arquivos(pasta_downloads())
-        assinatura = [(a["nome"], a["tamanho"], a["quando"]) for a in self.arquivos]
-        if assinatura != self._assinatura:
-            self._assinatura = assinatura
-            self._pagina = 0 if self._pagina * self.MAX_CARTOES >= len(self.arquivos) else self._pagina
-            self._prontos.clear()
-
-    def _visiveis(self):
-        i = self._pagina * self.MAX_CARTOES
-        return self.arquivos[i:i + self.MAX_CARTOES]
-
-    # ── mouse ──
-    @staticmethod
-    def _dentro(px, py, poligono):
-        dentro = False
-        j = len(poligono) - 1
-        for i, (xi, yi) in enumerate(poligono):
-            xj, yj = poligono[j]
-            if (yi > py) != (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi:
-                dentro = not dentro
-            j = i
-        return dentro
-
-    def _cartao_em(self, x, y):
-        if self._abertura < 0.5:
-            return None
-        for c in self._cartoes:  # o de cima primeiro
-            if any(self._dentro(x, y, p) for p in c["poligonos"]):
-                return c
-        return None
-
-    def _no_botao(self, x, y):
-        return self._botao and math.dist((x, y), self._botao[:2]) <= self._botao[2]
-
-    def _ao_mover(self, ev):
-        c = self._cartao_em(ev.x, ev.y)
-        caminho = c["caminho"] if c and c["caminho"] else None
-        if caminho or self._no_botao(ev.x, ev.y):
-            self.espiar(True)
-        if caminho != self._sobre:
-            self._sobre = caminho
-            if caminho:
-                self._levante.setdefault(caminho, 0.0)
-            self._animar_ja()
-
-    def _ao_clicar(self, ev):
-        if self._no_botao(ev.x, ev.y):
-            self._pagina = (self._pagina + 1) % ((len(self.arquivos) - 1) // self.MAX_CARTOES + 1)
-            self._confirmar, self._levante = None, {}
-            self._animar_ja()
-            self._desenhar()
-            return
-        c = self._cartao_em(ev.x, ev.y)
-        if not c or not c["caminho"]:
-            return
-        if c["caminho"] == self._sobre and c["fechar"] and math.dist((ev.x, ev.y), c["fechar"]) <= 12:
-            self._excluir(c["caminho"])
-            return
-        self._confirmar = None
-        self._abrir_arquivo(c["caminho"])
-
-    def _avisar(self, texto):
-        self.app.notificacoes.notificar("Meus arquivos", "Não foi possível abrir", texto, "arquivos")
-
-    def _abrir_arquivo(self, caminho):
-        if not pode_abrir_arquivo(caminho):
-            self._avisar("Este tipo de arquivo não pode ser aberto neste computador.")
-            return
-        programa = programa_que_abre(caminho)
-        liberados = self.app.whitelist_procs
-        if not programa or (liberados and os.path.basename(programa).lower() not in liberados):
-            self._avisar("Nenhum programa liberado abre este arquivo. Peça ajuda ao atendimento.")
-            return
-        try:
-            # direto no programa: abrindo pelo Windows vinha o aviso de segurança
-            subprocess.Popen([programa, caminho])
-            self.app._log(f"Abrindo arquivo: {os.path.basename(caminho)}")
-            self.fechar()
-        except OSError as e:
-            self._avisar(str(e))
-
-    def _excluir(self, caminho):
-        if self._confirmar != caminho:
-            self._confirmar = caminho  # primeiro clique: pede confirmação
-        else:
-            self._confirmar = None
-            try:
-                os.remove(caminho)
-            except OSError:
-                self.app.notificacoes.notificar("Meus arquivos", "Não foi possível excluir",
-                                                "O arquivo está aberto em outro programa?", "arquivos")
-            self._recarregar()
-        self._desenhar()
-
-    # ── desenho ──
-    def _miniatura(self, a, w, h):
-        chave = (a["caminho"], a["quando"])
-        if chave not in self._miniaturas:
-            try:
-                with Image.open(a["caminho"]) as im:
-                    im.draft("RGB", (w, h))
-                    im = im.convert("RGB")
-                    escala = max(w / im.width, h / im.height)
-                    im = im.resize((max(w, int(im.width * escala)), max(h, int(im.height * escala))), Image.LANCZOS)
-                    x, y = (im.width - w) // 2, (im.height - h) // 2
-                    self._miniaturas[chave] = im.crop((x, y, x + w, y + h))
-            except Exception:
-                self._miniaturas[chave] = None
-        return self._miniaturas[chave]
-
-    @staticmethod
-    def _caber(d, texto, fonte, largura):
-        if d.textlength(texto, font=fonte) <= largura:
-            return texto
-        while texto and d.textlength(texto + "…", font=fonte) > largura:
-            texto = texto[:-1]
-        return texto.rstrip() + "…"
-
-    def _cartao(self, a, sobre):
-        """Um cartão pronto (desenhado em 2x e reduzido), em cache."""
-        chave = (a["caminho"] if a else None, a["quando"] if a else 0, sobre,
-                 bool(a) and self._confirmar == a["caminho"])
-        if chave in self._prontos:
-            return self._prontos[chave]
-        S = 2
-        w, h = self.CARTAO_L * S, self.CARTAO_A * S
-        mascara = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(mascara).rounded_rectangle([0, 0, w - 1, h - 1], radius=14 * S, fill=255)
-        f_nome, f_info = _fonte_pil("seguisb.ttf", 12 * S), _fonte_pil("consola.ttf", 9 * S)
-        if not a:  # pasta vazia
-            base = Image.new("RGBA", (w, h), (248, 250, 252, 255))
-            d = ImageDraw.Draw(base)
-            d.rounded_rectangle([0, 0, w - 1, h - 1], radius=14 * S, outline=(203, 213, 225), width=S)
-            d.text((w / 2, h / 2 - 10 * S), "Nenhum arquivo ainda", font=f_nome, fill=(17, 24, 39), anchor="mm")
-            d.text((w / 2, h / 2 + 12 * S), "o que você baixar aparece aqui", font=_fonte_pil("segoeui.ttf", 10 * S),
-                   fill=(120, 126, 138), anchor="mm")
-        else:
-            ext = os.path.splitext(a["nome"])[1].lower()
-            tipo = ext[1:].upper() or "ARQUIVO"
-            abre = pode_abrir_arquivo(a["nome"])
-            mini = self._miniatura(a, w, h) if ext in self.IMAGENS else None
-            if mini:
-                base = mini.convert("RGBA")
-                sombra = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-                ds = ImageDraw.Draw(sombra)
-                for i in range(56 * S):  # escurece o alto para o nome aparecer
-                    ds.line([(0, i), (w, i)], fill=(0, 0, 0, int(180 * (1 - i / (56 * S)))))
-                base = Image.alpha_composite(base, sombra)
-                cor_nome, cor_info = (255, 255, 255), (235, 235, 240)
-            elif abre:
-                base = Image.new("RGBA", (w, h), (250, 250, 252, 255))
-                cor_nome, cor_info = (17, 24, 39), (120, 126, 138)
-            else:
-                base = Image.new("RGBA", (w, h), (52, 56, 68, 255))
-                cor_nome, cor_info = (243, 244, 246), (252, 165, 165)
-            d = ImageDraw.Draw(base)
-            if not mini:
-                d.rounded_rectangle([0, 0, w - 1, h - 1], radius=14 * S,
-                                    outline=(203, 213, 225) if abre else (80, 86, 100), width=S)
-            if not mini and abre:  # "linhas de texto" do documento
-                for y, fr in ((54, 0.82), (68, 0.94), (82, 0.6), (96, 0.86)):
-                    d.rounded_rectangle([14 * S, y * S, (14 + (self.CARTAO_L - 28) * fr) * S, (y + 6) * S],
-                                        radius=3 * S, fill=(228, 231, 236))
-            info = f"{tipo} · {tamanho_legivel(a['tamanho'])}" if abre else "não abre aqui"
-            direita = w - 12 * S
-            if sobre:  # × para excluir (ou a confirmação)
-                if self._confirmar == a["caminho"]:
-                    f_conf = _fonte_pil("seguisb.ttf", 10 * S)
-                    tw = d.textlength("Excluir?", font=f_conf)
-                    d.rounded_rectangle([w - tw - 22 * S, 8 * S, w - 8 * S, 28 * S], radius=10 * S, fill=(239, 68, 68))
-                    d.text((w - 15 * S - tw / 2, 18 * S), "Excluir?", font=f_conf, fill="white", anchor="mm")
-                    direita = w - tw - 28 * S
-                else:
-                    cx, cy = w - 18 * S, 18 * S
-                    d.ellipse([cx - 10 * S, cy - 10 * S, cx + 10 * S, cy + 10 * S], fill=(17, 17, 17, 215))
-                    d.text((cx, cy - S), "×", font=_fonte_pil("segoeui.ttf", 14 * S), fill="white", anchor="mm")
-                    direita = cx - 16 * S
-            # nome na primeira linha (largura toda), tipo e tamanho embaixo
-            d.text((14 * S, 18 * S), self._caber(d, a["nome"], f_nome, direita - 14 * S), font=f_nome, fill=cor_nome,
-                   anchor="lm")
-            x_info = 14 * S
-            if abre and not mini:
-                d.ellipse([x_info, 33 * S, x_info + 6 * S, 39 * S],
-                          fill=self.CORES_TIPO.get(tipo.lower(), (148, 163, 184)))
-                x_info += 10 * S
-            d.text((x_info, 36 * S), info, font=f_info, fill=cor_info, anchor="lm")
-        base.putalpha(mascara)
-        pronto = base.resize((self.CARTAO_L, self.CARTAO_A), Image.LANCZOS)
-        if len(self._prontos) > 60:
-            self._prontos.clear()
-        self._prontos[chave] = pronto
-        return pronto
-
-    @staticmethod
-    def _girar(cx, cy, dx, dy, angulo):
-        r = math.radians(angulo)
-        return (cx + dx * math.cos(r) + dy * math.sin(r), cy - dx * math.sin(r) + dy * math.cos(r))
-
-    def _cantos(self, cx, cy, angulo):
-        w, h = self.CARTAO_L / 2, self.CARTAO_A / 2
-        return [self._girar(cx, cy, dx, dy, angulo) for dx, dy in ((-w, -h), (w, -h), (w, h), (-w, h))]
-
-    @staticmethod
-    def _suave(t):
-        """Sai com um pequeno passo além do lugar e volta (o "leque" abrindo)."""
-        t = min(1.0, max(0.0, t))
-        c = 1.4
-        return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2
-
-    def _desenhar(self):
-        visiveis = self._visiveis() or [None]
-        n = len(visiveis)
-        img = Image.new("RGBA", (self.L, self.A), (0, 0, 0, 0))
-        desenhos = []
-        for i, a in enumerate(visiveis):
-            o = i - (n - 1) / 2
-            atraso = abs(o) * 0.12  # os do meio saem primeiro
-            p = self._suave((self._abertura - atraso) / (1 - 0.12 * (n - 1) / 2) if n > 1 else self._abertura)
-            if self._abertura <= atraso:
-                continue
-            caminho = a["caminho"] if a else None
-            sobe = self._levante.get(caminho, 0.0) if caminho else 0.0
-            sobe = 1 - (1 - sobe) ** 3
-            tx, ty = self._ix + o * self.PASSO, self.A - 14 - 92 + abs(o) * 14
-            sx, sy = self._ix, self.A + 50
-            cx, cy = sx + (tx - sx) * p, sy + (ty - sy) * p
-            angulo = -o * 8 * p
-            desenhos.append((caminho == self._sobre and caminho is not None, i, a, cx, cy, angulo, sobe))
-        self._cartoes = []
-        for _por_cima, _i, a, cx, cy, angulo, sobe in sorted(desenhos, key=lambda x: (x[0], x[1])):
-            caminho = a["caminho"] if a else None
-            cy_agora = cy - self.LEVANTA * sobe
-            cartao = self._cartao(a, caminho is not None and caminho == self._sobre)
-            girado = cartao.rotate(angulo, resample=Image.BICUBIC, expand=True)
-            img.alpha_composite(girado, (int(cx - girado.width / 2), int(cy_agora - girado.height / 2)))
-            self._cartoes.insert(0, {
-                "caminho": caminho,
-                "poligonos": [self._cantos(cx, cy_agora, angulo), self._cantos(cx, cy, angulo)],
-                "fechar": self._girar(cx, cy_agora, self.CARTAO_L / 2 - 18, -(self.CARTAO_A / 2 - 18), angulo)})
-        self._botao = None
-        if len(self.arquivos) > self.MAX_CARTOES and self._abertura > 0.6:  # "+N": os próximos
-            bx, by, r = self._ix + ((n - 1) / 2 + 1) * self.PASSO - 40, self.A - 14 - 92 + 30, 22
-            d = ImageDraw.Draw(img)
-            d.ellipse([bx - r, by - r, bx + r, by + r], fill=(17, 17, 17, 255), outline=(80, 86, 100), width=2)
-            resto = len(self.arquivos) - self.MAX_CARTOES
-            d.text((bx, by), "+" + str(resto) if self._pagina == 0 else "↺", font=_fonte_pil("seguisb.ttf", 13),
-                   fill="white", anchor="mm")
-            self._botao = (bx, by, r)
-        # a borda meio transparente vira um contorno escuro; quase nada vira transparente
-        img.putalpha(img.getchannel("A").point(lambda v: 0 if v < 40 else v))
-        self._foto = ImageTk.PhotoImage(img)
-        self.canvas.itemconfig(self._item, image=self._foto)
 
 
 class Programacao:
@@ -1608,7 +1327,8 @@ class AgenteApp:
         self._build_ui()
         self.barra = BarraSessao(self)
         self.notificacoes = Notificacoes(self)
-        self.meus_arquivos = MeusArquivos(self)
+        self._vigia = None  # PowerShell que prende o Explorador em Downloads (9.5)
+        self._pids_proprios = set()  # processos do agente que o vigia de processos nao encerra
         self._start_ws_thread()
 
         # Atalhos
@@ -2124,14 +1844,38 @@ class AgenteApp:
         self.notificacoes.alternar()
 
     def abrir_meus_arquivos(self):
-        self.meus_arquivos.espiar(True)
+        """Abre o Explorador de verdade na pasta Downloads; o vigia nao deixa sair dela."""
+        if not self.sessao_ativa:
+            return
+        pasta = pasta_downloads()
+        try:
+            os.makedirs(pasta, exist_ok=True)
+            self._ligar_vigia()
+            subprocess.Popen(["explorer.exe", pasta])
+        except Exception as e:
+            self._log(f"Meus arquivos: erro ao abrir a pasta ({e})")
 
-    def espiar_arquivos(self, sim):
-        self.meus_arquivos.espiar(sim)
+    def _ligar_vigia(self):
+        if self._vigia and self._vigia.poll() is None:
+            return
+        try:
+            self._vigia = iniciar_vigia(pasta_downloads())
+            self._pids_proprios = {self._vigia.pid}
+        except Exception as e:
+            self._vigia = None
+            self._log(f"Meus arquivos: vigia do Explorador nao iniciou ({e})")
+
+    def _desligar_vigia(self):
+        if self._vigia:
+            try:
+                self._vigia.kill()
+            except Exception:
+                pass
+        self._vigia = None
+        self._pids_proprios = set()
 
     def _limpar_downloads(self):
         """Esvazia a pasta Downloads: o próximo cliente não vê o que este baixou."""
-        self.meus_arquivos.fechar()
         try:
             apagados = limpar_pasta(pasta_downloads())
             if apagados:
@@ -2223,6 +1967,7 @@ class AgenteApp:
         if dados.get("piso"):
             self._aplicar_cor_piso(dados["piso"])
         self._limpar_downloads()  # o PC pode ter reiniciado no meio da sessão anterior
+        self._ligar_vigia()  # o Explorador so pode mostrar a pasta Downloads
         # Captura os PIDs que ja existem ANTES da sessao comecar
         self._pids_pre_sessao = {p.pid for p in psutil.process_iter(["pid"])}
 
@@ -2454,6 +2199,7 @@ class AgenteApp:
     def _voltar_login(self):
         """Encerra apps, exibe tela de encerramento por 6s e volta ao login."""
         self._encerrar_apps_do_cliente()
+        self._desligar_vigia()  # sem vigia, o Explorador volta a ser fechado
         self.barra.esconder()
         self.notificacoes.limpar()
         # depois de fechar os apps (arquivo aberto não sai)
@@ -2797,7 +2543,7 @@ class AgenteApp:
                     nome = (proc.info["name"] or "").lower()
                     pid = proc.info["pid"]
 
-                    if pid == pid_atual or not nome:
+                    if pid == pid_atual or not nome or pid in self._pids_proprios:
                         continue
 
                     if nome in PROCESSOS_SEMPRE_BLOQUEADOS:
@@ -2863,6 +2609,8 @@ class AgenteApp:
                 continue
             if nome in JANELAS_DE_PROCESSOS_SEGUROS:
                 classe_app, descricao = JANELAS_DE_PROCESSOS_SEGUROS[nome]
+                if nome == "explorer.exe" and self.sessao_ativa and self._vigia and self._vigia.poll() is None:
+                    continue  # Meus arquivos: o vigia mantem o Explorador em Downloads
                 for hwnd, classe in janelas:
                     if classe == classe_app:
                         fechar_janela(hwnd)
