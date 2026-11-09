@@ -113,21 +113,20 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `operador` | liberar fila, encerrar sessões, criar e editar clientes, entrar em manutenção num PC |
 | `cliente` | só entra pelo agente; o login do painel recusa |
 
-## Auto-update do agente
+## Atualização do agente (só pela manutenção)
 
-O agente (`agente/agente.py`) verifica atualizações **antes de abrir a janela Tkinter**, na função `verificar_update(servidor_http)`:
+Desde o agente 1.11.0 (6.13) o agente **nunca se atualiza sozinho**. Ao abrir (depois da janela no ar) e ao entrar na manutenção, `checar_atualizacao` só pergunta a versão (`GET /api/agente/versao`, lida de `agente_dist/agente.py`). Havendo versão nova, o botão da faixa da manutenção vira **Atualizar para a versão X**; o operador confirma, o agente baixa `GET /api/agente/download`, troca o próprio arquivo (`os.replace`) e reinicia (`os.execv`) — `_aplicar_atualizacao` recusa fora da manutenção. Agentes até 1.10.x ainda se atualizam sozinhos ao abrir (é assim que chegam à 1.11).
 
-1. `GET /api/agente/versao` → retorna `{"versao": "x.y.z"}` (lido de `agente_dist/agente.py`)
-2. Se `versao_servidor > VERSAO` local: mostra diálogo informativo, baixa `GET /api/agente/download`
-3. Salva sobre si mesmo com `os.replace()` e reinicia com `os.execv()`
+O agente informa a versão no evento `estado`; o servidor guarda em `estacoes.versao_agente` e o painel marca as desatualizadas (ícone na lista do Controle de sessões e a linha **Agente** no painel da estação).
 
 **Para publicar uma nova versão:**
 1. Incremente `VERSAO` em `agente/agente.py`
 2. Copie o arquivo para `server/agente_dist/agente.py`
 3. Commit e push dos dois arquivos
-4. Reinicie o servidor (para o endpoint ler o novo arquivo)
+4. No servidor: `git pull` (a versão é lida do arquivo; não precisa reiniciar para isso)
+5. Em cada PC: modo manutenção → **Atualizar para a versão X**
 
-A primeira instalação em cada PC é manual; a partir da v1.2.0 todas as atualizações são automáticas.
+Atenção: o servidor de produção lê `agente_dist` direto da pasta do projeto; copiar uma versão para lá já a oferece às estações.
 
 Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autenticação — o agente ainda não tem token quando checa a versão.
 

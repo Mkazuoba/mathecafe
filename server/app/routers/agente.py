@@ -21,10 +21,21 @@ DIST_DIR = Path(__file__).resolve().parents[2] / "agente_dist"
 DIST_FILE = DIST_DIR / "agente.py"
 
 
+_cache_versao = {"mtime": None, "versao": "0.0.0"}
+
+
 def _versao_dist() -> str:
-    """Le a constante VERSAO = "x.y.z" do arquivo distribuido."""
+    """Le a constante VERSAO = "x.y.z" do arquivo distribuido (relida so quando o
+    arquivo muda: a lista de estacoes pergunta uma vez por estacao)."""
     if not DIST_FILE.exists():
         return "0.0.0"
+    mtime = DIST_FILE.stat().st_mtime
+    if _cache_versao["mtime"] != mtime:
+        _cache_versao.update(mtime=mtime, versao=_ler_versao_dist())
+    return _cache_versao["versao"]
+
+
+def _ler_versao_dist() -> str:
     try:
         for linha in DIST_FILE.read_text(encoding="utf-8").splitlines():
             stripped = linha.strip()
@@ -34,6 +45,19 @@ def _versao_dist() -> str:
     except Exception:
         pass
     return "0.0.0"
+
+
+def _numeros(v: str):
+    try:
+        return tuple(int(x) for x in (v or "").strip().split("."))
+    except ValueError:
+        return (0,)
+
+
+def desatualizado(versao_agente) -> bool:
+    """O agente informou uma versao mais velha que a que o servidor distribui?
+    (Sem versao: agente antigo, de antes do evento estado, tambem e.)"""
+    return _numeros(versao_agente or "0") < _numeros(_versao_dist())
 
 
 @router.get("/versao")

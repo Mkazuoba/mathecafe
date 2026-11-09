@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Link } from "react-router-dom"
-import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -460,6 +460,11 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
           {!e.online && e.status !== "desligada" && (
             <IconWifiOff size={13} className="text-texto-fraco" aria-label="sem conexão" />
           )}
+          {e.agente_desatualizado && (
+            <span title={`Agente ${e.versao_agente} desatualizado (atual: ${e.versao_atual}). Atualize pelo modo manutenção no PC.`}>
+              <IconRefreshAlert size={13} className="text-manutencao" aria-label="agente desatualizado" />
+            </span>
+          )}
         </span>
       </td>
       <td className="w-full max-w-0 truncate px-2 py-1.5" title={cliente || undefined}>
@@ -760,6 +765,15 @@ function AbaGeral({ estacao: e, sessao, restante }: {
     ["Conexão", e.online ? <span className="text-livre">Online</span> : <span className="text-texto-fraco">Offline</span>],
     ...(e.grupo_nome ? [["Grupo", e.grupo_nome] as [string, React.ReactNode]] : []),
     ...(e.mac_address ? [["MAC", <span className="font-mono text-xs text-texto-suave">{e.mac_address}</span>] as [string, React.ReactNode]] : []),
+    ["Agente", e.versao_agente ? (
+      e.agente_desatualizado ? (
+        <span className="text-manutencao">
+          {e.versao_agente}: desatualizado (atual {e.versao_atual}). Entre no modo manutenção no PC e clique em Atualizar.
+        </span>
+      ) : (
+        <span className="text-texto-suave">{e.versao_agente} (em dia)</span>
+      )
+    ) : <span className="text-texto-fraco">não informou (agente antigo ou nunca conectou)</span>],
   ]
 
   if (sessao) {

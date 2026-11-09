@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.10.2"
+VERSAO = "1.11.0"
 
 import asyncio
 import json
@@ -1571,6 +1571,7 @@ class AgenteApp:
         self.whitelist_procs = set()
         self.reiniciar_ao_encerrar = False
         self._credenciais_manutencao = None
+        self.versao_nova = None  # versao do servidor mais nova que esta (6.13)
         self._img_refs = []
         self.modo_manutencao_ativo = False
 
@@ -1834,6 +1835,11 @@ class AgenteApp:
         tk.Button(self.frame_manutencao, text="Configurar conexao",
                   bg="#92400e", fg="white", relief="flat", font=small_font,
                   command=self._abrir_config_conexao).pack(side="right", pady=8)
+        # Atualizacao do agente: so por aqui (6.13)
+        self.btn_atualizar = tk.Button(self.frame_manutencao, text="Verificar atualizacao",
+                                       bg="#92400e", fg="white", relief="flat", font=small_font,
+                                       command=self._clicar_atualizar)
+        self.btn_atualizar.pack(side="right", padx=(0, 6), pady=8)
 
     def _log(self, msg, _remoto=True):
         self.log.configure(state="normal")
@@ -2667,6 +2673,64 @@ class AgenteApp:
                   command=popup.destroy).pack(pady=(8, 0))
         self._log(f"Mensagem exibida: {texto}")
 
+    # ── Atualizacao do agente (so na manutencao, 6.13) ──────────────────────
+    def _servidor_http(self):
+        return self.servidor.replace("wss://", "https://").replace("ws://", "http://")
+
+    def _versao_conferida(self, versao):
+        """Resposta do servidor sobre a versao (None: sem conexao)."""
+        self.versao_nova = versao if ha_versao_nova(versao, VERSAO) else None
+        if self.versao_nova:
+            self._log(f"Versao nova do agente no servidor: {self.versao_nova} (atualize pela manutencao)")
+        self._mostrar_botao_atualizar(sem_conexao=versao is None)
+
+    def _mostrar_botao_atualizar(self, sem_conexao=False, texto=None):
+        if not hasattr(self, "btn_atualizar"):
+            return
+        if texto:
+            self.btn_atualizar.config(text=texto, state="disabled")
+        elif self.versao_nova:
+            self.btn_atualizar.config(text=f"Atualizar para a versao {self.versao_nova}", state="normal",
+                                      bg="#15803d")
+        else:
+            self.btn_atualizar.config(text="Sem conexao: tentar de novo" if sem_conexao
+                                      else f"Agente em dia (v{VERSAO})", state="normal", bg="#92400e")
+
+    def _clicar_atualizar(self):
+        if not self.modo_manutencao_ativo:
+            return
+        if not self.versao_nova:
+            # confere de novo agora
+            self._mostrar_botao_atualizar(texto="Verificando...")
+            checar_atualizacao(self, self._servidor_http())
+            return
+        import tkinter.messagebox as _mb
+        if not _mb.askyesno("Atualizar o agente",
+                            f"Atualizar o agente da versao {VERSAO} para a {self.versao_nova}?\n\n"
+                            "Ele baixa a versao nova e reinicia (volta na tela de login).",
+                            parent=self.root):
+            return
+        self._mostrar_botao_atualizar(texto="Baixando...")
+
+        def trabalhar():
+            baixado = baixar_atualizacao(self._servidor_http())
+            self.root.after(0, lambda: self._aplicar_atualizacao(baixado))
+        threading.Thread(target=trabalhar, daemon=True).start()
+
+    def _aplicar_atualizacao(self, baixado):
+        """Troca o arquivo do agente e reinicia. So na manutencao."""
+        if not self.modo_manutencao_ativo:
+            return
+        if not baixado:
+            self._log("Atualizacao: nao foi possivel baixar a versao nova")
+            self.versao_nova = None
+            self._mostrar_botao_atualizar(sem_conexao=True)
+            return
+        versao, caminho_novo = baixado
+        self._log(f"Atualizando o agente para a versao {versao} e reiniciando...")
+        os.replace(caminho_novo, os.path.abspath(__file__))
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
     def _modo_manutencao(self):
         self.barra.esconder()
         if self.sessao_ativa:
@@ -2687,6 +2751,9 @@ class AgenteApp:
         self._enviar({"evento": "status_estacao", "status": "manutencao"})
         self.frame_manutencao.pack(fill="x", before=self.header_frame)
         self._log("Modo manutencao ativado")
+        # confere se ha versao nova, para o botao ja mostrar
+        self._mostrar_botao_atualizar(texto="Verificando atualizacao...")
+        checar_atualizacao(self, self._servidor_http())
 
     def _sair_modo_manutencao(self):
         self.modo_manutencao_ativo = False
@@ -2819,14 +2886,27 @@ def _versao_tuple(v: str):
         return (0, 0, 0)
 
 
-def baixar_atualizacao(servidor_http: str):
-    """Consulta o servidor e, se houver versao nova, baixa ao lado deste arquivo.
-    Roda numa thread (sem Tkinter). Devolve (versao, caminho_baixado) ou None."""
+def ha_versao_nova(versao_servidor, versao_local) -> bool:
+    return bool(versao_servidor) and _versao_tuple(versao_servidor) > _versao_tuple(versao_local)
+
+
+def versao_no_servidor(servidor_http: str):
+    """A versao que o servidor distribui (None sem conexao). Roda numa thread."""
     import json as _json
     try:
         with abrir_url(f"{servidor_http}/api/agente/versao", timeout=5) as r:
-            versao_servidor = _json.loads(r.read()).get("versao", "0.0.0")
-        if _versao_tuple(versao_servidor) <= _versao_tuple(VERSAO):
+            return _json.loads(r.read()).get("versao")
+    except Exception as e:
+        print(f"Aviso: falha ao verificar update: {e}")
+        return None
+
+
+def baixar_atualizacao(servidor_http: str):
+    """Se houver versao nova no servidor, baixa ao lado deste arquivo.
+    Roda numa thread (sem Tkinter). Devolve (versao, caminho_baixado) ou None."""
+    try:
+        versao_servidor = versao_no_servidor(servidor_http)
+        if not ha_versao_nova(versao_servidor, VERSAO):
             return None
         caminho_novo = os.path.abspath(__file__) + ".novo"
         with abrir_url(f"{servidor_http}/api/agente/download", timeout=30) as r:
@@ -2840,24 +2920,12 @@ def baixar_atualizacao(servidor_http: str):
 
 
 def checar_atualizacao(app, servidor_http: str):
-    """A janela abre primeiro (o cliente nao pode usar o PC antes dela) e a
-    atualizacao e conferida em segundo plano. Com sessao em andamento, nao
-    reinicia: a versao nova entra na proxima vez que o agente abrir."""
-    def aplicar(versao, caminho_novo):
-        if app.sessao_ativa:
-            return
-        import tkinter.messagebox as _mb
-        _mb.showinfo("Atualizacao disponivel",
-                     f"Nova versao encontrada: {versao}\nVersao atual: {VERSAO}\n\n"
-                     "O agente sera atualizado e reiniciado automaticamente.", parent=app.root)
-        os.replace(caminho_novo, os.path.abspath(__file__))
-        import sys as _sys
-        os.execv(_sys.executable, [_sys.executable] + _sys.argv)
-
+    """So confere, em segundo plano, se ha versao nova (6.13). O agente nunca se
+    atualiza sozinho: com versao nova, o botao da faixa da manutencao passa a
+    oferecer "Atualizar para a versao X" e o operador escolhe a hora."""
     def trabalhar():
-        baixado = baixar_atualizacao(servidor_http)
-        if baixado:
-            app.root.after(0, lambda: aplicar(*baixado))
+        versao = versao_no_servidor(servidor_http)
+        app.root.after(0, lambda: app._versao_conferida(versao))
 
     threading.Thread(target=trabalhar, daemon=True).start()
 
@@ -3037,7 +3105,7 @@ def main():
     # Erros dentro da interface: só no arquivo, sem janela (o agente segue rodando)
     root.report_callback_exception = lambda t, v, tb: registrar_erro(t, v, tb, mostrar=False)
     app = AgenteApp(root, servidor, estacao)
-    # Atualizacao so depois da janela no ar (ws:// -> http:// para a chamada REST)
+    # So confere a versao, depois da janela no ar; atualizar e pela manutencao (6.13)
     checar_atualizacao(app, servidor.replace("wss://", "https://").replace("ws://", "http://"))
     root.mainloop()
 

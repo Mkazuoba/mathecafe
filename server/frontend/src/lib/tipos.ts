@@ -33,6 +33,12 @@ export interface Estacao extends PisoDe {
   pos_x: number
   pos_y: number
   mac_address: string | null
+  /** versão que o agente informou ao conectar (null: nunca conectou ou agente antigo) */
+  versao_agente: string | null
+  /** versão que o servidor distribui */
+  versao_atual: string
+  /** o agente só se atualiza no modo manutenção: o painel avisa onde fazer */
+  agente_desatualizado: boolean
 }
 
 /** Mapa (sala). piso_id vazio: mapa antigo ainda sem piso, o painel avisa. */

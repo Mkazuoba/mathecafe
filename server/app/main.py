@@ -277,6 +277,9 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 continue
             if evento == "estado":
                 estado_recebido = True
+                if dados.get("versao") and estacao.versao_agente != dados["versao"]:
+                    estacao.versao_agente = str(dados["versao"])[:20]
+                    db.commit()
                 resposta = await _resolver_estado(db, estacao, dados.get("sessao_id"))
                 await ws.send_text(json.dumps(resposta))
                 # a cor do piso da estacao (o agente usa como destaque)

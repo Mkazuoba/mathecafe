@@ -102,7 +102,7 @@ Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.ba
 5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha, que aparecem no Ctrl+Alt+Del, e prende os downloads do Chrome e do Edge na pasta Downloads, bloqueando os perigosos (`politicas_cliente.ps1`). Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
 6. cadastra a estação no servidor.
 
-**Atualizar uma estação**: o agente se atualiza sozinho ao abrir. Mudanças no instalador ou na tarefa agendada (como o fim do atraso de 5s no logon, de 30/10) só valem rodando o `instalar.bat` de novo, com os arquivos novos: ele substitui tudo e mantém o usuário.
+**Atualizar uma estação**: desde a 1.11.0 o agente só se atualiza pelo modo manutenção: `Ctrl+Shift+M` → login de operador → **Atualizar para a versão X** (o painel avisa quais estações estão desatualizadas). Até a 1.10.x ele se atualizava sozinho ao abrir. Mudanças no instalador ou na tarefa agendada (como o fim do atraso de 5s no logon, de 30/10) só valem rodando o `instalar.bat` de novo, com os arquivos novos: ele substitui tudo e mantém o usuário.
 
 Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para desfazer: `C:\MatheCafe\desinstalar.bat` como administrador (remove a tarefa e o autologin).
 

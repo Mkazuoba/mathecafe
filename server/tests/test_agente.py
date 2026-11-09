@@ -563,3 +563,26 @@ def test_meus_arquivos_e_o_icone_do_dock_que_abre_no_hover():
     abrir = abrir[:abrir.index("\n    def ", 10)]
     # direto no programa: pelo Windows vinha o aviso de seguranca
     assert "subprocess.Popen([programa, caminho])" in abrir and "startfile" not in abrir
+
+
+def test_agente_so_se_atualiza_na_manutencao():
+    # 6.13: antes o agente se atualizava e reiniciava sozinho ao abrir, ate com
+    # cliente na tela de login. Agora so confere a versao; quem troca e o
+    # operador, pelo botao da faixa da manutencao.
+    src = _fonte()
+    checar = src[src.index("def checar_atualizacao("):src.index("CFG_FILE =")]
+    assert "os.replace" not in checar and "execv" not in checar
+    aplicar = src[src.index("def _aplicar_atualizacao("):]
+    aplicar = aplicar[:aplicar.index("\n    def ", 10)]
+    assert "if not self.modo_manutencao_ativo" in aplicar
+    assert "os.replace" in aplicar and "execv" in aplicar
+    faixa = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(self")]
+    assert "self.btn_atualizar" in faixa
+
+
+def test_compara_versoes_do_agente():
+    ns = _funcoes_do_agente("_versao_tuple", "ha_versao_nova")
+    assert ns["ha_versao_nova"]("1.11.0", "1.10.2") is True
+    assert ns["ha_versao_nova"]("1.10.2", "1.10.2") is False
+    assert ns["ha_versao_nova"]("1.9.9", "1.10.0") is False  # numero, nao texto
+    assert ns["ha_versao_nova"](None, "1.0.0") is False

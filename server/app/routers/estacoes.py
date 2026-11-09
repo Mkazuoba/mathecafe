@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
 from app.registro import registrar
+from app.routers.agente import _versao_dist, desatualizado
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
@@ -45,6 +46,10 @@ def serial_estacao(e: Estacao):
         "pos_x": e.pos_x,
         "pos_y": e.pos_y,
         "mac_address": e.mac_address,
+        # 6.13: o painel avisa onde atualizar (o agente so se atualiza na manutencao)
+        "versao_agente": e.versao_agente,
+        "versao_atual": _versao_dist(),
+        "agente_desatualizado": bool(e.versao_agente) and desatualizado(e.versao_agente),
     }
 
 def serial_autorizacao(a: Autorizacao):

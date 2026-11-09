@@ -70,6 +70,8 @@ class Estacao(Base):
     ativa = Column(Boolean, default=True)
     ip = Column(String(50), nullable=True)
     mac_address = Column(String(17), nullable=True)
+    # versao que o agente informou ao conectar (evento estado); vazio = agente antigo ou nunca conectou
+    versao_agente = Column(String(20), nullable=True)
     ultimo_ping = Column(DateTime, nullable=True)
     pos_x = Column(Integer, default=0)
     pos_y = Column(Integer, default=0)

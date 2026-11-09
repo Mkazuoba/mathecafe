@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-09 — Agente só se atualiza pela manutenção (6.13; agente 1.11.0)
+
+- **O agente não se atualiza mais sozinho** (antes reiniciava ao abrir, até com cliente esperando na tela de login). Ele só confere se há versão nova; na faixa do modo manutenção o botão mostra **Atualizar para a versão X** (ou "Agente em dia" / "Verificar atualização"), e o operador confirma a hora.
+- **Painel mostra a versão do agente** de cada estação: linha **Agente** no painel da estação e um ícone de aviso na lista do Controle de sessões para as desatualizadas.
+- Servidor guarda a versão informada no evento `estado` (`estacoes.versao_agente`); a versão distribuída é relida só quando o arquivo muda.
+
 ## 2026-11-06 — Meus arquivos no próprio ícone do dock, em leque animado (tarefa 9.5; agente 1.10.2)
 
 - O **ícone do dock virou a pasta** (na 1.10.1 abria uma pasta grande separada em cima dele). Com o mouse em cima, os arquivos saem dela em **leque animado** logo acima do dock (até 5 cartões, fotos com miniatura, +N para os próximos); tirar o mouse guarda os cartões.

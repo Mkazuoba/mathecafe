@@ -1646,3 +1646,25 @@ def test_agente_recebe_a_cor_do_piso(c, admin, cenario):
         cliente, cid = _cliente_infantil(c, admin)
         c.post(f"/api/estacoes/fila/{cid}", headers=admin)
         assert _logar_no_pc(ws, cliente)["piso"]["nome"] == "Infantil"
+
+
+# ── 6.13 Versao do agente de cada estacao ────────────────────────────────────
+
+def test_painel_sabe_a_versao_do_agente_e_as_desatualizadas(c, admin, cenario):
+    from app.routers.agente import _versao_dist
+    atual = _versao_dist()
+
+    def estacao():
+        return next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+
+    assert estacao()["versao_agente"] is None  # nunca conectou
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "sessao_id": None, "versao": "1.0.0"})
+        ws.receive_json()
+        e = estacao()
+        assert e["versao_agente"] == "1.0.0" and e["agente_desatualizado"] is True
+        assert e["versao_atual"] == atual
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "sessao_id": None, "versao": atual})
+        ws.receive_json()
+        assert estacao()["agente_desatualizado"] is False
