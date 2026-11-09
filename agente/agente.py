@@ -1450,6 +1450,8 @@ class Programacao:
         if geracao != self._geracao:
             return  # um carregamento mais novo já está a caminho
         self.segundos = max(3, int(segundos or 10))
+        # a tela de login também mostra os cartazes (metade direita)
+        self.app._tela_login.definir(imagens, self.segundos)
         self.itens = imagens
         self.indice = 0
         self._prontos = {}
@@ -1691,6 +1693,7 @@ class TelaApps:
         self._montar_categorias()
         self._filtrar()
         self.canvas.yview_moveto(0)
+        self.canvas.bind_all("<MouseWheel>", self._rolar)  # o _voltar_login tira de tudo
 
     def _baixar_capa(self, url):
         dados = baixar_imagem(url)  # thread: nada de Tkinter aqui
@@ -1841,6 +1844,143 @@ class TelaApps:
         self.mostrar([])
 
 
+class TelaLogin:
+    """Metade direita do login do PC: os cartazes da Programação cobrindo a
+    metade, com degradê para o fundo embaixo e o título do cartaz digitando
+    entre aspas. Os cartazes passam sozinhos (fade). Sem cartaz, um fundo na
+    cor do piso com uma frase de boas-vindas."""
+    BOAS_VINDAS = "Bem-vindo(a) à biblioteca! Faça login para começar."
+
+    def __init__(self, app, frame):
+        self.app = app
+        self.canvas = tk.Canvas(frame, bg=app.paleta["fundo"], highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", self._ao_mudar_tamanho)
+        self.cartazes = []  # [(titulo, imagem PIL)]
+        self.segundos = 10
+        self.indice = 0
+        self._tam = (0, 0)
+        self._timer = self._digitando = self._fade = None
+        self._foto = None
+        self._atual = None
+        self._frase, self._n, self._cursor = "", 0, True
+
+    def definir(self, cartazes, segundos):
+        """Chamado pela Programacao sempre que os cartazes chegam do servidor."""
+        self.cartazes = list(cartazes)
+        self.segundos = max(3, int(segundos or 10))
+        self.indice = 0
+        self._mostrar()
+
+    def _ao_mudar_tamanho(self, event):
+        if (event.width, event.height) != self._tam:
+            self._tam = (event.width, event.height)
+            self._atual = None
+            self._mostrar(reiniciar_texto=False)
+
+    def _imagem(self, w, h):
+        p = self.app.paleta
+        fundo = _cor_rgb(p["fundo"])
+        if self.cartazes:
+            # o cartaz inteiro, em cima, sobre ele mesmo ampliado e desfocado
+            cartaz = self.cartazes[self.indice % len(self.cartazes)][1].convert("RGB")
+            img = _preencher(cartaz, max(1, w // 4), max(1, h // 4)).filter(ImageFilter.GaussianBlur(6))
+            img = Image.blend(img.resize((w, h), Image.BILINEAR), Image.new("RGB", (w, h), (0, 0, 0)), 0.5)
+            caixa_l, caixa_a = max(1, w - 120), max(1, h - 200)
+            escala = min(caixa_l / cartaz.width, caixa_a / cartaz.height)
+            largo, alto = max(1, round(cartaz.width * escala)), max(1, round(cartaz.height * escala))
+            x, y = (w - largo) // 2, 36
+            sombra = Image.new("L", (w, h), 0)
+            ImageDraw.Draw(sombra).rounded_rectangle((x + 4, y + 10, x + largo + 4, y + alto + 10), 12, fill=160)
+            img.paste((0, 0, 0), (0, 0), sombra.filter(ImageFilter.GaussianBlur(12)))
+            peca = cartaz.resize((largo, alto), Image.LANCZOS)
+            mascara = _cantos(Image.new("RGB", (largo, alto), (255, 255, 255)), 10, "#000000").convert("L")
+            img.paste(peca, (x, y), mascara)
+        else:  # sem cartaz: degradê da cor do piso para o fundo
+            img = Image.new("RGB", (w, h), _cor_rgb(p["destaque"]))
+            vertical = Image.linear_gradient("L").resize((w, h))
+            horizontal = Image.linear_gradient("L").rotate(90).resize((w, h))  # 0 à esquerda
+            diagonal = Image.blend(vertical, horizontal, 0.5)  # cor do piso no canto de cima, à esquerda
+            img.paste(fundo, (0, 0), diagonal)
+        embaixo = Image.linear_gradient("L").resize((w, h))  # 0 em cima, 255 embaixo
+        # degradê para o fundo só na faixa da frase, embaixo
+        img.paste(fundo, (0, 0), embaixo.point(lambda v: int(min(1.0, max(0.0, (v / 255 - 0.72) / 0.2)) * 255)))
+        return img
+
+    def _mostrar(self, reiniciar_texto=True):
+        for t in (self._timer, self._fade):
+            if t:
+                self.app.root.after_cancel(t)
+        self._timer = self._fade = None
+        c, p = self.canvas, self.app.paleta
+        w, h = c.winfo_width(), c.winfo_height()
+        if w < 50 or h < 50 or not PIL_AVAILABLE:
+            return  # ainda sem tamanho: o <Configure> chama de novo
+        c.config(bg=p["fundo"])
+        if self.cartazes:
+            frase = self.cartazes[self.indice % len(self.cartazes)][0] or "Programação da biblioteca"
+            assinatura = "Programação da biblioteca"
+        else:
+            frase, assinatura = self.BOAS_VINDAS, "MatheCafé"
+        novo = self._imagem(w, h)
+        if not c.find_withtag("img"):
+            c.create_image(0, 0, anchor="nw", tags="img")
+            c.create_text(0, 0, anchor="s", tags="frase", justify="center")
+            c.create_text(0, 0, anchor="s", tags="assinatura")
+        c.coords("frase", w / 2, h - 78)
+        c.itemconfig("frase", width=max(200, w - 120), fill=p["texto"], font=("Segoe UI", 18, "bold"))
+        c.coords("assinatura", w / 2, h - 44)
+        c.itemconfig("assinatura", text="— " + assinatura, fill=p["texto2"], font=("Segoe UI", 10))
+        if reiniciar_texto and self._atual is not None and self._atual.size == novo.size:
+            self._animar(self._atual, novo, 1)
+        else:
+            self._pintar(novo)
+        if reiniciar_texto or frase != self._frase:
+            self._frase, self._n = frase, 0
+        if not self._digitando:
+            self._digitar()
+        if len(self.cartazes) > 1:
+            self._timer = self.app.root.after(self.segundos * 1000, self._proximo)
+
+    def _pintar(self, img, guardar=True):
+        self._foto = ImageTk.PhotoImage(img)
+        self.canvas.itemconfig("img", image=self._foto)
+        if guardar:
+            self._atual = img
+
+    def _animar(self, de, para, passo, passos=10):
+        """Fade entre dois cartazes (~0,3 s)."""
+        if passo >= passos:
+            self._fade = None
+            self._pintar(para)
+            return
+        self._pintar(Image.blend(de, para, passo / passos), guardar=False)
+        self._fade = self.app.root.after(30, lambda: self._animar(de, para, passo + 1, passos))
+
+    def _digitar(self):
+        """A frase aparece letra a letra; depois o cursor fica piscando."""
+        if self._n < len(self._frase):
+            self._n += 1
+            self._cursor, espera = True, 45
+        else:
+            self._cursor, espera = not self._cursor, 530
+        self.canvas.itemconfig("frase", text="“" + self._frase[:self._n] + ("|" if self._cursor else " ") + "”")
+        self._digitando = self.app.root.after(espera, self._digitar)
+
+    def _proximo(self):
+        self._timer = None
+        if self.app.sessao_ativa:  # escondido durante a sessão: só agenda o próximo
+            self._timer = self.app.root.after(self.segundos * 1000, self._proximo)
+            return
+        self.indice += 1
+        self._mostrar()
+
+    def redesenhar(self):
+        """Tema ou cor do piso trocados."""
+        self._atual = None
+        self._mostrar(reiniciar_texto=False)
+
+
 class AgenteApp:
     def __init__(self, root, servidor, estacao):
         self.root = root
@@ -1968,6 +2108,7 @@ class AgenteApp:
         self.barra.desenhar()
         self._tela_apps.redesenhar()
         self._programacao.redesenhar()
+        self._tela_login.redesenhar()
 
     def alternar_tema(self):
         """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
@@ -1981,6 +2122,7 @@ class AgenteApp:
         self.barra.desenhar()
         self._tela_apps.redesenhar()
         self._programacao.redesenhar()
+        self._tela_login.redesenhar()
         salvar_tema(novo)
 
     def _ao_redimensionar(self, event):
@@ -2045,35 +2187,56 @@ class AgenteApp:
         self.btn_tema.pack(side="right", padx=4, pady=8)
 
         # ── Frame de login ──
+        # duas metades: formulário à esquerda, cartazes da programação à direita
         self.frame_login = tk.Frame(self.root, bg=bg)
+        esquerda = tk.Frame(self.frame_login, bg=bg)
+        esquerda.place(relx=0, rely=0, relwidth=0.5, relheight=1)
+        direita = tk.Frame(self.frame_login, bg=bg)
+        direita.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
+        self._tela_login = TelaLogin(self, direita)
 
-        # container centralizado de largura fixa
-        _form = tk.Frame(self.frame_login, bg=bg)
+        _form = tk.Frame(esquerda, bg=bg)
         _form.pack(expand=True)
         # espacador fixa a largura; pack_propagate(False) sem height colapsava o form em 1px
-        tk.Frame(_form, bg=bg, width=360, height=0).pack()
+        tk.Frame(_form, bg=bg, width=380, height=0).pack()
 
-        tk.Label(_form, text="Faca login para iniciar sua sessao",
-                 font=normal_font, fg=text, bg=bg).pack(pady=(40, 24))
+        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family="Segoe UI", size=20, weight="bold"),
+                 fg=text, bg=bg).pack()
+        tk.Label(_form, text="Use o login e a senha do seu cadastro na biblioteca",
+                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack(pady=(4, 28))
 
-        tk.Label(_form, text="LOGIN", font=small_font, fg=text2, bg=bg).pack(anchor="w")
-        self.entry_login = tk.Entry(_form, font=normal_font, bg=bg3, fg=text,
-                                     insertbackground=text, relief="flat")
-        self.entry_login.pack(fill="x", pady=(2, 12), ipady=6)
+        f_rotulo = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+        campo = dict(font=normal_font, bg=bg3, fg=text, insertbackground=text, relief="flat",
+                     highlightthickness=1, highlightbackground=p["superficie3"], highlightcolor=accent)
+        tk.Label(_form, text="Login", font=f_rotulo, fg=text, bg=bg).pack(anchor="w")
+        self.entry_login = tk.Entry(_form, **campo)
+        self.entry_login.pack(fill="x", pady=(6, 16), ipady=8)
 
-        tk.Label(_form, text="SENHA", font=small_font, fg=text2, bg=bg).pack(anchor="w")
-        self.entry_senha = tk.Entry(_form, font=normal_font, bg=bg3, fg=text,
-                                     insertbackground=text, relief="flat", show="*")
-        self.entry_senha.pack(fill="x", pady=(2, 16), ipady=6)
+        tk.Label(_form, text="Senha", font=f_rotulo, fg=text, bg=bg).pack(anchor="w")
+        caixa_senha = tk.Frame(_form, bg=bg3, highlightthickness=1, highlightbackground=p["superficie3"],
+                               highlightcolor=accent)
+        caixa_senha.pack(fill="x", pady=(6, 22))
+        self.entry_senha = tk.Entry(caixa_senha, show="•", **{**campo, "highlightthickness": 0})
+        self.entry_senha.pack(side="left", fill="x", expand=True, ipady=8)
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
+        # o olho mostra/esconde a senha
+        self.lbl_olho = tk.Label(caixa_senha, text="👁", font=("Segoe UI Symbol", 12), fg=text2, bg=bg3,
+                                 cursor="hand2", padx=10)
+        self.lbl_olho.pack(side="right", fill="y")
+        self.lbl_olho.bind("<Button-1>", self._alternar_senha)
 
-        self.btn_login = tk.Button(_form, text="Entrar", font=normal_font,
-                                    bg=accent, fg="white", relief="flat", activebackground=p["destaque_forte"],
-                                    command=self._fazer_login, state="disabled")
-        self.btn_login.pack(fill="x", ipady=8)
+        self.btn_login = tk.Button(_form, text="Entrar", font=tkfont.Font(family="Segoe UI", size=11, weight="bold"),
+                                   bg=accent, fg="white", relief="flat", activebackground=p["destaque_forte"],
+                                   activeforeground="white", cursor="hand2",
+                                   command=self._fazer_login, state="disabled")
+        self.btn_login.pack(fill="x", ipady=9)
 
         self.lbl_login_erro = tk.Label(_form, text="", font=small_font, fg="#ef4444", bg=bg)
         self.lbl_login_erro.pack(pady=8)
+
+        tk.Frame(_form, bg=p["superficie3"], height=1).pack(fill="x", pady=(6, 14))
+        tk.Label(_form, text="Não tem cadastro? Fale com um funcionário da biblioteca.",
+                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack()
 
         # ── Frame de sessão (launcher) ──
         self.frame_sessao = tk.Frame(self.root, bg=bg)
@@ -2240,6 +2403,7 @@ class AgenteApp:
             self.lbl_status.config(text="online", fg="#22c55e")
             self.btn_login.config(state="normal")
             self._log("Conectado ao servidor")
+            self._programacao.recarregar()  # cartazes do login (e do banner da sessão)
             if self.sessao_ativa and getattr(self, "_avisou_queda", False):
                 self.notificacoes.notificar("Sistema", "Conexão restabelecida", "Tudo certo de novo.", "conexao")
             self._avisou_queda = False
@@ -2388,8 +2552,7 @@ class AgenteApp:
 
         elif evento == "programacao_atualizada":
             self._log("<- programacao_atualizada")
-            if self.sessao_ativa:
-                self._programacao.recarregar()
+            self._programacao.recarregar()  # login e banner da sessão
 
         elif evento == "parar_streaming":
             self._log("<- parar_streaming")
@@ -2542,6 +2705,12 @@ class AgenteApp:
             return
         self._enviar({"evento": "login_cliente", "login": login, "senha": senha})
 
+    def _alternar_senha(self, event=None):
+        """O olho do campo de senha: mostra ou esconde o que foi digitado."""
+        mostrando = self.entry_senha.cget("show") == ""
+        self.entry_senha.config(show="•" if mostrando else "")
+        self.lbl_olho.config(fg=self.paleta["texto2"] if mostrando else self.paleta["destaque"])
+
     def _iniciar_sessao(self, dados):
         if dados.get("piso"):
             self._aplicar_cor_piso(dados["piso"])
@@ -2567,6 +2736,8 @@ class AgenteApp:
         self.lbl_cliente.config(text=f"Bem-vindo(a), {self.cliente_nome}!")
         self.entry_login.delete(0, "end")
         self.entry_senha.delete(0, "end")
+        self.entry_senha.config(show="•")
+        self.lbl_olho.config(fg=self.paleta["texto2"])
         self.lbl_login_erro.config(text="")
 
         self._montar_launcher()

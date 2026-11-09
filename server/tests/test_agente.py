@@ -666,3 +666,36 @@ def test_tela_de_apps_com_banner_largo():
     assert "self._tela_apps.mostrar(" in launcher
     tema = src[src.index("    def alternar_tema(self):"):src.index("    def _ao_redimensionar(")]
     assert "self._tela_apps.redesenhar()" in tema and "self._programacao.redesenhar()" in tema
+
+
+def test_login_em_duas_metades_com_os_cartazes():
+    # 09/11: login do PC no modelo enviado pelo Matheus: formulario a esquerda,
+    # cartazes da Programacao a direita com o titulo digitando; sem "criar
+    # conta" nem Google, so o aviso do balcao
+    src = _fonte()
+    assert "class TelaLogin:" in src
+    login = src[src.index("        # ── Frame de login ──"):src.index("        # ── Frame de sessão (launcher) ──")]
+    assert "TelaLogin(self" in login
+    assert "self.entry_login" in login and "self.entry_senha" in login and "self.btn_login" in login
+    assert "Fale com um funcionário" in login
+    assert "self._alternar_senha" in login  # o olho mostra/esconde a senha
+    tela = src[src.index("class TelaLogin:"):src.index("class AgenteApp:")]
+    assert "def _digitar(" in tela and "root.after(" in tela  # frase digitando
+    # os cartazes chegam ao login mesmo sem sessao, e ja ao conectar
+    prog = src[src.index("    def _mostrar_lista(self, geracao"):src.index("    def _ao_mudar_tamanho(")]
+    assert prog.index("self.app._tela_login.definir(") < prog.index("if not imagens or not self.app.sessao_ativa")
+    conectado = src[src.index('if evento == "_conectado":'):src.index('elif evento == "_desconectado":')]
+    assert "self._programacao.recarregar()" in conectado
+    atualizada = src[src.index('elif evento == "programacao_atualizada":'):src.index('elif evento == "parar_streaming":')]
+    assert "if self.sessao_ativa" not in atualizada
+    tema = src[src.index("    def alternar_tema(self):"):src.index("    def _ao_redimensionar(")]
+    assert "self._tela_login.redesenhar()" in tema
+
+
+def test_rolagem_da_grade_volta_em_cada_sessao():
+    # _voltar_login tira o <MouseWheel> de tudo: a grade liga de novo a cada sessao
+    src = _fonte()
+    assert 'self.root.unbind_all("<MouseWheel>")' in src
+    mostrar = src[src.index("class TelaApps:"):]
+    mostrar = mostrar[mostrar.index("    def mostrar(self, apps):"):mostrar.index("    def _baixar_capa(")]
+    assert 'bind_all("<MouseWheel>", self._rolar)' in mostrar

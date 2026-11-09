@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-09 — Login do PC em duas metades, com os cartazes
+
+- **Tela de login do cliente redesenhada** (modelo enviado pelo Matheus): formulário à esquerda ("Entre na sua conta", Login, Senha com o **olho** para mostrar/esconder, Entrar) e, à direita, os **cartazes da Programação** inteiros sobre eles mesmos desfocados, com o título digitando letra a letra entre aspas. Os cartazes passam sozinhos (fade).
+- Sem cartaz, a metade direita fica num degradê da cor do piso com "Bem-vindo(a) à biblioteca! Faça login para começar."
+- No lugar de "criar conta"/Google: "Não tem cadastro? Fale com um funcionário da biblioteca."
+- Os cartazes agora são carregados ao conectar e sempre que mudam no painel (antes só durante a sessão).
+- Corrigido (da tela de apps nova, não liberada): a roda do mouse parava de rolar a grade a partir da segunda sessão.
+
 ## 2026-11-09 — Tela de apps do agente em estilo loja, com categorias
 
 - **Banner largo da Programação** no topo da tela de apps (antes era uma coluna estreita à direita): o cartaz aparece inteiro à direita sobre ele mesmo ampliado e desfocado, com o título grande à esquerda; troca com fade e bolinhas para escolher o cartaz.
