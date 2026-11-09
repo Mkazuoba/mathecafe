@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import asyncio, json, os
+from typing import Optional
 
 from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
@@ -11,6 +12,7 @@ from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
 from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso
 from app import horario
+from app.estacoes_novas import AGUARDANDO, estacao_do_agente, info_para_o_agente
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router
 
@@ -238,9 +240,20 @@ async def _resolver_estado(db: Session, estacao: Estacao, sessao_id) -> dict:
     return {"evento": "pong"}
 
 
+def _nome_atual(estacao: Estacao, nome: str) -> str:
+    """O nome no banco (o painel pode ter renomeado); o de antes se a estacao
+    foi apagada com o agente conectado."""
+    try:
+        return estacao.nome
+    except Exception:
+        return nome
+
+
 @app.websocket("/ws/estacao/{nome}")
-async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
-    estacao = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Session = Depends(get_db)):
+    # agente 1.14 manda ?id= (o UUID da instalacao): PC desconhecido vira estacao
+    # pendente em "Novas estacoes" (app/estacoes_novas.py). Sem id, so pelo nome.
+    estacao, nova = estacao_do_agente(db, nome, id)
     if not estacao:
         # Aceita antes de fechar: assim o agente recebe o código 4004 e o
         # motivo, em vez de um "HTTP 403" genérico
@@ -248,6 +261,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
         await ws.close(code=4004, reason="Estação não cadastrada")
         return
 
+    # o nome cadastrado vale (o painel pode ter renomeado; o agente e avisado)
+    nome = estacao.nome
     await manager.conectar_estacao(nome, ws)
     estacao.ultimo_ping = datetime.utcnow()
     # Com sessao aberta, segue ocupada ate o agente dizer em que estado esta
@@ -258,6 +273,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
     estacao.status = "ocupada" if tem_sessao else "livre"
     db.commit()
     await manager.broadcast_paineis("estacao_online", {"nome": nome})
+    if not estacao.aprovada:
+        await manager.broadcast_paineis("estacao_pendente", {"nome": nome, "nova": nova})
     estado_recebido = False
 
     try:
@@ -267,6 +284,7 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
             # mesmos registros por outras sessões (liberar, encerrar, saldo).
             # Descarta o cache para ler o estado atual a cada mensagem.
             db.expire_all()
+            nome = _nome_atual(estacao, nome)  # renomeada no painel: a conexao ja mudou de nome
             dados = json.loads(raw)
             evento = dados.get("evento")
 
@@ -284,6 +302,9 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                 await ws.send_text(json.dumps(resposta))
                 # a cor do piso da estacao (o agente usa como destaque)
                 await ws.send_text(json.dumps({"evento": "piso_estacao", "dados": cor_para_o_agente(estacao)}))
+                if id:
+                    # agente 1.14: o nome cadastrado e se ja foi aprovado
+                    await ws.send_text(json.dumps({"evento": "estacao_info", "dados": info_para_o_agente(estacao)}))
                 continue
             if not estado_recebido and evento in ("ping", "login_cliente"):
                 # Agente antigo (< 1.8): volta ao login quando cai e nao manda
@@ -310,6 +331,13 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
                     await ws.send_text(json.dumps({
                         "evento": "login_resultado",
                         "dados": {"ok": True, "manutencao": True, "admin_nome": admin.nome}
+                    }))
+                    continue
+
+                if not estacao.aprovada:
+                    await ws.send_text(json.dumps({
+                        "evento": "login_resultado",
+                        "dados": {"ok": False, "motivo": AGUARDANDO}
                     }))
                     continue
 
@@ -492,6 +520,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
 
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
+        db.expire_all()
+        nome = _nome_atual(estacao, nome)
         manager.desconectar_estacao(nome, ws)
         # O cliente segue usando no PC: a sessao continua aberta, marcada sem
         # conexao desde agora (o agente retoma ao reconectar)
@@ -503,6 +533,8 @@ async def ws_estacao(nome: str, ws: WebSocket, db: Session = Depends(get_db)):
         # Espera antes de marcar offline: uma queda rápida de rede não deve
         # fazer a estação "piscar" no painel.
         await asyncio.sleep(SEGUNDOS_ATE_OFFLINE)
+        db.expire_all()
+        nome = _nome_atual(estacao, nome)
         if not manager.estacao_conectada(nome):
             db.expire_all()
             aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()

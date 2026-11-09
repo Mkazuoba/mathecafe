@@ -37,6 +37,11 @@ class ConnectionManager:
         if ws is None or self.estacoes.get(nome) is ws:
             self.estacoes.pop(nome, None)
 
+    def renomear_estacao(self, antigo: str, novo: str):
+        """A estacao foi renomeada no painel: a mesma conexao, pelo nome novo."""
+        if antigo in self.estacoes and antigo != novo:
+            self.estacoes[novo] = self.estacoes.pop(antigo)
+
     def estacao_conectada(self, nome: str) -> bool:
         return nome in self.estacoes
 

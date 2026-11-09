@@ -84,7 +84,7 @@ npm run build        # compila para server/app/static
 
 1. **Configurações → Operadores**: cadastre os operadores.
 2. **Configurações → Apps permitidos**: cadastre os programas que os clientes podem abrir (processo `.exe`, caminho completo e, se quiser, uma imagem de capa).
-3. **Mapa → Modo configuração**: cadastre as estações (o nome, ex. `PC-01`, é o mesmo usado no agente) e arraste-as para a posição da sala.
+3. **Mapa → Modo configuração**: crie as zonas da sala. As estações aparecem sozinhas depois de instalar o agente (ver 4): aprove-as em **Mapa → Novas estações** e arraste-as para a posição na sala. Cadastrar a estação à mão só é preciso para agentes antigos (até a 1.13), com o mesmo nome usado neles.
 4. **Clientes**: cadastre os clientes.
 5. **Configurações → Programação** (opcional): suba os cartazes da programação da biblioteca; eles aparecem ao lado dos apps durante a sessão.
 6. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
@@ -93,14 +93,17 @@ npm run build        # compila para server/app/static
 
 Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/)). Se ele estiver instalado só para o admin (o padrão do python.org, no perfil dele), o instalador **copia o Python para `C:\MatheCafe\python`**, porque o `cliente` não lê o perfil do admin. O Python da Microsoft Store não serve: o instalador recusa.
 
-Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas. Ele:
+Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas: o **nome da estação** (Enter usa o nome do Windows), o **endereço do servidor** e a senha do usuário `cliente`. Não pede login do painel. Ele:
 
 1. cria o usuário Windows `cliente` (sem admin, senha que não expira) e liga o autologin;
 2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;
-3. grava `agente.cfg` e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e o auto-update);
+3. grava `agente.cfg` (numa reinstalação, mantém o `ID=` que já estava lá) e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e a atualização);
 4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
 5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha, que aparecem no Ctrl+Alt+Del, e prende os downloads do Chrome e do Edge na pasta Downloads, bloqueando os perigosos (`politicas_cliente.ps1`). Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
-6. cadastra a estação no servidor.
+
+Quando o agente abre pela primeira vez, ele gera um identificador (`ID=` no `agente.cfg`) e conecta. O servidor não conhece o PC, então ele aparece no painel em **Mapa → Novas estações** (botão laranja com a contagem; só para admin). Ali você confirma ou troca o nome, escolhe a zona e clica em **Aprovar**. Até aprovar, a tela de login do PC avisa que ele aguarda aprovação e ninguém entra (o modo manutenção funciona). **Recusar** bloqueia aquele PC; se foi engano, cadastre no Modo configuração uma estação com o mesmo nome e ela volta.
+
+**Trocar o nome** de uma estação: clique nela no Mapa → lápis ao lado do nome. O agente 1.14 recebe o nome novo na hora e grava no `agente.cfg`; agentes antigos precisam do nome novo em Configurar conexão (`Ctrl+Shift+M`).
 
 **Atualizar uma estação**: desde a 1.11.0 o agente só se atualiza pelo modo manutenção: `Ctrl+Shift+M` → login de operador → **Atualizar para a versão X** (o painel avisa quais estações estão desatualizadas). Até a 1.10.x ele se atualizava sozinho ao abrir. Mudanças no instalador ou na tarefa agendada (como o fim do atraso de 5s no logon, de 30/10) só valem rodando o `instalar.bat` de novo, com os arquivos novos: ele substitui tudo e mantém o usuário.
 

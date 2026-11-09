@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-09 — Estação nova aparece sozinha no painel (6.4; agente 1.14.0)
+
+- **Instalar o agente já liga o PC ao servidor**: o `instalar.bat` só pergunta o nome da estação (Enter = o nome do Windows), o endereço do servidor e a senha do `cliente`. Saíram o login de admin e o cadastro pela API (que não funcionava: o login era mandado no formato errado).
+- O PC aparece no painel em **Mapa → Novas estações** (botão laranja com a contagem, só para admin): confirme ou troque o nome, escolha a zona e **Aprovar**; ou **Recusar** (o PC fica bloqueado). Até aprovar, ninguém faz login nele e a tela de login avisa que ele aguarda aprovação.
+- **Renomear estação pelo Mapa** (lápis no cartão da estação): o agente 1.14 recebe o nome novo na hora, sem reconectar, e grava no `agente.cfg`.
+- O agente gera um identificador na primeira vez (`ID=` no `agente.cfg`), e é por ele que o servidor reconhece o PC: renomear não perde a conexão, e um segundo PC instalado com o mesmo nome vira outra estação (`-2`). Reinstalar mantém o identificador.
+- Estações já cadastradas continuam como estão: ao receberem a 1.14, adotam o identificador do agente.
+- Registro de ações: aprovar, recusar e renomear estação.
+
 ## 2026-11-09 — Apps por piso e capa do app no dock (agente 1.13.0)
 
 - **Cada piso tem os seus apps**: a tela Apps permitidos segue o piso do topo (abas "Apps do Adulto" / "Apps do Infantil") e o interruptor do cartão liga o app **só naquele piso**. O cartão mostra em que outros pisos o app também está ligado; "N de M apps ligados no piso X". Ações em massa: ligar/desligar no piso, excluir. App novo entra ligado no piso escolhido.

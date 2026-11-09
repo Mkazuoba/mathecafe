@@ -11,6 +11,7 @@ from app.routers.agente import _versao_dist, desatualizado
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
+from app.estacoes_novas import info_para_o_agente, nome_livre
 from app.pisos import cor_para_o_agente, piso_da_estacao, piso_do_cliente, recusa_de_piso, resumo
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
@@ -48,6 +49,8 @@ def serial_estacao(e: Estacao):
         "mac_address": e.mac_address,
         # 6.13: o painel avisa onde atualizar (o agente so se atualiza na manutencao)
         "versao_agente": e.versao_agente,
+        "identificador": e.identificador,
+        "aprovada": bool(e.aprovada),
         "versao_atual": _versao_dist(),
         "agente_desatualizado": bool(e.versao_agente) and desatualizado(e.versao_agente),
     }
@@ -133,7 +136,7 @@ def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
 @router.get("/")
 def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),
            _=Depends(requer_perfil("admin", "operador"))):
-    q = db.query(Estacao).filter(Estacao.ativa == True)
+    q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada != False)
     if grupo_id:
         q = q.filter(Estacao.grupo_id == grupo_id)
     return [serial_estacao(e) for e in q.order_by(Estacao.nome).all()]
@@ -147,6 +150,7 @@ def criar(nome: str, grupo_id: Optional[int] = None,
     if existente:
         # Estação excluída que tinha histórico: reativa, mantendo o histórico
         existente.ativa = True
+        existente.aprovada = True
         existente.grupo_id = grupo_id
         e = existente
     else:
@@ -155,19 +159,91 @@ def criar(nome: str, grupo_id: Optional[int] = None,
     db.commit(); db.refresh(e)
     return serial_estacao(e)
 
+# ── Novas estacoes (cadastro automatico pelo instalador; app/estacoes_novas.py) ──
+class AprovarBody(BaseModel):
+    nome: str = Field(min_length=1, max_length=20)
+    grupo_id: Optional[int] = None
+
+
+@router.get("/pendentes")
+def listar_pendentes(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada == False)
+    return [serial_estacao(e) for e in q.order_by(Estacao.id).all()]
+
+
+async def _renomear(db: Session, e: Estacao, nome: str):
+    """Troca o nome (unico) e avisa a conexao do agente, que passa a usar o novo."""
+    nome = nome.strip()
+    if not nome:
+        raise HTTPException(400, "Informe o nome da estação")
+    if nome == e.nome:
+        return
+    if nome_livre(db, nome, ignorar_id=e.id) != nome[:20]:
+        raise HTTPException(400, "Já existe uma estação com esse nome")
+    antigo = e.nome
+    e.nome = nome[:20]
+    db.commit()
+    manager.renomear_estacao(antigo, e.nome)
+
+
+@router.post("/{id}/aprovar")
+async def aprovar(id: int, body: AprovarBody, db: Session = Depends(get_db),
+                  quem=Depends(requer_perfil("admin"))):
+    e = db.query(Estacao).filter(Estacao.id == id, Estacao.ativa == True).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    if body.grupo_id is not None and not db.get(GrupoEstacao, body.grupo_id):
+        raise HTTPException(400, "Mapa não encontrado")
+    await _renomear(db, e, body.nome)
+    e.aprovada = True
+    e.grupo_id = body.grupo_id
+    db.commit()
+    registrar(db, quem, "aprovar_estacao", estacao=e.nome)
+    await manager.enviar_estacao(e.nome, "estacao_info", info_para_o_agente(e))
+    await manager.broadcast_paineis("estacao_online", {"nome": e.nome})
+    return serial_estacao(e)
+
+
+@router.delete("/{id}/pendente")
+async def recusar(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """O PC fica bloqueado (o identificador dele e guardado). Para trazer de volta,
+    reinstale o agente (gera outro identificador)."""
+    e = db.query(Estacao).filter(Estacao.id == id, Estacao.ativa == True, Estacao.aprovada == False).first()
+    if not e:
+        raise HTTPException(404, "Estação pendente não encontrada")
+    e.ativa = False
+    db.commit()
+    registrar(db, quem, "recusar_estacao", estacao=e.nome)
+    ws = manager.estacoes.get(e.nome)
+    if ws:
+        manager.desconectar_estacao(e.nome, ws)
+        try:
+            await ws.close(code=4004, reason="Estação recusada no painel")
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 @router.put("/{id}")
-def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
-              _=Depends(requer_perfil("admin"))):
+async def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
+                    quem=Depends(requer_perfil("admin"))):
     e = db.query(Estacao).filter(Estacao.id == id).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
-    if data.nome: e.nome = data.nome
+    antigo = e.nome
+    renomeada = bool(data.nome) and data.nome.strip() != e.nome
+    if data.nome:
+        await _renomear(db, e, data.nome)
     if data.grupo_id is not None: e.grupo_id = data.grupo_id
     if data.ativa is not None: e.ativa = data.ativa
     if data.pos_x is not None: e.pos_x = data.pos_x
     if data.pos_y is not None: e.pos_y = data.pos_y
     if "mac_address" in data.model_fields_set: e.mac_address = data.mac_address
     db.commit()
+    if renomeada:
+        registrar(db, quem, "renomear_estacao", estacao=e.nome, detalhe=f"antes: {antigo}")
+        # o agente 1.14 grava o nome novo no agente.cfg
+        await manager.enviar_estacao(e.nome, "estacao_info", info_para_o_agente(e))
     return serial_estacao(e)
 
 @router.put("/{id}/posicao")

@@ -10,7 +10,8 @@ echo Este instalador vai:
 echo   1. Criar o usuario Windows "cliente" (autologin)
 echo   2. Copiar o agente para C:\MatheCafe e instalar as dependencias
 echo   3. Configurar o agente para abrir sozinho no login do "cliente"
-echo   4. Registrar esta estacao no servidor
+echo   4. Ligar esta estacao ao servidor: ela aparece no painel em
+echo      Mapa -^> Novas estacoes, para um admin aprovar
 echo.
 echo Rode como Administrador. Se ainda nao fez isso, feche e
 echo clique com botao direito -^> Executar como administrador.
@@ -73,12 +74,12 @@ echo.
 echo ---- Dados da estacao ----
 echo.
 
-set /p ESTACAO="Nome da estacao (ex: PC-01): "
-if "!ESTACAO!"=="" (
-    echo ERRO: Nome da estacao nao pode ser vazio.
-    pause
-    exit /b 1
-)
+:: Enter vazio = o nome do Windows. O nome pode ser trocado depois no painel.
+set ESTACAO=
+set /p ESTACAO="Nome da estacao [Enter = %COMPUTERNAME%]: "
+if "!ESTACAO!"=="" set ESTACAO=%COMPUTERNAME%
+:: o servidor guarda ate 20 caracteres
+set ESTACAO=!ESTACAO:~0,20!
 
 set /p SERVIDOR="Endereco do servidor (ex: 10.26.31.99:8000): "
 if "!SERVIDOR!"=="" (
@@ -104,21 +105,13 @@ if "!SENHA_CLIENTE!"=="" (
 )
 
 echo.
-echo ---- Credenciais do painel MatheCafe ----
-echo (Para registrar esta estacao no servidor)
-echo.
-
-set /p ADMIN_LOGIN="Login admin do painel: "
-set /p ADMIN_SENHA="Senha admin do painel: "
-
-echo.
 echo ============================================================
 echo   Iniciando instalacao...
 echo ============================================================
 echo.
 
 :: ---- 1. Criar usuario cliente ----
-echo [1/7] Criando usuario Windows "cliente"...
+echo [1/6] Criando usuario Windows "cliente"...
 net user cliente >nul 2>&1
 if %errorlevel%==0 (
     echo       Usuario ja existe. Atualizando senha...
@@ -140,7 +133,7 @@ net localgroup Administradores cliente /delete >nul 2>&1
 net localgroup Administrators cliente /delete >nul 2>&1
 
 :: ---- 2. Configurar autologin ----
-echo [2/7] Configurando autologin...
+echo [2/6] Configurando autologin...
 set WINLOGON=HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
 reg add "%WINLOGON%" /v AutoAdminLogon    /t REG_SZ /d "1"          /f >nul
 reg add "%WINLOGON%" /v DefaultUserName   /t REG_SZ /d "cliente"    /f >nul
@@ -149,7 +142,7 @@ reg add "%WINLOGON%" /v DefaultDomainName /t REG_SZ /d "."          /f >nul
 echo       Autologin configurado.
 
 :: ---- 3. Copiar o agente e instalar dependencias ----
-echo [3/7] Copiando o agente para %DESTINO% e instalando dependencias...
+echo [3/6] Copiando o agente para %DESTINO% e instalando dependencias...
 if not exist "%DESTINO%" mkdir "%DESTINO%"
 :: Reinstalacao: fecha o agente que esteja rodando de %DESTINO% (prende os arquivos)
 powershell -NoProfile -Command "Get-Process | Where-Object { $_.Path -like '%DESTINO%\*' } | Stop-Process -Force" >nul 2>&1
@@ -184,11 +177,18 @@ if !errorlevel! neq 0 (
 echo       Agente e dependencias instalados.
 
 :: ---- 4. Gravar agente.cfg e permissoes ----
-echo [4/7] Salvando configuracao do agente...
+echo [4/6] Salvando configuracao do agente...
+:: Reinstalacao: mantem o ID= do agente.cfg antigo. E por ele que o servidor
+:: reconhece este PC; sem ele, o PC voltaria como uma estacao nova a aprovar.
+set ID_PC=
+if exist "%DESTINO%\agente.cfg" (
+    for /f "tokens=1,* delims==" %%a in ('findstr /b /c:"ID=" "%DESTINO%\agente.cfg"') do set ID_PC=%%b
+)
 (
     echo # MatheCafe - configuracao da estacao ^(gerado automaticamente^)
     echo SERVIDOR=ws://!SERVIDOR!
     echo ESTACAO=!ESTACAO!
+    if defined ID_PC echo ID=!ID_PC!
 ) > "%DESTINO%\agente.cfg"
 :: O agente roda como "cliente" e precisa gravar na pasta: agente.cfg e o
 :: auto-update (substitui o proprio agente.py)
@@ -196,7 +196,7 @@ icacls "%DESTINO%" /grant cliente:(OI)(CI)M /T /Q >nul
 echo       agente.cfg salvo em %DESTINO%
 
 :: ---- 5. Criar tarefa agendada ----
-echo [5/7] Criando tarefa agendada...
+echo [5/6] Criando tarefa agendada...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\registrar_tarefa.ps1" -Pasta "%DESTINO%"
 if !errorlevel! neq 0 (
     echo ERRO: Nao foi possivel criar a tarefa agendada.
@@ -208,7 +208,7 @@ echo       O agente abre sozinho quando o "cliente" entrar no Windows.
 :: ---- 6. Politicas do cliente ----
 :: Ctrl+Alt+Del nao passa pelo agente: desliga Gerenciador de Tarefas,
 :: Bloquear e Alterar senha no perfil do "cliente"
-echo [6/7] Bloqueando o Gerenciador de Tarefas para o "cliente"...
+echo [6/6] Bloqueando o Gerenciador de Tarefas para o "cliente"...
 set MC_SENHA=!SENHA_CLIENTE!
 powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\politicas_cliente.ps1"
 if !errorlevel! neq 0 (
@@ -216,41 +216,6 @@ if !errorlevel! neq 0 (
     echo       depois que o "cliente" entrar no Windows uma vez.
 )
 set MC_SENHA=
-
-:: ---- 7. Registrar estacao no servidor ----
-echo [7/7] Registrando estacao "%ESTACAO%" no servidor...
-
-:: Obter token de admin
-set TOKEN_FILE=%TEMP%\mc_token.json
-curl -s -X POST "http://!SERVIDOR!/api/auth/login" ^
-    -H "Content-Type: application/x-www-form-urlencoded" ^
-    -d "username=!ADMIN_LOGIN!&password=!ADMIN_SENHA!" ^
-    -o "%TOKEN_FILE%" >nul 2>&1
-
-if not exist "%TOKEN_FILE%" (
-    echo       AVISO: Nao foi possivel conectar ao servidor. Cadastre a estacao manualmente no painel.
-    goto :fim
-)
-
-:: Extrair token (busca simples por access_token)
-set TOKEN=
-for /f "tokens=2 delims=:," %%a in ('findstr "access_token" "%TOKEN_FILE%"') do (
-    set TOKEN=%%a
-    set TOKEN=!TOKEN: =!
-    set TOKEN=!TOKEN:"=!
-)
-del "%TOKEN_FILE%" >nul 2>&1
-
-if "!TOKEN!"=="" (
-    echo       AVISO: Login admin falhou. Verifique as credenciais e cadastre a estacao manualmente no painel.
-    goto :fim
-)
-
-:: Cadastrar estacao
-curl -s -X POST "http://!SERVIDOR!/api/estacoes/?nome=!ESTACAO!" ^
-    -H "Authorization: Bearer !TOKEN!" >nul 2>&1
-
-echo       Estacao "!ESTACAO!" registrada no servidor.
 
 :fim
 echo.
@@ -260,6 +225,8 @@ echo ============================================================
 echo.
 echo Proximos passos:
 echo   - Reinicie o PC: ele entra sozinho como "cliente" e o agente abre
+echo   - No painel, em Mapa -^> Novas estacoes, aprove "!ESTACAO!" e escolha o mapa
+echo     ^(ate aprovar, ninguem faz login neste PC^)
 echo   - Agente instalado em %DESTINO% (pode apagar esta pasta de origem)
 echo   - Para desinstalar: %DESTINO%\desinstalar.bat como Administrador
 echo.

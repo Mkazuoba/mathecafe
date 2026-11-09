@@ -1791,3 +1791,100 @@ def test_apps_antigos_viram_por_piso(c, admin):
     assert pisos_de(do_mapa) == {infantil.id}
     assert pisos_de(desligado) == set()
     db.close()
+
+
+# ── Cadastro automatico pelo instalador (agente 1.14) ───────────────────────
+
+def _estado_114(ws):
+    """Manda o estado como o agente 1.14 e devolve as respostas ate estacao_info."""
+    ws.send_json({"evento": "estado", "sessao_id": None, "versao": "1.14.0"})
+    respostas = [ws.receive_json(), ws.receive_json(), ws.receive_json()]
+    assert respostas[2]["evento"] == "estacao_info", respostas
+    return respostas[2]["dados"]
+
+
+def _pendente(c, admin, identificador):
+    pendentes = c.get("/api/estacoes/pendentes", headers=admin).json()
+    return next(p for p in pendentes if p["identificador"] == identificador)
+
+
+def test_pc_novo_aparece_pendente_e_nao_loga(c, admin, cenario):
+    with c.websocket_connect("/ws/estacao/SALA-NOVA-01?id=uuid-novo-1") as ws:
+        info = _estado_114(ws)
+        assert info == {"nome": "SALA-NOVA-01", "aprovada": False}
+        p = _pendente(c, admin, "uuid-novo-1")
+        assert p["nome"] == "SALA-NOVA-01"
+        # fora da lista normal (mapa, liberar direto)
+        assert "SALA-NOVA-01" not in [e["nome"] for e in c.get("/api/estacoes/", headers=admin).json()]
+        # cliente liberado nao entra num PC que ninguem aprovou
+        assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["ok"] is False and "aprova" in dados["motivo"]
+
+
+def test_aprovar_com_outro_nome_avisa_o_agente(c, admin):
+    grupo = c.get("/api/estacoes/grupos", headers=admin).json()[0]
+    with c.websocket_connect("/ws/estacao/DESKTOP-AB12?id=uuid-novo-2") as ws:
+        _estado_114(ws)
+        p = _pendente(c, admin, "uuid-novo-2")
+        r = c.post(f"/api/estacoes/{p['id']}/aprovar", headers=admin,
+                   json={"nome": "INFO-07", "grupo_id": grupo["id"]})
+        assert r.status_code == 200, r.text
+        assert ws.receive_json() == {"evento": "estacao_info", "dados": {"nome": "INFO-07", "aprovada": True}}
+        lista = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+        assert lista["INFO-07"]["online"] is True and lista["INFO-07"]["grupo_id"] == grupo["id"]
+        assert all(x["identificador"] != "uuid-novo-2" for x in c.get("/api/estacoes/pendentes", headers=admin).json())
+    # o agente guardou o nome novo, mas mesmo que volte com o antigo o id o encontra
+    with c.websocket_connect("/ws/estacao/DESKTOP-AB12?id=uuid-novo-2") as ws:
+        assert _estado_114(ws) == {"nome": "INFO-07", "aprovada": True}
+
+
+def test_renomear_estacao_online_troca_a_conexao(c, admin):
+    with c.websocket_connect("/ws/estacao/PC-RENOMEAR?id=uuid-novo-3") as ws:
+        _estado_114(ws)
+        p = _pendente(c, admin, "uuid-novo-3")
+        c.post(f"/api/estacoes/{p['id']}/aprovar", headers=admin, json={"nome": "PC-RENOMEAR"})
+        ws.receive_json()
+        r = c.put(f"/api/estacoes/{p['id']}", headers=admin, json={"nome": "PC-NOVO-NOME"})
+        assert r.status_code == 200, r.text
+        assert ws.receive_json() == {"evento": "estacao_info", "dados": {"nome": "PC-NOVO-NOME", "aprovada": True}}
+        assert manager.estacao_conectada("PC-NOVO-NOME")
+        assert not manager.estacao_conectada("PC-RENOMEAR")
+        # as acoes do painel chegam pelo nome novo
+        assert c.post("/api/estacoes/PC-NOVO-NOME/mensagem", headers=admin, json={"texto": "oi"}).status_code == 200
+        assert ws.receive_json()["evento"] == "mensagem_tela"
+
+
+def test_nome_repetido_ganha_sufixo(c, admin, cenario):
+    # o PC da estacao ja tem o agente 1.14 (adotou o id dele)...
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}?id=uuid-dono-4") as ws:
+        _estado_114(ws)
+    # ...e outro PC e instalado com o mesmo nome
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}?id=uuid-novo-4") as ws:
+        info = _estado_114(ws)
+        assert info["aprovada"] is False and info["nome"] == f"{cenario['estacao']}-2"
+
+
+def test_estacao_cadastrada_adota_o_id_do_agente_novo(c, admin, cenario):
+    # estacao do jeito antigo (cadastrada no painel) com o agente 1.14
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}?id=uuid-novo-5") as ws:
+        assert _estado_114(ws) == {"nome": cenario["estacao"], "aprovada": True}
+    assert all(x["identificador"] != "uuid-novo-5" for x in c.get("/api/estacoes/pendentes", headers=admin).json())
+
+
+def test_recusar_bloqueia_o_pc(c, admin):
+    from starlette.websockets import WebSocketDisconnect
+    with c.websocket_connect("/ws/estacao/PC-INTRUSO?id=uuid-novo-6") as ws:
+        _estado_114(ws)
+        p = _pendente(c, admin, "uuid-novo-6")
+        assert c.delete(f"/api/estacoes/{p['id']}/pendente", headers=admin).status_code == 200
+    with pytest.raises(WebSocketDisconnect) as erro:
+        with c.websocket_connect("/ws/estacao/PC-INTRUSO?id=uuid-novo-6") as ws:
+            ws.receive_text()
+    assert erro.value.code == 4004
+    assert all(x["identificador"] != "uuid-novo-6" for x in c.get("/api/estacoes/pendentes", headers=admin).json())
+
+
+def test_operador_nao_aprova(c, operador):
+    assert c.get("/api/estacoes/pendentes", headers=operador).status_code == 200
+    assert c.post("/api/estacoes/1/aprovar", headers=operador, json={"nome": "X"}).status_code == 403

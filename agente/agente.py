@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.13.0"
+VERSAO = "1.14.0"
 
 import asyncio
 import json
@@ -38,6 +38,7 @@ import hmac
 from datetime import datetime
 from io import BytesIO
 import urllib.parse
+import uuid
 import urllib.request
 import sys
 import traceback
@@ -1346,6 +1347,9 @@ class AgenteApp:
         self.root = root
         self.servidor = servidor.rstrip("/")
         self.estacao = estacao
+        # 1.14: o servidor reconhece o PC por este id (o nome pode ser trocado no painel)
+        self.identificador = identificador_da_estacao()
+        self.aprovada = True
 
         self.incoming = queue.Queue()
         self.loop = None
@@ -1665,14 +1669,17 @@ class AgenteApp:
         self.loop.run_until_complete(self._ws_loop())
 
     async def _ws_loop(self):
-        # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
-        url = f"{self.servidor}/ws/estacao/{urllib.parse.quote(self.estacao)}"
-        # Servidor na rede interna: conexão direta. O websockets usa o proxy do
-        # Windows por padrão, e redes com proxy desviam até IPs internos.
-        proxy = None if servidor_na_rede_local(url) else True
-        self.incoming.put({"evento": "_info", "dados": {
-            "msg": f"Conectando a {url}" + (" (direto, sem proxy)" if proxy is None else "")}})
+        url_anterior = None
         while True:
+            # refeita a cada tentativa: o painel pode ter renomeado a estacao
+            url = url_da_estacao(self.servidor, self.estacao, self.identificador)
+            # Servidor na rede interna: conexão direta. O websockets usa o proxy do
+            # Windows por padrão, e redes com proxy desviam até IPs internos.
+            proxy = None if servidor_na_rede_local(url) else True
+            if url != url_anterior:
+                url_anterior = url
+                self.incoming.put({"evento": "_info", "dados": {
+                    "msg": f"Conectando a {url}" + (" (direto, sem proxy)" if proxy is None else "")}})
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=20, proxy=proxy) as ws:
                     # Primeiro o que terminou sem conexao, depois o estado: o
@@ -1695,8 +1702,8 @@ class AgenteApp:
             except websockets.exceptions.ConnectionClosed as e:
                 if e.rcvd and e.rcvd.code == 4004:
                     self.incoming.put({"evento": "_erro", "dados": {"nao_cadastrada": True, "msg": (
-                        f"Estacao '{self.estacao}' nao esta cadastrada no servidor. "
-                        "Cadastre no painel (Mapa -> Modo configuracao) com esse nome exato.")}})
+                        f"O servidor recusou a estacao '{self.estacao}' (recusada em Novas estacoes). "
+                        "Para cadastrar de novo, reinstale o agente.")}})
                 else:
                     self.incoming.put({"evento": "_erro", "dados": {"msg": str(e)}})
             except Exception as e:
@@ -1776,7 +1783,9 @@ class AgenteApp:
                 else:
                     self._iniciar_sessao(dados)
             else:
-                self.lbl_login_erro.config(text=dados.get("motivo", "Erro desconhecido"))
+                motivo = dados.get("motivo", "Erro desconhecido")
+                pendente = motivo.startswith("Este computador aguarda")
+                self.lbl_login_erro.config(text=motivo, fg="#f59e0b" if pendente else "#ef4444", wraplength=340)
 
         elif evento == "pong":
             pass
@@ -1854,6 +1863,12 @@ class AgenteApp:
         elif evento == "piso_estacao":
             self._aplicar_cor_piso(dados)
 
+        elif evento == "estacao_info":
+            # 1.14: o nome cadastrado (o painel pode ter trocado) e se o PC ja
+            # foi aprovado em "Novas estacoes"
+            self._log(f"<- estacao_info: {dados}")
+            self._aplicar_info_estacao(dados)
+
         elif evento == "iniciar_sessao_direta":
             self._log(f"<- iniciar_sessao_direta: {dados}")
             if not self.sessao_ativa:
@@ -1896,6 +1911,21 @@ class AgenteApp:
             self._log(f"<- evento: {evento} | {dados}")
 
     # ── Captura de tela ──────────────────────────────────────────────────────
+    def _aplicar_info_estacao(self, dados):
+        nome = (dados.get("nome") or "").strip()
+        if nome and nome != self.estacao:
+            self._log(f"Estacao renomeada no painel: {self.estacao} -> {nome}")
+            self.estacao = nome
+            gravar_cfg(ESTACAO=nome)
+            self.lbl_estacao.config(text=nome)
+        aprovada = bool(dados.get("aprovada", True))
+        if not aprovada:
+            self.lbl_login_erro.config(text=AGUARDANDO_APROVACAO, fg="#f59e0b", wraplength=340)
+        elif not self.aprovada:
+            self.lbl_login_erro.config(text="", fg="#ef4444")
+            self._log("Estacao aprovada no painel")
+        self.aprovada = aprovada
+
     def _tirar_screenshot(self):
         """Captura a tela silenciosamente via PIL (sem abrir janela ou processo)."""
         import io, base64
@@ -2434,7 +2464,7 @@ class AgenteApp:
             return e
 
         e_servidor = campo("Endereco do servidor (ex: 10.26.31.99:8000):", self.servidor)
-        e_estacao = campo("Nome desta estacao (igual ao do Mapa):", self.estacao)
+        e_estacao = campo("Nome desta estacao:", self.estacao)
         e_servidor.focus()
         lbl = tk.Label(janela, text="", bg="#1A1B26", fg="#94a3b8", font=("Segoe UI", 9),
                        wraplength=w - 48, justify="left")
@@ -2801,6 +2831,28 @@ def salvar_cfg(servidor, estacao, tema=None):
     gravar_cfg(SERVIDOR=servidor, ESTACAO=estacao, TEMA=tema)
 
 
+AGUARDANDO_APROVACAO = "Este computador aguarda aprovação no painel do MatheCafé (Mapa → Novas estações)."
+
+
+def identificador_da_estacao():
+    """O id desta instalacao (ID= no agente.cfg), criado na primeira vez. E por ele
+    que o servidor reconhece o PC: um PC novo aparece no painel para aprovar."""
+    atual = carregar_cfg().get("ID", "").strip()
+    if atual:
+        return atual
+    novo = uuid.uuid4().hex
+    gravar_cfg(ID=novo)
+    return novo
+
+
+def url_da_estacao(servidor, estacao, identificador=None):
+    # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
+    url = f"{servidor}/ws/estacao/{urllib.parse.quote(estacao)}"
+    if identificador:
+        url += "?id=" + urllib.parse.quote(identificador)
+    return url
+
+
 def salvar_tema(tema):
     gravar_cfg(TEMA=tema)
 
@@ -2818,7 +2870,7 @@ def normalizar_servidor(texto):
 
 def testar_conexao(servidor, estacao):
     """Conecta como a estacao e diz se o servidor a aceitou. Roda numa thread."""
-    url = f"{servidor}/ws/estacao/{urllib.parse.quote(estacao)}"
+    url = url_da_estacao(servidor, estacao, identificador_da_estacao())
     proxy = None if servidor_na_rede_local(url) else True
 
     async def tentar():
@@ -2833,7 +2885,7 @@ def testar_conexao(servidor, estacao):
         return True, f"Conectou: o servidor reconhece a estacao {estacao}."
     except websockets.exceptions.ConnectionClosed as e:
         if e.rcvd and e.rcvd.code == 4004:
-            return False, f"O servidor respondeu, mas nao tem a estacao '{estacao}'. Cadastre no Mapa ou corrija o nome."
+            return False, f"O servidor respondeu, mas recusou a estacao '{estacao}' (recusada em Novas estacoes)."
         return False, f"O servidor fechou a conexao: {e}"
     except Exception as e:
         return False, f"Nao conectou em {servidor}: {e or type(e).__name__}"

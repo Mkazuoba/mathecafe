@@ -39,6 +39,10 @@ export interface Estacao extends PisoDe {
   versao_atual: string
   /** o agente só se atualiza no modo manutenção: o painel avisa onde fazer */
   agente_desatualizado: boolean
+  /** UUID da instalação (agente 1.14); null: cadastrada no painel e agente antigo */
+  identificador?: string | null
+  /** false: PC novo esperando em "Novas estações" (ninguém faz login até aprovar) */
+  aprovada?: boolean
 }
 
 /** Mapa (sala). piso_id vazio: mapa antigo ainda sem piso, o painel avisa. */

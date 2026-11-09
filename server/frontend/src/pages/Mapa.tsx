@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   IconArrowsMove,
+  IconCheck,
+  IconDeviceDesktopPlus,
   IconMessage,
   IconPencil,
   IconPlayerPlay,
@@ -182,7 +184,8 @@ function montarZonas(grupos: Grupo[], estacoes: Estacao[], comSemGrupo: boolean)
 }
 
 export default function Mapa() {
-  const { estacoes, grupos, piso, sessaoDaEstacao, agora, recarregar, recarregarEstacoes } = useDados()
+  const { estacoes, grupos, piso, sessaoDaEstacao, agora, recarregar, recarregarEstacoes, pendentes } = useDados()
+  const [vendoPendentes, setVendoPendentes] = useState(false)
   const avisar = useAvisos()
   const admin = Api.ehAdmin()
   const [modoConfig, setModoConfig] = useState(false)
@@ -389,6 +392,19 @@ export default function Mapa() {
             Ajustar
           </button>
         </div>
+        {admin && pendentes.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 border-manutencao-borda bg-manutencao-fundo text-manutencao hover:brightness-110"
+            onClick={() => setVendoPendentes(true)}
+          >
+            <IconDeviceDesktopPlus size={14} /> Novas estações
+            <span className="rounded-full bg-manutencao px-1.5 text-[0.7rem] font-bold text-fundo tabular-nums">
+              {pendentes.length}
+            </span>
+          </Button>
+        )}
         {admin && modoConfig && (
           <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditandoZona("nova")}>
             <IconPlus size={14} /> Zona
@@ -490,6 +506,7 @@ export default function Mapa() {
         )}
       </div>
 
+      <ModalPendentes aberto={vendoPendentes && pendentes.length > 0} aoFechar={() => setVendoPendentes(false)} />
       <ModalNovaEstacao
         aberto={novaEstacaoEm !== undefined}
         grupoInicial={novaEstacaoEm ?? null}
@@ -781,10 +798,27 @@ function CartaoEstacao({
   y: number
   aoFechar: () => void
 }) {
-  const { sessaoDaEstacao, agora } = useDados()
+  const { sessaoDaEstacao, agora, recarregarEstacoes } = useDados()
   const { encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, liberarDireto } = useAcoes()
   const avisar = useAvisos()
+  const admin = Api.ehAdmin()
   const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
+  const [renomeando, setRenomeando] = useState(false)
+  const [novoNome, setNovoNome] = useState(e.nome)
+
+  async function renomear(ev: React.FormEvent) {
+    ev.preventDefault()
+    const nome = novoNome.trim()
+    if (!nome || nome === e.nome) return setRenomeando(false)
+    try {
+      await Api.put(`/api/estacoes/${e.id}`, { nome })
+      avisar(e.online ? `Estação renomeada para ${nome} (o computador já foi avisado)` : `Estação renomeada para ${nome}`)
+      setRenomeando(false)
+      await recarregarEstacoes()
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    }
+  }
   const [cliente, setCliente] = useState<ClienteResumo | null>(null)
   const [iniciando, setIniciando] = useState(false)
   const [escrevendo, setEscrevendo] = useState(false)
@@ -822,8 +856,41 @@ function CartaoEstacao({
       style={{ left: Math.max(8, x), top: y }}
     >
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-base font-semibold">{e.nome}</span>
-        <SeloStatus status={e.status} />
+        {renomeando ? (
+          <form onSubmit={renomear} className="flex min-w-0 flex-1 items-center gap-1">
+            <Input
+              aria-label="Novo nome da estação"
+              className="h-8"
+              maxLength={20}
+              value={novoNome}
+              onChange={(ev) => setNovoNome(ev.target.value)}
+              onKeyDown={(ev) => ev.key === "Escape" && (ev.stopPropagation(), setRenomeando(false))}
+              autoFocus
+            />
+            <Button type="submit" size="xs" aria-label="Salvar o nome">
+              <IconCheck size={14} />
+            </Button>
+          </form>
+        ) : (
+          <>
+            <span className="text-base font-semibold">{e.nome}</span>
+            {admin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNovoNome(e.nome)
+                  setRenomeando(true)
+                }}
+                aria-label="Renomear a estação"
+                title="Renomear"
+                className="text-texto-fraco hover:text-texto"
+              >
+                <IconPencil size={14} />
+              </button>
+            )}
+          </>
+        )}
+        {!renomeando && <SeloStatus status={e.status} />}
         {!e.online && e.status !== "desligada" && (
           <IconWifiOff size={14} className="text-texto-fraco" aria-label="sem conexão" />
         )}
@@ -1136,7 +1203,8 @@ function ModalNovaEstacao({
           </Select>
         </Campo>
         <p className="text-xs text-texto-fraco">
-          O nome precisa ser o mesmo usado no agente: <code>--estacao {nome.trim() || "PC-01"}</code>
+          Computadores com o agente 1.14 aparecem sozinhos em <strong>Novas estações</strong> depois da instalação.
+          Cadastrar aqui só é preciso para agentes antigos, com o mesmo nome usado neles.
         </p>
         <MensagemErro>{erro}</MensagemErro>
         <div className="flex gap-2">
@@ -1149,5 +1217,123 @@ function ModalNovaEstacao({
         </div>
       </form>
     </Modal>
+  )
+}
+
+// ── Novas estações (PCs instalados esperando aprovação) ─────────────────────
+
+function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
+  const { pendentes, piso, grupos } = useDados()
+  return (
+    <Modal titulo="Novas estações" aberto={aberto} aoFechar={aoFechar}>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-texto-suave">
+          Computadores instalados que ainda não foram aprovados. Até aprovar, ninguém faz login neles. Escolha o nome
+          e a zona {piso ? `(zonas do piso ${piso.nome}; troque o piso no topo para ver outras)` : ""}.
+        </p>
+        {pendentes.map((p) => (
+          <LinhaPendente key={p.id} estacao={p} grupos={grupos} />
+        ))}
+      </div>
+    </Modal>
+  )
+}
+
+function LinhaPendente({ estacao: p, grupos }: { estacao: Estacao; grupos: Grupo[] }) {
+  const { recarregarEstacoes, recarregarPendentes } = useDados()
+  const avisar = useAvisos()
+  const [nome, setNome] = useState(p.nome)
+  const [grupoId, setGrupoId] = useState(String(grupos[0]?.id ?? ""))
+  const [erro, setErro] = useState("")
+  const [salvando, setSalvando] = useState(false)
+
+  async function aprovar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nome.trim()) return setErro("Informe o nome da estação")
+    setSalvando(true)
+    setErro("")
+    try {
+      await Api.post(`/api/estacoes/${p.id}/aprovar`, {
+        nome: nome.trim(),
+        grupo_id: grupoId ? Number(grupoId) : null,
+      })
+      avisar(`Estação ${nome.trim()} aprovada`)
+      await Promise.all([recarregarEstacoes(), recarregarPendentes()])
+    } catch (e) {
+      setErro((e as Error).message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function recusar() {
+    if (
+      !window.confirm(
+        `Recusar ${p.nome}? O computador fica bloqueado e não aparece mais aqui. ` +
+          "Para usar depois, cadastre uma estação com esse nome no Modo configuração.",
+      )
+    )
+      return
+    try {
+      await Api.del(`/api/estacoes/${p.id}/pendente`)
+      avisar(`${p.nome} recusada`)
+      await recarregarPendentes()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    }
+  }
+
+  return (
+    <form onSubmit={aprovar} className="rounded-lg border border-borda bg-superficie-2 p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs text-texto-fraco">
+        {p.online ? (
+          <span className="inline-flex items-center gap-1 text-livre">
+            <IconWifi size={13} /> conectado agora
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <IconWifiOff size={13} /> desconectado
+          </span>
+        )}
+        {p.versao_agente && <span>agente {p.versao_agente}</span>}
+        {p.ip && <span>{p.ip}</span>}
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <Campo rotulo="Nome" id={`pend-nome-${p.id}`}>
+          <Input
+            id={`pend-nome-${p.id}`}
+            className="h-9 w-40"
+            maxLength={20}
+            autoComplete="off"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </Campo>
+        <Campo rotulo="Zona" id={`pend-zona-${p.id}`}>
+          <Select
+            id={`pend-zona-${p.id}`}
+            className="h-9 w-44"
+            value={grupoId}
+            onChange={(e) => setGrupoId(e.target.value)}
+          >
+            {grupos.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.nome}
+              </option>
+            ))}
+            {!grupos.length && <option value="">Sem zona</option>}
+          </Select>
+        </Campo>
+        <div className="flex flex-1 justify-end gap-1.5">
+          <Button type="button" size="sm" variant="outline" onClick={recusar}>
+            Recusar
+          </Button>
+          <Button type="submit" size="sm" className="gap-1" disabled={salvando}>
+            <IconCheck size={14} /> {salvando ? "Aprovando..." : "Aprovar"}
+          </Button>
+        </div>
+      </div>
+      <MensagemErro>{erro}</MensagemErro>
+    </form>
   )
 }

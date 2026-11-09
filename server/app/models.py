@@ -72,6 +72,10 @@ class Estacao(Base):
     mac_address = Column(String(17), nullable=True)
     # versao que o agente informou ao conectar (evento estado); vazio = agente antigo ou nunca conectou
     versao_agente = Column(String(20), nullable=True)
+    # cadastro automatico (agente 1.14, app/estacoes_novas.py): o UUID que o
+    # agente gera na instalacao, e se um admin ja aprovou o PC ("Novas estacoes")
+    identificador = Column(String(64), unique=True, nullable=True)
+    aprovada = Column(Boolean, default=True)
     ultimo_ping = Column(DateTime, nullable=True)
     pos_x = Column(Integer, default=0)
     pos_y = Column(Integer, default=0)

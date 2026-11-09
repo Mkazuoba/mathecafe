@@ -47,8 +47,36 @@ def test_servidor_interno_conecta_sem_proxy():
 
 def test_estacao_com_espaco_e_nao_cadastrada():
     src = _fonte()
-    assert "urllib.parse.quote(self.estacao)" in src
+    assert "url_da_estacao(self.servidor, self.estacao, self.identificador)" in src
     assert "4004" in src
+
+
+def test_url_leva_o_id_da_instalacao():
+    # 1.14: o servidor reconhece o PC pelo id; PC novo aparece em "Novas estacoes"
+    url = _carregar("url_da_estacao")["url_da_estacao"]
+    assert url("ws://10.0.0.1:8000", "PC 01", "abc123") == "ws://10.0.0.1:8000/ws/estacao/PC%2001?id=abc123"
+    assert url("ws://10.0.0.1:8000", "PC-01") == "ws://10.0.0.1:8000/ws/estacao/PC-01"
+
+
+def test_id_e_criado_uma_vez_e_guardado():
+    guardado = {}
+    ns = _carregar("identificador_da_estacao")
+    ns["carregar_cfg"] = lambda: dict(guardado)
+    ns["gravar_cfg"] = lambda **v: guardado.update(v)
+    ns["uuid"] = __import__("uuid")
+    primeiro = ns["identificador_da_estacao"]()
+    assert guardado["ID"] == primeiro and len(primeiro) == 32
+    assert ns["identificador_da_estacao"]() == primeiro
+
+
+def test_renomeado_no_painel_grava_o_nome_novo():
+    src = _fonte()
+    aplicar = src[src.index("def _aplicar_info_estacao"):src.index("def _tirar_screenshot")]
+    assert "gravar_cfg(ESTACAO=nome)" in aplicar
+    assert "self.estacao = nome" in aplicar
+    # a URL e refeita a cada reconexao (dentro do laco)
+    laco = src[src.index("async def _ws_loop"):src.index("def _enviar(self")]
+    assert laco.index("while True:") < laco.index("url = url_da_estacao(")
 
 
 def test_whitelist_confere_janelas_de_processos_antigos():
@@ -622,3 +650,15 @@ def test_dock_usa_a_capa_do_app():
     assert "self._icone_do_item(item)" in desenho and "create_image(x, topo + t / 2, image=capa" in desenho
     # a imagem nao leva a etiqueta icone{k} (o _marcar_sobre muda o contorno, que imagem nao tem)
     assert 'image=capa, tags="desenho")' in desenho
+
+
+def test_instalador_so_pergunta_nome_e_servidor():
+    # 1.14: o PC aparece sozinho em "Novas estacoes"; sem login de admin no
+    # instalador. Reinstalar mantem o ID (senao o PC voltaria como estacao nova).
+    with open(os.path.join(os.path.dirname(AGENTE), "instalar.bat"), "rb") as f:
+        bat = f.read()
+    assert b"\r\n" in bat and b"\n" not in bat.replace(b"\r\n", b"")  # CRLF
+    texto = bat.decode("ascii")
+    assert "ADMIN_" not in texto and "/api/auth/login" not in texto
+    assert "%COMPUTERNAME%" in texto
+    assert 'findstr /b /c:"ID="' in texto and "echo ID=!ID_PC!" in texto

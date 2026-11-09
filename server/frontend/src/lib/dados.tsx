@@ -27,6 +27,9 @@ interface Dados {
   recarregarClientes: () => Promise<void>
   recarregarFila: () => Promise<void>
   recarregarEstacoes: () => Promise<void>
+  /** PCs instalados que esperam aprovação (Mapa → Novas estações), de todos os pisos. */
+  pendentes: Estacao[]
+  recarregarPendentes: () => Promise<void>
   sessaoDaEstacao: (nome: string) => Sessao | undefined
 }
 
@@ -57,6 +60,11 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const recarregarEstacoes = useCallback(async () => {
     setEstacoes(await Api.get<Estacao[]>("/api/estacoes/"))
   }, [])
+  const [pendentes, setPendentes] = useState<Estacao[]>([])
+  const recarregarPendentes = useCallback(async () => {
+    // servidor antigo (sem a rota) devolve 404/422: sem pendentes
+    setPendentes(await Api.get<Estacao[]>("/api/estacoes/pendentes").catch(() => []))
+  }, [])
   // Clientes (~43k) nunca sao carregados em massa: cada tela busca no
   // servidor com useBuscaClientes (lib/buscaClientes.ts).
   const recarregarClientes = useCallback(async () => {
@@ -83,9 +91,11 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarSessoes(),
       recarregarGrupos(),
       recarregarPisos(),
+      recarregarPendentes(),
     ])
     setCarregado(true)
-  }, [recarregarEstacoes, recarregarClientes, recarregarFila, recarregarSessoes, recarregarGrupos, recarregarPisos])
+  }, [recarregarEstacoes, recarregarClientes, recarregarFila, recarregarSessoes, recarregarGrupos, recarregarPisos,
+      recarregarPendentes])
 
   // Carga inicial + atualização de segurança a cada 30s
   useEffect(() => {
@@ -95,8 +105,8 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   }, [recarregar])
 
   // Tempo real: eventos do servidor pelo WebSocket, com reconexão a cada 3s
-  const recarregarRef = useRef({ recarregar, recarregarFila, recarregarClientes, recarregarEstacoes })
-  recarregarRef.current = { recarregar, recarregarFila, recarregarClientes, recarregarEstacoes }
+  const recarregarRef = useRef({ recarregar, recarregarFila, recarregarClientes, recarregarEstacoes, recarregarPendentes })
+  recarregarRef.current = { recarregar, recarregarFila, recarregarClientes, recarregarEstacoes, recarregarPendentes }
   useEffect(() => {
     let ws: WebSocket | null = null
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -124,7 +134,10 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
         else if (evento === "fila_atualizada") {
           r.recarregarFila()
           r.recarregarClientes()
-        } else if (evento === "estacao_online" || evento === "estacao_offline") r.recarregarEstacoes()
+        } else if (evento === "estacao_online" || evento === "estacao_offline") {
+          r.recarregarEstacoes()
+          r.recarregarPendentes()
+        } else if (evento === "estacao_pendente") r.recarregarPendentes()
       }
     }
     conectar()
@@ -186,10 +199,12 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarClientes,
       recarregarFila,
       recarregarEstacoes,
+      pendentes,
+      recarregarPendentes,
       sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
     }),
     [pisos, piso, trocarPiso, recarregarPisos, doPiso, versaoClientes, sessoes, grupos, carregado, tempoReal, agora, recarregar,
-     recarregarClientes, recarregarFila, recarregarEstacoes],
+     recarregarClientes, recarregarFila, recarregarEstacoes, pendentes, recarregarPendentes],
   )
 
   return <DadosContext.Provider value={valor}>{children}</DadosContext.Provider>
