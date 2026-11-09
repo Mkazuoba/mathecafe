@@ -622,3 +622,47 @@ def test_dock_usa_a_capa_do_app():
     assert "self._icone_do_item(item)" in desenho and "create_image(x, topo + t / 2, image=capa" in desenho
     # a imagem nao leva a etiqueta icone{k} (o _marcar_sobre muda o contorno, que imagem nao tem)
     assert 'image=capa, tags="desenho")' in desenho
+
+
+def test_tela_de_apps_categorias_e_pesquisa():
+    # 09/11: tela de apps estilo loja: Todos, as categorias do painel na ordem
+    # dele e "Outros" (sem categoria) no fim; a pesquisa ignora acento e maiuscula
+    ns = _carregar("normalizar_busca", "categorias_da_tela", "filtrar_apps")
+    apps = [
+        {"nome": "Paciência", "categoria": "Jogos", "categoria_ordem": 2},
+        {"nome": "Google Chrome", "categoria": "Internet", "categoria_ordem": 1},
+        {"nome": "Xadrez", "categoria": "Jogos", "categoria_ordem": 2},
+        {"nome": "Calculadora", "categoria": None, "categoria_ordem": None},
+    ]
+    cats = ns["categorias_da_tela"](apps)
+    assert cats == [("todos", "Todos", 4), ("cat:Internet", "Internet", 1), ("cat:Jogos", "Jogos", 2),
+                    ("outros", "Outros", 1)]
+    filtrar = ns["filtrar_apps"]
+    assert [a["nome"] for a in filtrar(apps, "cat:Jogos", "")] == ["Paciência", "Xadrez"]
+    assert [a["nome"] for a in filtrar(apps, "outros", "")] == ["Calculadora"]
+    assert [a["nome"] for a in filtrar(apps, "todos", "PACIENCIA")] == ["Paciência"]
+    assert [a["nome"] for a in filtrar(apps, "cat:Jogos", "chrome")] == []
+    # servidor antigo (sem categoria): so "Todos", sem um "Outros" repetido
+    antigos = [{"nome": "Chrome"}, {"nome": "Word"}]
+    assert ns["categorias_da_tela"](antigos) == [("todos", "Todos", 2)]
+    assert len(filtrar(antigos, "todos", "")) == 2
+
+
+def test_tela_de_apps_com_banner_largo():
+    # 09/11: a Programacao virou um banner largo no topo (cartaz inteiro sobre
+    # ele mesmo desfocado) e a grade fica embaixo, com pesquisa e categorias
+    src = _fonte()
+    assert "class TelaApps:" in src
+    banner = src[src.index("def montar_banner("):src.index("def montar_cartao(")]
+    assert "GaussianBlur" in banner
+    prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
+    assert "montar_banner(" in prog
+    assert 'side="top", fill="x"' in prog and "before=self.app.frame_launcher" in prog
+    assert "Image.blend(" in prog  # troca de cartaz com fade
+    tela = src[src.index("class TelaApps:"):src.index("class AgenteApp:")]
+    assert "filtrar_apps(" in tela and "categorias_da_tela(" in tela
+    assert 'itemconfig("capa"' in tela  # hover so troca a imagem (nao pisca)
+    launcher = src[src.index("    def _montar_launcher(self):"):src.index("    def _abrir_app(self, app):")]
+    assert "self._tela_apps.mostrar(" in launcher
+    tema = src[src.index("    def alternar_tema(self):"):src.index("    def _ao_redimensionar(")]
+    assert "self._tela_apps.redesenhar()" in tema and "self._programacao.redesenhar()" in tema

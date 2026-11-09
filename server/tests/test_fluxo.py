@@ -1791,3 +1791,57 @@ def test_apps_antigos_viram_por_piso(c, admin):
     assert pisos_de(do_mapa) == {infantil.id}
     assert pisos_de(desligado) == set()
     db.close()
+
+
+# ── Categorias dos apps (filtro na tela de apps do agente) ───────────────────
+
+def test_categorias_de_apps(c, admin, operador):
+    n = next(_contador)
+    r = c.post("/api/categorias/", headers=admin, json={"nome": f"Jogos {n}"})
+    assert r.status_code == 200, r.text
+    jogos = r.json()
+    internet = c.post("/api/categorias/", headers=admin, json={"nome": f"Internet {n}"}).json()
+    assert internet["ordem"] > jogos["ordem"]  # nasce no fim da lista
+    assert c.post("/api/categorias/", headers=admin, json={"nome": f"jogos {n}"}).status_code == 400
+    assert c.post("/api/categorias/", headers=operador, json={"nome": f"Outra {n}"}).status_code == 403
+    # mudar a ordem (o agente mostra nessa ordem)
+    r = c.put(f"/api/categorias/{internet['id']}", headers=admin, json={"ordem": jogos["ordem"] - 1})
+    assert r.status_code == 200
+    nomes = [x["nome"] for x in c.get("/api/categorias/", headers=operador).json()]
+    assert nomes.index(f"Internet {n}") < nomes.index(f"Jogos {n}")
+    # o app escolhe a sua
+    aid = c.post("/api/apps/", headers=admin, json={"nome": "Paciencia", "processo": f"pac{n}.exe"}).json()["id"]
+    r = c.put(f"/api/apps/{aid}", headers=admin, json={"categoria_id": jogos["id"]})
+    assert r.status_code == 200 and r.json()["categoria_id"] == jogos["id"]
+    assert r.json()["categoria_nome"] == f"Jogos {n}"
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"nome": "Paciencia 2"}).json()["categoria_id"] == jogos["id"]
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"categoria_id": 99999}).status_code == 404
+    # contagem de apps e exclusao: o app fica sem categoria
+    assert {x["id"]: x["apps"] for x in c.get("/api/categorias/", headers=admin).json()}[jogos["id"]] == 1
+    assert c.delete(f"/api/categorias/{jogos['id']}", headers=admin).status_code == 200
+    app_ = next(a for a in c.get("/api/apps/", headers=admin).json() if a["id"] == aid)
+    assert app_["categoria_id"] is None and app_["categoria_nome"] is None
+    # ja nasce com a categoria escolhida no cadastro
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Navegador", "processo": f"nav{n}.exe",
+                                                  "categoria_id": internet["id"]})
+    assert r.status_code == 200 and r.json()["categoria_nome"] == f"Internet {n}"
+    assert c.post("/api/apps/", headers=admin, json={"nome": "X", "processo": f"x{n}.exe",
+                                                     "categoria_id": 99999}).status_code == 404
+
+
+def test_whitelist_leva_a_categoria(c, admin, cenario):
+    n = next(_contador)
+    cat = c.post("/api/categorias/", headers=admin, json={"nome": f"Estudo {n}"}).json()
+    com, sem = f"estudo{n}.exe", f"semcat{n}.exe"
+    aid = c.post("/api/apps/", headers=admin, json={"nome": "Estudo", "processo": com, "caminho": f"C:\{com}"}).json()["id"]
+    c.put(f"/api/apps/{aid}", headers=admin, json={"categoria_id": cat["id"]})
+    c.post("/api/apps/", headers=admin, json={"nome": "Sem", "processo": sem, "caminho": f"C:\{sem}"})
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        itens = {a["processo"]: a for a in dados["whitelist"]}
+        assert itens[com]["categoria"] == f"Estudo {n}"
+        assert itens[com]["categoria_ordem"] == cat["ordem"]
+        assert itens[sem]["categoria"] is None
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)

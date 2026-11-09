@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { IconCheck, IconChevronLeft, IconChevronRight, IconPlus, IconSearch, IconX } from "@tabler/icons-react"
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconPlus,
+  IconSearch,
+  IconTags,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { AbasPiso } from "@/lib/piso"
-import type { AppPermitido, Piso } from "@/lib/tipos"
+import type { AppPermitido, CategoriaApp, Piso } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
@@ -28,6 +39,10 @@ export function SecaoApps() {
   const [apps, setApps] = useState<AppPermitido[] | null>(null)
   const [busca, setBusca] = useState("")
   const [status, setStatus] = useState<Status>("todos")
+  // "" = todas; "sem" = sem categoria; senão o id
+  const [filtroCat, setFiltroCat] = useState("")
+  const [categorias, setCategorias] = useState<CategoriaApp[]>([])
+  const [gerindoCats, setGerindoCats] = useState(false)
   const [ordem, setOrdem] = useState<Ordem>("nome")
   const [pagina, setPagina] = useState(0)
   const [emMassa, setEmMassa] = useState(false)
@@ -38,7 +53,13 @@ export function SecaoApps() {
   const [editando, setEditando] = useState<AppPermitido | "novo" | null>(null)
 
   const carregar = useCallback(async () => {
-    setApps(await Api.get<AppPermitido[]>("/api/apps/"))
+    const [lista, cats] = await Promise.all([
+      Api.get<AppPermitido[]>("/api/apps/"),
+      // servidor antigo (sem categorias): segue sem elas
+      Api.get<CategoriaApp[]>("/api/categorias/").catch(() => [] as CategoriaApp[]),
+    ])
+    setApps(lista)
+    setCategorias(cats)
   }, [])
   useEffect(() => {
     carregar().catch((e) => avisar((e as Error).message, "erro"))
@@ -52,22 +73,25 @@ export function SecaoApps() {
     const lista = (apps ?? []).filter(
       (a) =>
         (!termo || a.nome.toLowerCase().includes(termo) || a.processo.toLowerCase().includes(termo)) &&
-        (status === "todos" || (status === "ligados") === ligado(a)),
+        (status === "todos" || (status === "ligados") === ligado(a)) &&
+        (filtroCat === "" ||
+          (filtroCat === "sem" ? !a.categoria_id : String(a.categoria_id ?? "") === filtroCat)),
     )
     return ordem === "nome"
       ? lista.sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR", { sensitivity: "base" }))
       : lista.sort((x, y) => y.id - x.id)
-  }, [apps, busca, status, ordem, ligado])
+  }, [apps, busca, status, filtroCat, ordem, ligado])
 
   const paginas = Math.max(1, Math.ceil(filtrados.length / POR_PAGINA))
   const paginaAtual = Math.min(pagina, paginas - 1)
   const visiveis = filtrados.slice(paginaAtual * POR_PAGINA, (paginaAtual + 1) * POR_PAGINA)
-  const filtrosLigados = busca.trim() !== "" || status !== "todos"
+  const filtrosLigados = busca.trim() !== "" || status !== "todos" || filtroCat !== ""
   const ligadosNoPiso = (apps ?? []).filter(ligado).length
 
   function limparFiltros() {
     setBusca("")
     setStatus("todos")
+    setFiltroCat("")
     setPagina(0)
   }
 
@@ -199,6 +223,26 @@ export function SecaoApps() {
             </button>
           ))}
         </div>
+        <Select
+          aria-label="Categoria"
+          value={filtroCat}
+          onChange={(e) => {
+            setFiltroCat(e.target.value)
+            setPagina(0)
+          }}
+          className="h-9 w-44"
+        >
+          <option value="">Todas as categorias</option>
+          {categorias.map((c) => (
+            <option key={c.id} value={String(c.id)}>
+              {c.nome}
+            </option>
+          ))}
+          <option value="sem">Sem categoria (Outros)</option>
+        </Select>
+        <Button variant="outline" size="sm" className="h-9" onClick={() => setGerindoCats(true)}>
+          <IconTags size={15} /> Categorias
+        </Button>
         {filtrosLigados && (
           <button
             type="button"
@@ -336,7 +380,19 @@ export function SecaoApps() {
           )}
         </>
       )}
-      <ModalApp app={editando} piso={piso} aoFechar={() => setEditando(null)} aoSalvar={carregar} />
+      <ModalApp
+        app={editando}
+        piso={piso}
+        categorias={categorias}
+        aoFechar={() => setEditando(null)}
+        aoSalvar={carregar}
+      />
+      <ModalCategorias
+        aberto={gerindoCats}
+        categorias={categorias}
+        aoFechar={() => setGerindoCats(false)}
+        aoMudar={carregar}
+      />
     </div>
   )
 }
@@ -452,6 +508,7 @@ function CartaoApp({
 
       <div className="absolute inset-x-2 bottom-2.5 text-center">
         <div className="line-clamp-2 text-sm font-bold tracking-wide text-white uppercase drop-shadow">{a.nome}</div>
+        <div className="mt-0.5 truncate text-[0.66rem] text-white/75">{a.categoria_nome || "Outros"}</div>
         {!a.caminho && <div className="mt-0.5 text-[0.62rem] text-manutencao">sem caminho: não aparece no menu</div>}
         {!ligado && <div className="mt-0.5 text-[0.62rem] text-white/70">desligado neste piso</div>}
       </div>
@@ -463,11 +520,13 @@ function CartaoApp({
 function ModalApp({
   app,
   piso,
+  categorias,
   aoFechar,
   aoSalvar,
 }: {
   app: AppPermitido | "novo" | null
   piso: Piso | null
+  categorias: CategoriaApp[]
   aoFechar: () => void
   aoSalvar: () => Promise<void>
 }) {
@@ -478,6 +537,7 @@ function ModalApp({
   const [processo, setProcesso] = useState("")
   const [caminho, setCaminho] = useState("")
   const [imagem, setImagem] = useState("")
+  const [categoria, setCategoria] = useState("")
   const [erro, setErro] = useState("")
   const [aberto, setAberto] = useState<AppPermitido | "novo" | null>(null)
 
@@ -487,6 +547,7 @@ function ModalApp({
     setProcesso(atual?.processo ?? "")
     setCaminho(atual?.caminho ?? "")
     setImagem(atual?.imagem_url ?? "")
+    setCategoria(atual?.categoria_id ? String(atual.categoria_id) : "")
     setErro("")
   }
 
@@ -498,6 +559,7 @@ function ModalApp({
       processo: processo.trim(),
       caminho: caminho.trim() || null,
       imagem_url: imagem.trim() || null,
+      categoria_id: categoria ? Number(categoria) : null,
     }
     try {
       if (novo) await Api.post("/api/apps/", { ...dados, piso_id: piso?.id })
@@ -574,6 +636,16 @@ function ModalApp({
           <Campo rotulo="Imagem de capa (URL)" id="app-img">
             <Input id="app-img" value={imagem} onChange={(e) => setImagem(e.target.value)} placeholder="https://..." />
           </Campo>
+          <Campo rotulo="Categoria" id="app-cat">
+            <Select id="app-cat" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+              <option value="">Sem categoria (aparece em Outros)</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.nome}
+                </option>
+              ))}
+            </Select>
+          </Campo>
           {novo && piso && (
             <p className="text-xs text-texto-fraco">
               Entra ligado no piso {piso.nome}. Nos outros pisos, ligue pelo interruptor do cartão.
@@ -594,6 +666,131 @@ function ModalApp({
           </div>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+/**
+ * Categorias dos apps (Internet, Jogos...): a coluna da esquerda na tela de
+ * apps do agente, nesta ordem. Excluir deixa os apps dela em "Outros".
+ */
+function ModalCategorias({
+  aberto,
+  categorias,
+  aoFechar,
+  aoMudar,
+}: {
+  aberto: boolean
+  categorias: CategoriaApp[]
+  aoFechar: () => void
+  aoMudar: () => Promise<void>
+}) {
+  const avisar = useAvisos()
+  const [nova, setNova] = useState("")
+  const [erro, setErro] = useState("")
+
+  async function executar(acao: () => Promise<unknown>) {
+    setErro("")
+    try {
+      await acao()
+      await aoMudar()
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
+  async function criar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nova.trim()) return
+    await executar(async () => {
+      await Api.post("/api/categorias/", { nome: nova.trim() })
+      setNova("")
+      avisar("Categoria criada")
+    })
+  }
+
+  function renomear(c: CategoriaApp, nome: string) {
+    if (!nome.trim() || nome.trim() === c.nome) return
+    executar(() => Api.put(`/api/categorias/${c.id}`, { nome: nome.trim() }))
+  }
+
+  // troca de lugar com a vizinha
+  function mover(i: number, delta: number) {
+    const a = categorias[i]
+    const b = categorias[i + delta]
+    if (!a || !b) return
+    executar(async () => {
+      await Api.put(`/api/categorias/${a.id}`, { ordem: b.ordem })
+      await Api.put(`/api/categorias/${b.id}`, { ordem: a.ordem === b.ordem ? a.ordem + delta : a.ordem })
+    })
+  }
+
+  function excluir(c: CategoriaApp) {
+    const aviso = c.apps ? (c.apps === 1 ? " O app dela vai para Outros." : ` Os ${c.apps} apps dela vão para Outros.`) : ""
+    if (!window.confirm(`Excluir a categoria ${c.nome}?${aviso}`)) return
+    executar(() => Api.del(`/api/categorias/${c.id}`))
+  }
+
+  return (
+    <Modal titulo="Categorias dos apps" aberto={aberto} aoFechar={aoFechar} className="max-w-md">
+      <p className="mb-3 text-sm text-texto-fraco">
+        Aparecem à esquerda na tela de apps das estações, nesta ordem, depois de Todos. App sem categoria fica em
+        Outros.
+      </p>
+      <ul className="mb-4 flex flex-col gap-1.5">
+        {categorias.map((c, i) => (
+          <li key={c.id} className="flex items-center gap-1.5">
+            <Input
+              key={c.nome}
+              aria-label={`Nome da categoria ${c.nome}`}
+              defaultValue={c.nome}
+              maxLength={40}
+              onBlur={(e) => renomear(c, e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              className="h-8 flex-1"
+            />
+            <span className="w-14 text-right text-xs text-texto-fraco">
+              {c.apps} {c.apps === 1 ? "app" : "apps"}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={`Subir ${c.nome}`}
+              disabled={i === 0}
+              onClick={() => mover(i, -1)}
+            >
+              <IconArrowUp size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={`Descer ${c.nome}`}
+              disabled={i === categorias.length - 1}
+              onClick={() => mover(i, 1)}
+            >
+              <IconArrowDown size={14} />
+            </Button>
+            <Button variant="ghost" size="xs" aria-label={`Excluir ${c.nome}`} onClick={() => excluir(c)}>
+              <IconTrash size={14} />
+            </Button>
+          </li>
+        ))}
+        {!categorias.length && <li className="text-sm text-texto-fraco">Nenhuma categoria ainda.</li>}
+      </ul>
+      <form onSubmit={criar} className="flex gap-2">
+        <Input
+          aria-label="Nova categoria"
+          placeholder="ex.: Internet, Jogos, Estudo"
+          value={nova}
+          maxLength={40}
+          onChange={(e) => setNova(e.target.value)}
+          className="flex-1"
+        />
+        <Button type="submit" disabled={!nova.trim()}>
+          <IconPlus size={15} /> Criar
+        </Button>
+      </form>
+      <MensagemErro>{erro}</MensagemErro>
     </Modal>
   )
 }
