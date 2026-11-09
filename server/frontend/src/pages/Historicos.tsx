@@ -10,7 +10,7 @@ import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { AbaAcoesOperadores, type FiltrosAcoes } from "@/components/AbaAcoesOperadores"
 import { AbaUso, type FiltrosUso } from "@/components/AbaUso"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, MensagemErro, Select } from "@/components/ui/campos"
+import { Campo, INICIO_RELATORIOS, InputData, MensagemErro, Select, hojeIso } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
 
 // Respostas de GET /api/relatorios/cliente/{id} e /estacao/{nome}
@@ -206,10 +206,10 @@ function Periodo({ de, ate, mudar }: { de: string; ate: string; mudar: (n: Recor
   return (
     <>
       <Campo rotulo="De" id="hist-de">
-        <Input id="hist-de" type="date" value={de} onChange={(e) => mudar({ de: e.target.value || null })} className="w-40" />
+        <InputData id="hist-de" min={INICIO_RELATORIOS} max={ate || hojeIso()} value={de} onChange={(v) => mudar({ de: v || null })} className="w-40" />
       </Campo>
       <Campo rotulo="Até" id="hist-ate">
-        <Input id="hist-ate" type="date" value={ate} onChange={(e) => mudar({ ate: e.target.value || null })} className="w-40" />
+        <InputData id="hist-ate" min={de || INICIO_RELATORIOS} max={hojeIso()} value={ate} onChange={(v) => mudar({ ate: v || null })} className="w-40" />
       </Campo>
     </>
   )

@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
 from app.registro import registrar
-from app.routers.agente import _versao_dist, desatualizado
+from app.routers.agente import _numeros, _versao_dist, desatualizado
 from app.websocket_manager import manager
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
@@ -204,6 +204,43 @@ async def aprovar(id: int, body: AprovarBody, db: Session = Depends(get_db),
     return serial_estacao(e)
 
 
+class SubstituirBody(BaseModel):
+    estacao_id: int
+
+
+@router.post("/{id}/substituir")
+async def substituir(id: int, body: SubstituirBody, db: Session = Depends(get_db),
+                     quem=Depends(requer_perfil("admin"))):
+    """O PC pendente e o computador (formatado ou trocado) de uma estacao que ja
+    existe: ela passa a ser dele, com o mesmo nome, zona, lugar no mapa e
+    historico; o registro pendente some. O PC antigo, se voltar, cai em Novas
+    estacoes."""
+    p = db.query(Estacao).filter(Estacao.id == id, Estacao.ativa == True, Estacao.aprovada == False).first()
+    if not p:
+        raise HTTPException(404, "Estação pendente não encontrada")
+    alvo = db.query(Estacao).filter(Estacao.id == body.estacao_id, Estacao.ativa == True,
+                                    Estacao.aprovada != False).first()
+    if not alvo:
+        raise HTTPException(404, "Estação não encontrada")
+    if manager.estacao_conectada(alvo.nome):
+        raise HTTPException(400, f"A {alvo.nome} está ligada agora: desligue o computador antigo antes de substituir")
+    nome_pendente, identificador, versao = p.nome, p.identificador, p.versao_agente
+    db.delete(p)
+    db.flush()  # libera o identificador (unico) antes de passar para a estacao
+    alvo.identificador = identificador
+    if versao:
+        alvo.versao_agente = versao
+    db.commit()
+    registrar(db, quem, "substituir_estacao", estacao=alvo.nome,
+              detalhe=f"pelo computador que chegou como {nome_pendente}")
+    # avisa o nome e derruba a conexao do pendente: o agente reconecta pelo id
+    # e ja entra como a estacao antiga
+    await manager.enviar_estacao(nome_pendente, "estacao_info", info_para_o_agente(alvo))
+    await _soltar_conexao(nome_pendente, 4000, "Estação substituída: reconectando")
+    await manager.broadcast_paineis("estacao_online", {"nome": alvo.nome})
+    return serial_estacao(alvo)
+
+
 @router.delete("/{id}/pendente")
 async def recusar(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     """O PC fica bloqueado (o identificador dele e guardado). Para trazer de volta,
@@ -291,19 +328,38 @@ async def capturar_tela(nome: str, _=Depends(requer_perfil("admin", "operador"))
     await manager.enviar_estacao(nome, "capturar_tela", {})
     return {"ok": True}
 
+async def _soltar_conexao(nome: str, codigo: int, motivo: str):
+    """Fecha a conexao do agente desta estacao (ele reconecta sozinho)."""
+    ws = manager.estacoes.get(nome)
+    if ws:
+        manager.desconectar_estacao(nome, ws)
+        try:
+            await ws.close(code=codigo, reason=motivo)
+        except Exception:
+            pass
+
+
 @router.delete("/{id}")
-def excluir(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def excluir(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
     e = db.query(Estacao).filter(Estacao.id == id).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
+    if db.query(Sessao).filter(Sessao.estacao_id == id, Sessao.encerrada_em == None).first():
+        raise HTTPException(400, f"A {e.nome} está em uso: encerre a sessão antes de excluir")
+    nome = e.nome
     # O histórico de sessões (e os relatórios) aponta para a estação: nesse
     # caso ela só é desativada, o que já a tira de todas as listas do painel.
-    if db.query(Sessao).filter(Sessao.estacao_id == id).first():
+    desativada = db.query(Sessao).filter(Sessao.estacao_id == id).first() is not None
+    if desativada:
         e.ativa = False
-        db.commit()
-        return {"ok": True, "desativada": True}
-    db.delete(e); db.commit()
-    return {"ok": True}
+    else:
+        db.delete(e)
+    db.commit()
+    registrar(db, quem, "excluir_estacao", estacao=nome,
+              detalhe="o histórico de uso foi mantido" if desativada else None)
+    # o agente 1.14+ que continuar instalado volta em Novas estacoes
+    await _soltar_conexao(nome, 4004, "Estação excluída no painel")
+    return {"ok": True, "desativada": True} if desativada else {"ok": True}
 
 # ── Fila de espera ────────────────────────────────────────────────────────────
 @router.get("/fila")
@@ -433,8 +489,34 @@ async def enviar_mensagem(nome: str, body: MensagemBody, db: Session = Depends(g
     return {"ok": True}
 
 
+# a partir desta versao o agente aceita "atualizar_agente" do painel; antes so
+# pela manutencao (Ctrl+Shift+M -> Atualizar)
+ATUALIZA_PELO_PAINEL = "1.16.0"
+
+
+async def _atualizar_agente(db: Session, nome: str, quem: dict):
+    e = _estacao_online(db, nome)
+    versao = e.versao_agente or "0"
+    if _numeros(versao) < _numeros(ATUALIZA_PELO_PAINEL):
+        raise HTTPException(400, f"O agente da {nome} (versão {e.versao_agente or 'antiga'}) só se atualiza pela "
+                                 "manutenção (Ctrl+Shift+M → Atualizar). Depois disso, dá para atualizar pelo painel.")
+    if e.status == "ocupada" or db.query(Sessao).filter(Sessao.estacao_id == e.id,
+                                                        Sessao.encerrada_em == None).first():
+        raise HTTPException(400, f"A {nome} está em uso: atualize quando o cliente terminar")
+    await manager.enviar_estacao(nome, "atualizar_agente", {"versao": _versao_dist()})
+    registrar(db, quem, "atualizar_agente", estacao=nome, detalhe=f"{versao} → {_versao_dist()}")
+
+
+@router.post("/{nome}/atualizar_agente")
+async def atualizar_agente(nome: str, db: Session = Depends(get_db),
+                           quem=Depends(requer_perfil("admin", "operador"))):
+    """O agente baixa a versao do servidor e reinicia (volta na tela de login)."""
+    await _atualizar_agente(db, nome, quem)
+    return {"ok": True}
+
+
 class AcaoEmMassa(BaseModel):
-    acao: Literal["mensagem", "encerrar", "reiniciar", "desligar", "ligar"]
+    acao: Literal["mensagem", "encerrar", "reiniciar", "desligar", "ligar", "atualizar"]
     estacoes: List[str] = Field(min_length=1, max_length=500)
     texto: Optional[str] = None
 
@@ -456,6 +538,8 @@ async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
                 await _encerrar(db, nome, quem)
             elif body.acao in ("reiniciar", "desligar"):
                 await _desligar_ou_reiniciar(db, nome, f"{body.acao}_pc", quem)
+            elif body.acao == "atualizar":
+                await _atualizar_agente(db, nome, quem)
             else:
                 _ligar(db, nome)
                 registrar(db, quem, "ligar_pc", estacao=nome)

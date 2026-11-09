@@ -7,7 +7,7 @@ import { formatarTempo, lerTempo } from "@/lib/tempo"
 import type { ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Interruptor, MensagemErro, Select } from "@/components/ui/campos"
+import { Campo, INICIO_RELATORIOS, Input, InputData, Interruptor, MensagemErro, Select, hojeIso } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoPisos } from "@/components/SecaoPisos"
@@ -543,12 +543,12 @@ function SecaoRelatorios() {
       <div className="flex gap-3">
         <div className="flex-1">
           <Campo rotulo="Data início" id="rel-inicio">
-            <Input id="rel-inicio" type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} />
+            <InputData id="rel-inicio" min={INICIO_RELATORIOS} max={fim || hojeIso()} value={inicio} onChange={setInicio} />
           </Campo>
         </div>
         <div className="flex-1">
           <Campo rotulo="Data fim" id="rel-fim">
-            <Input id="rel-fim" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
+            <InputData id="rel-fim" min={inicio || INICIO_RELATORIOS} max={hojeIso()} value={fim} onChange={setFim} />
           </Campo>
         </div>
       </div>
@@ -655,11 +655,11 @@ function SecaoHistorico() {
         </select>
         <div className="flex items-center gap-1">
           <span className="text-xs text-texto-suave">De</span>
-          <input type="date" value={filtroDe} onChange={(e) => setFiltroDe(e.target.value)} className={selectCls} />
+          <InputData aria-label="De" min={INICIO_RELATORIOS} max={filtroAte || hojeIso()} value={filtroDe} onChange={setFiltroDe} className={selectCls} />
         </div>
         <div className="flex items-center gap-1">
           <span className="text-xs text-texto-suave">até</span>
-          <input type="date" value={filtroAte} onChange={(e) => setFiltroAte(e.target.value)} className={selectCls} />
+          <InputData aria-label="Até" min={filtroDe || INICIO_RELATORIOS} max={hojeIso()} value={filtroAte} onChange={setFiltroAte} className={selectCls} />
         </div>
         {temFiltro && (
           <button type="button" onClick={() => { setFiltroCliente(""); setFiltroEstacao(""); setFiltroDe(""); setFiltroAte("") }}

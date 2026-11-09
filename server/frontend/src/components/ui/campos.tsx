@@ -19,6 +19,63 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
 )
 Textarea.displayName = "Textarea"
 
+/** Hoje no relógio do computador, como AAAA-MM-DD (o formato do input date). */
+export function hojeIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+/** Primeiro dia com histórico possível nos relatórios (o VSCyber importado é de 2022). */
+export const INICIO_RELATORIOS = "2000-01-01"
+
+/**
+ * Data que dá para digitar: só repassa (onChange) a data completa e dentro de
+ * min..max. Digitar o ano dígito a dígito passa por 0002, 0020, 0202... e cada
+ * um virava uma consulta de dois mil anos, que travava a tela. Fora do
+ * intervalo o campo fica vermelho e, ao sair dele, volta ao último valor bom.
+ */
+export function InputData({
+  value,
+  onChange,
+  min,
+  max,
+  className,
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
+  value: string
+  onChange: (valor: string) => void
+  min?: string
+  max?: string
+}) {
+  const [texto, setTexto] = React.useState(value)
+  React.useEffect(() => setTexto(value), [value])
+  const valida = (v: string) => v === "" || (/^\d{4}-\d{2}-\d{2}$/.test(v) && (!min || v >= min) && (!max || v <= max))
+  const ok = valida(texto)
+  return (
+    <input
+      type="date"
+      min={min}
+      max={max}
+      value={texto}
+      aria-invalid={!ok || undefined}
+      title={!ok ? (max && texto > max ? "Data depois do permitido" : "Data antes do permitido") : undefined}
+      onChange={(e) => {
+        const v = e.target.value
+        setTexto(v)
+        if (valida(v)) onChange(v)
+      }}
+      onBlur={() => !valida(texto) && setTexto(value)}
+      className={cn(base, "h-10", !ok && "border-perigo focus:border-perigo", className)}
+      {...props}
+    />
+  )
+}
+
+/** RG: só números e X (x vira X; o resto some enquanto digita). */
+export function soRg(texto: string) {
+  return texto.toUpperCase().replace(/[^0-9X]/g, "").slice(0, 20)
+}
+
 /** Rótulo + campo, empilhados. */
 export function Campo({ rotulo, id, children }: { rotulo: string; id: string; children: React.ReactNode }) {
   return (

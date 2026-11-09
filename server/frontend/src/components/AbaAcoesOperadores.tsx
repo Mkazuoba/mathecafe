@@ -5,7 +5,7 @@ import { useAvisos } from "@/lib/avisos"
 import { dataDoServidor } from "@/lib/tempo"
 import type { Operador } from "@/lib/tipos"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Select } from "@/components/ui/campos"
+import { Campo, INICIO_RELATORIOS, Input, InputData, Select, hojeIso } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
 
 interface Acao {
@@ -134,10 +134,10 @@ export function AbaAcoesOperadores({
           />
         </Campo>
         <Campo rotulo="De" id="acoes-de">
-          <Input id="acoes-de" type="date" value={filtros.de} onChange={(e) => mudar({ de: e.target.value })} />
+          <InputData id="acoes-de" min={INICIO_RELATORIOS} max={filtros.ate || hojeIso()} value={filtros.de} onChange={(v) => mudar({ de: v })} />
         </Campo>
         <Campo rotulo="Até" id="acoes-ate">
-          <Input id="acoes-ate" type="date" value={filtros.ate} onChange={(e) => mudar({ ate: e.target.value })} />
+          <InputData id="acoes-ate" min={filtros.de || INICIO_RELATORIOS} max={hojeIso()} value={filtros.ate} onChange={(v) => mudar({ ate: v })} />
         </Campo>
       </div>
 

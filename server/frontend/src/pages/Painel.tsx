@@ -461,7 +461,7 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
             <IconWifiOff size={13} className="text-texto-fraco" aria-label="sem conexão" />
           )}
           {e.agente_desatualizado && (
-            <span title={`Agente ${e.versao_agente} desatualizado (atual: ${e.versao_atual}). Atualize pelo modo manutenção no PC.`}>
+            <span title={`Agente ${e.versao_agente} desatualizado (atual: ${e.versao_atual}). Atualize no painel da estação (Atualizar agora) ou pelo modo manutenção no PC.`}>
               <IconRefreshAlert size={13} className="text-manutencao" aria-label="agente desatualizado" />
             </span>
           )}
@@ -767,9 +767,7 @@ function AbaGeral({ estacao: e, sessao, restante }: {
     ...(e.mac_address ? [["MAC", <span className="font-mono text-xs text-texto-suave">{e.mac_address}</span>] as [string, React.ReactNode]] : []),
     ["Agente", e.versao_agente ? (
       e.agente_desatualizado ? (
-        <span className="text-manutencao">
-          {e.versao_agente}: desatualizado (atual {e.versao_atual}). Entre no modo manutenção no PC e clique em Atualizar.
-        </span>
+        <BotaoAtualizarAgente estacao={e} />
       ) : (
         <span className="text-texto-suave">{e.versao_agente} (em dia)</span>
       )
@@ -1376,5 +1374,34 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
         <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
       )}
     </Coluna>
+  )
+}
+
+/** Agente desatualizado: o painel manda a estação se atualizar (agente 1.16+,
+ *  sem cliente usando); antes disso, só pelo modo manutenção no PC. */
+function BotaoAtualizarAgente({ estacao: e }: { estacao: Estacao }) {
+  const avisar = useAvisos()
+  const [enviando, setEnviando] = useState(false)
+  async function atualizar() {
+    setEnviando(true)
+    try {
+      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/atualizar_agente`)
+      avisar(`${e.nome}: atualizando o agente para a ${e.versao_atual} (volta na tela de login)`)
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    } finally {
+      setEnviando(false)
+    }
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2 text-manutencao">
+      {e.versao_agente}: desatualizado (atual {e.versao_atual})
+      {e.online && (
+        <Button size="xs" variant="outline" disabled={enviando || e.status === "ocupada"} onClick={atualizar}
+          title={e.status === "ocupada" ? "Em uso: atualize quando o cliente terminar" : undefined}>
+          {enviando ? "Enviando..." : "Atualizar agora"}
+        </Button>
+      )}
+    </span>
   )
 }

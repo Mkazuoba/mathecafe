@@ -5,7 +5,7 @@ import { useDados } from "@/lib/dados"
 import { formatarTempo } from "@/lib/tempo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Select } from "@/components/ui/campos"
+import { Campo, INICIO_RELATORIOS, InputData, Select, hojeIso } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
 
 // Resposta de GET /api/relatorios/uso
@@ -107,10 +107,10 @@ export function AbaUso({ filtros, mudar }: { filtros: FiltrosUso; mudar: (novos:
       {/* filtros numa linha, acima dos gráficos */}
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <Campo rotulo="De" id="uso-de">
-          <Input id="uso-de" type="date" value={filtros.de} onChange={(e) => mudar({ de: e.target.value })} />
+          <InputData id="uso-de" min={INICIO_RELATORIOS} max={filtros.ate || hojeIso()} value={filtros.de} onChange={(v) => mudar({ de: v })} />
         </Campo>
         <Campo rotulo="Até" id="uso-ate">
-          <Input id="uso-ate" type="date" value={filtros.ate} onChange={(e) => mudar({ ate: e.target.value })} />
+          <InputData id="uso-ate" min={filtros.de || INICIO_RELATORIOS} max={hojeIso()} value={filtros.ate} onChange={(v) => mudar({ ate: v })} />
         </Campo>
         <div className="flex gap-1.5 pb-0.5">
           <Button type="button" size="sm" variant="outline" onClick={() => ultimosDias(7)}>

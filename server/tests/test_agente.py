@@ -605,7 +605,8 @@ def test_agente_so_se_atualiza_na_manutencao():
     assert "os.replace" not in checar and "execv" not in checar
     aplicar = src[src.index("def _aplicar_atualizacao("):]
     aplicar = aplicar[:aplicar.index("\n    def ", 10)]
-    assert "if not self.modo_manutencao_ativo" in aplicar
+    # 1.16: tambem pelo painel, mas nunca com cliente usando
+    assert "self.sessao_ativa or not (self.modo_manutencao_ativo or pelo_painel)" in aplicar
     assert "os.replace" in aplicar and "execv" in aplicar
     faixa = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(self")]
     assert "self.btn_atualizar" in faixa
@@ -706,3 +707,35 @@ def test_tela_de_apps_com_banner_largo():
     assert "self._tela_apps.mostrar(" in launcher
     tema = src[src.index("    def alternar_tema(self):"):src.index("    def _ao_redimensionar(")]
     assert "self._tela_apps.redesenhar()" in tema and "self._programacao.redesenhar()" in tema
+
+
+def test_atualiza_pelo_painel_sem_cliente_usando():
+    # 1.16: o painel manda "atualizar_agente"; nunca com sessao ativa
+    src = _fonte()
+    assert 'evento == "atualizar_agente"' in src
+    metodo = src[src.index("def _atualizar_pelo_painel"):src.index("def _aplicar_atualizacao")]
+    assert "if self.sessao_ativa:" in metodo
+    aplicar = src[src.index("def _aplicar_atualizacao"):src.index("def _modo_manutencao")]
+    assert "self.sessao_ativa or not (self.modo_manutencao_ativo or pelo_painel)" in aplicar
+    # a versao precisa bater com a que o servidor exige para mandar o comando
+    import re
+    from app.routers.estacoes import ATUALIZA_PELO_PAINEL
+    versao = re.search(r'^VERSAO = "([\d.]+)"', src, re.M).group(1)
+    assert tuple(map(int, versao.split("."))) >= tuple(map(int, ATUALIZA_PELO_PAINEL.split(".")))
+
+
+def test_mensagem_longa_nao_corta():
+    # 09/11: a janela era 380x160 fixa e cortava a mensagem; agora cresce com o
+    # texto (rola passando de 60% da tela) e o cartao da notificacao abre ela inteira
+    linhas = _carregar("linhas_do_texto")["linhas_do_texto"]
+    medir = lambda t: len(t) * 10  # 10 px por letra
+    assert linhas("", medir, 100) == 1
+    assert linhas("uma linha", medir, 100) == 1
+    assert linhas("aaaa bbbb cccc dddd", medir, 100) == 2  # 9 letras por linha
+    assert linhas("a\nb\nc", medir, 100) == 3
+    assert linhas("x" * 35, medir, 100) == 4  # palavra enorme quebra
+    src = _fonte()
+    janela = src[src.index("def _exibir_mensagem_operador"):src.index("def _servidor_http")]
+    assert "w, h = 380, 160" not in janela and "linhas_do_texto(" in janela
+    cartao = src[src.index("    def _cartao(self, c, item"):src.index("    def _caber(")]
+    assert "_exibir_mensagem_operador(" in cartao and "modal=False" in cartao

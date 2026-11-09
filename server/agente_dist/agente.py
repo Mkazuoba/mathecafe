@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.15.0"
+VERSAO = "1.16.0"
 
 import asyncio
 import json
@@ -1212,6 +1212,9 @@ class Notificacoes:
                       font=("Segoe UI", 10, "bold"))
         c.create_text(tx, y1 + 62, text=self._caber(item["mensagem"], largura_texto, 9), anchor="w",
                       fill=p["texto2"], font=("Segoe UI", 9))
+        # o cartao mostra uma linha so: clicar nele abre a mensagem inteira
+        self._alvos.append((x1, y1, x2, y1 + H, lambda i=item: self.app._exibir_mensagem_operador(
+            i["mensagem"], titulo=i["titulo"], modal=False)))
         fechar = c.create_text(x2 - 10, y1 + 22, text="✕", fill=p["texto2"], font=("Segoe UI", 8))
         bx1, by1, bx2, by2 = c.bbox(fechar)
         self._alvos.append((bx1 - 5, by1 - 5, bx2 + 5, by2 + 5, lambda i=item["id"]: self._dispensar(i)))
@@ -2366,6 +2369,11 @@ class AgenteApp:
         elif evento == "piso_estacao":
             self._aplicar_cor_piso(dados)
 
+        elif evento == "atualizar_agente":
+            # 1.16: o painel mandou atualizar (o servidor so manda sem cliente usando)
+            self._log(f"<- atualizar_agente: {dados}")
+            self._atualizar_pelo_painel()
+
         elif evento == "estacao_info":
             # 1.14: o nome cadastrado (o painel pode ter trocado) e se o PC ja
             # foi aprovado em "Novas estacoes"
@@ -2925,28 +2933,50 @@ class AgenteApp:
             tk.Button(botoes, text=texto, command=cmd, bg=cor, fg="white", relief="flat",
                       font=("Segoe UI", 10), padx=12, pady=4).pack(side="right", padx=(6, 0))
 
-    def _exibir_mensagem_operador(self, texto):
-        """Mostra mensagem enviada pelo operador em uma janela modal."""
+    def _exibir_mensagem_operador(self, texto, titulo="Mensagem do operador", modal=True):
+        """Mostra a mensagem do operador inteira. A janela cresce com o texto (era
+        380x160 fixo e cortava as longas); passando de ~60% da tela, rola.
+        modal=False: aberta pela notificacao, durante a sessao (nao prende os apps)."""
         popup = tk.Toplevel(self.root)
-        popup.title("Mensagem do operador")
+        popup.title(titulo)
         popup.configure(bg="#1A1B26")
         popup.resizable(False, False)
         popup.attributes("-topmost", True)
-        # Centraliza
-        popup.update_idletasks()
-        w, h = 380, 160
-        x = (popup.winfo_screenwidth() - w) // 2
-        y = (popup.winfo_screenheight() - h) // 2
-        popup.geometry(f"{w}x{h}+{x}+{y}")
-        popup.grab_set()
 
-        tk.Label(popup, text="Mensagem do operador", font=("Arial", 11, "bold"),
-                 fg="#f59e0b", bg="#1A1B26").pack(pady=(16, 4))
-        tk.Label(popup, text=texto, font=("Arial", 10), fg="#e2e8f0",
-                 bg="#1A1B26", wraplength=340, justify="center").pack(padx=16, pady=4)
-        tk.Button(popup, text="OK", font=("Arial", 10, "bold"),
-                  bg="#3b82f6", fg="white", relief="flat", padx=20, pady=6,
-                  command=popup.destroy).pack(pady=(8, 0))
+        tk.Label(popup, text=titulo, font=("Segoe UI", 11, "bold"),
+                 fg="#f59e0b", bg="#1A1B26").pack(pady=(16, 6))
+        botao = tk.Button(popup, text="OK", font=("Segoe UI", 10, "bold"),
+                          bg="#3b82f6", fg="white", relief="flat", padx=20, pady=6,
+                          command=popup.destroy)
+        botao.pack(side="bottom", pady=(8, 16))
+
+        largura = 460
+        util = largura - 60  # margens e a barra de rolagem
+        altura_max = int(popup.winfo_screenheight() * 0.6)
+        fonte = tkfont.Font(family="Segoe UI", size=11)
+        # altura conforme as linhas que o texto ocupa nessa largura
+        altura_texto = linhas_do_texto(texto, fonte.measure, util) * fonte.metrics("linespace") + 8
+        quadro = tk.Frame(popup, bg="#1A1B26")
+        quadro.pack(fill="both", expand=True, padx=(20, 8))
+        caixa = tk.Text(quadro, font=fonte, fg="#e2e8f0", bg="#1A1B26", relief="flat", wrap="word",
+                        width=1, height=1, borderwidth=0, highlightthickness=0, cursor="arrow")
+        if altura_texto > altura_max:
+            barra = tk.Scrollbar(quadro, command=caixa.yview)
+            caixa.config(yscrollcommand=barra.set)
+            barra.pack(side="right", fill="y")
+            altura_texto = altura_max
+        caixa.insert("1.0", texto)
+        caixa.tag_configure("centro", justify="center")
+        caixa.tag_add("centro", "1.0", "end")
+        caixa.config(state="disabled")
+        caixa.pack(side="left", fill="both", expand=True)
+        h = altura_texto + 110
+        x = (popup.winfo_screenwidth() - largura) // 2
+        y = (popup.winfo_screenheight() - h) // 2
+        popup.geometry(f"{largura}x{h}+{x}+{y}")
+        if modal:
+            popup.grab_set()
+        botao.focus_set()
         self._log(f"Mensagem exibida: {texto}")
 
     # ── Atualizacao do agente (so na manutencao, 6.13) ──────────────────────
@@ -2993,9 +3023,27 @@ class AgenteApp:
             self.root.after(0, lambda: self._aplicar_atualizacao(baixado))
         threading.Thread(target=trabalhar, daemon=True).start()
 
-    def _aplicar_atualizacao(self, baixado):
-        """Troca o arquivo do agente e reinicia. So na manutencao."""
-        if not self.modo_manutencao_ativo:
+    def _atualizar_pelo_painel(self):
+        """Baixa a versao do servidor e reinicia, sem passar pela manutencao.
+        Nunca com um cliente usando (o servidor ja confere; aqui de novo)."""
+        if self.sessao_ativa:
+            self._log("Atualizacao pelo painel ignorada: ha um cliente usando")
+            return
+        self._mostrar_botao_atualizar(texto="Baixando...")
+
+        def trabalhar():
+            baixado = baixar_atualizacao(self._servidor_http())
+            self.root.after(0, lambda: self._aplicar_atualizacao(baixado, pelo_painel=True))
+        threading.Thread(target=trabalhar, daemon=True).start()
+
+    def _aplicar_atualizacao(self, baixado, pelo_painel=False):
+        """Troca o arquivo do agente e reinicia. Na manutencao ou pelo painel
+        (sem cliente usando)."""
+        if self.sessao_ativa or not (self.modo_manutencao_ativo or pelo_painel):
+            return
+        if not baixado and pelo_painel:
+            self._log("Atualizacao pelo painel: nada novo para baixar (ou o servidor nao respondeu)")
+            self._mostrar_botao_atualizar()
             return
         if not baixado:
             self._log("Atualizacao: nao foi possivel baixar a versao nova")
@@ -3275,6 +3323,31 @@ def url_da_estacao(servidor, estacao, identificador=None):
     if identificador:
         url += "?id=" + urllib.parse.quote(identificador)
     return url
+
+
+def linhas_do_texto(texto, medir, largura_px):
+    """Quantas linhas o texto ocupa quebrando por palavra em largura_px
+    (medir: px de um trecho, ex. tkfont.Font.measure). Palavra maior que a
+    linha conta o que ela ocupa quebrada."""
+    total = 0
+    for paragrafo in (texto or "").split("\n"):
+        linha = ""
+        n = 1
+        for palavra in paragrafo.split():
+            tentativa = f"{linha} {palavra}" if linha else palavra
+            if medir(tentativa) <= largura_px:
+                linha = tentativa
+                continue
+            if linha:
+                n += 1
+            # palavra enorme (link): ocupa varias linhas sozinha
+            while medir(palavra) > largura_px and len(palavra) > 1:
+                corte = max(1, int(len(palavra) * largura_px / medir(palavra)))
+                palavra = palavra[corte:]
+                n += 1
+            linha = palavra
+        total += n
+    return max(1, total)
 
 
 def salvar_tema(tema):

@@ -36,6 +36,27 @@ def _email_valido(valor: Optional[str]) -> Optional[str]:
     return valor
 
 
+def _rg_valido(valor: Optional[str]) -> Optional[str]:
+    """RG: so numeros e X (o digito verificador). Pontos, tracos, barras e
+    espacos saem; x vira X; vazio vira None."""
+    valor = re.sub(r"[.\-/\s]", "", (valor or "")).upper()
+    if not valor:
+        return None
+    if len(valor) > 20 or not re.fullmatch(r"[0-9X]+", valor):
+        raise ValueError("RG inválido: use só números e a letra X")
+    return valor
+
+
+def _nascimento_valido(valor: Optional[date]) -> Optional[date]:
+    if valor is None:
+        return None
+    if valor > date.today():
+        raise ValueError("Data de nascimento no futuro")
+    if valor.year < 1900:
+        raise ValueError("Data de nascimento antes de 1900")
+    return valor
+
+
 class ClienteCreate(BaseModel):
     login: str
     nome: str
@@ -47,6 +68,8 @@ class ClienteCreate(BaseModel):
     email: Optional[str] = None
 
     _email = field_validator("email")(lambda v: _email_valido(v))
+    _rg = field_validator("documento")(lambda v: _rg_valido(v))
+    _nascimento = field_validator("data_nascimento")(lambda v: _nascimento_valido(v))
 
 class ClienteUpdate(BaseModel):
     nome: Optional[str] = None
@@ -62,6 +85,8 @@ class ClienteUpdate(BaseModel):
     email: Optional[str] = None
 
     _email = field_validator("email")(lambda v: _email_valido(v))
+    _rg = field_validator("documento")(lambda v: _rg_valido(v))
+    _nascimento = field_validator("data_nascimento")(lambda v: _nascimento_valido(v))
 
 class FotoBody(BaseModel):
     imagem: str  # data URL (o painel reduz a imagem antes de enviar)

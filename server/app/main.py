@@ -262,6 +262,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
         await ws.close(code=4004, reason="Estação não cadastrada")
         return
 
+    estacao_id = estacao.id
     # o nome cadastrado vale (o painel pode ter renomeado; o agente e avisado)
     nome = estacao.nome
     await manager.conectar_estacao(nome, ws)
@@ -514,7 +515,13 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
         db.expire_all()
-        nome = _nome_atual(estacao, nome)
+        estacao = db.query(Estacao).filter(Estacao.id == estacao_id).first()
+        if estacao is None:
+            # apagada com o agente conectado (excluida, ou o PC pendente que
+            # substituiu outra estacao): so solta a conexao
+            manager.desconectar_estacao(nome, ws)
+            return
+        nome = estacao.nome
         manager.desconectar_estacao(nome, ws)
         # O cliente segue usando no PC: a sessao continua aberta, marcada sem
         # conexao desde agora (o agente retoma ao reconectar)
@@ -527,7 +534,10 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
         # fazer a estação "piscar" no painel.
         await asyncio.sleep(SEGUNDOS_ATE_OFFLINE)
         db.expire_all()
-        nome = _nome_atual(estacao, nome)
+        estacao = db.query(Estacao).filter(Estacao.id == estacao_id).first()
+        if estacao is None:
+            return
+        nome = estacao.nome
         if not manager.estacao_conectada(nome):
             db.expire_all()
             aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()

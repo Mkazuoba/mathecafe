@@ -747,12 +747,12 @@ def test_ficha_documento_e_nascimento(c, admin, operador):
         "documento": "123.456.789-00", "data_nascimento": "2010-05-20"})
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["documento"] == "123.456.789-00" and d["data_nascimento"] == "2010-05-20"
+    assert d["documento"] == "12345678900" and d["data_nascimento"] == "2010-05-20"
     assert d["tem_foto"] is False
     cid = d["id"]
     # editar mantem o que nao veio e limpa o que veio vazio
     d = c.put(f"/api/clientes/{cid}", headers=operador, json={"nome": "Ficha 1"}).json()
-    assert d["documento"] == "123.456.789-00"
+    assert d["documento"] == "12345678900"
     d = c.put(f"/api/clientes/{cid}", headers=operador, json={"documento": "", "data_nascimento": None}).json()
     assert d["documento"] is None and d["data_nascimento"] is None
     assert c.put(f"/api/clientes/{cid}", headers=operador, json={"data_nascimento": "20/05/2010"}).status_code == 422
@@ -1942,3 +1942,124 @@ def test_whitelist_leva_a_categoria(c, admin, cenario):
         assert itens[com]["categoria_ordem"] == cat["ordem"]
         assert itens[sem]["categoria"] is None
         _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+
+
+# ── Substituir estacao (PC formatado/trocado) e atualizar agente pelo painel ──
+
+def test_pc_formatado_substitui_a_estacao(c, admin, cenario):
+    from starlette.websockets import WebSocketDisconnect
+    nome = cenario["estacao"]
+    grupo = c.get("/api/estacoes/grupos", headers=admin).json()[0]["id"]
+    alvo = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    c.put(f"/api/estacoes/{alvo['id']}", headers=admin, json={"grupo_id": grupo})
+    # o PC antigo ja tinha o agente novo (o id dele esta guardado)...
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-antigo-sub") as ws:
+        _estado_114(ws)
+    # ...e foi formatado: volta com outro id e cai em Novas estacoes como -2
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-formatado-sub") as ws:
+        assert _estado_114(ws)["nome"] == f"{nome}-2"
+        p = _pendente(c, admin, "uuid-formatado-sub")
+        r = c.post(f"/api/estacoes/{p['id']}/substituir", headers=admin, json={"estacao_id": alvo["id"]})
+        assert r.status_code == 200, r.text
+        assert ws.receive_json() == {"evento": "estacao_info", "dados": {"nome": nome, "aprovada": True}}
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()  # reconecta ja como a estacao antiga
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-formatado-sub") as ws:
+        assert _estado_114(ws) == {"nome": nome, "aprovada": True}
+    lista = {e["nome"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+    assert lista[nome]["id"] == alvo["id"] and lista[nome]["grupo_id"] == grupo  # mesmo lugar e historico
+    assert f"{nome}-2" not in lista
+    assert all(x["identificador"] != "uuid-formatado-sub" for x in c.get("/api/estacoes/pendentes", headers=admin).json())
+    assert _acoes(c, admin, acao="substituir_estacao")[0]["estacao"] == nome
+    # e o PC antigo, se aparecer de novo, e que vira pendente
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-antigo-sub") as ws:
+        assert _estado_114(ws) == {"nome": f"{nome}-2", "aprovada": False}
+
+
+def test_nao_substitui_estacao_ligada(c, admin, cenario):
+    nome = cenario["estacao"]
+    alvo = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    with c.websocket_connect(f"/ws/estacao/{nome}"):  # o PC antigo ainda esta ligado
+        with c.websocket_connect("/ws/estacao/PC-SUBST-NOVO?id=uuid-sub-ligada") as ws:
+            _estado_114(ws)
+            p = _pendente(c, admin, "uuid-sub-ligada")
+            r = c.post(f"/api/estacoes/{p['id']}/substituir", headers=admin, json={"estacao_id": alvo["id"]})
+            assert r.status_code == 400 and "ligad" in r.json()["detail"]
+
+
+def _agente_na_versao(ws, versao):
+    ws.send_json({"evento": "estado", "sessao_id": None, "versao": versao})
+    ws.receive_json(); ws.receive_json()
+
+
+def test_atualizar_agente_pelo_painel(c, admin, operador, cenario):
+    nome = cenario["estacao"]
+    with c.websocket_connect(f"/ws/estacao/{nome}") as ws:
+        _agente_na_versao(ws, "1.16.0")
+        r = c.post(f"/api/estacoes/{nome}/atualizar_agente", headers=operador)
+        assert r.status_code == 200, r.text
+        assert ws.receive_json()["evento"] == "atualizar_agente"
+    assert _acoes(c, admin, acao="atualizar_agente")[0]["estacao"] == nome
+
+
+def test_agente_antigo_nao_atualiza_pelo_painel(c, admin, cenario):
+    nome = cenario["estacao"]
+    with c.websocket_connect(f"/ws/estacao/{nome}") as ws:
+        _agente_na_versao(ws, "1.15.0")
+        r = c.post(f"/api/estacoes/{nome}/atualizar_agente", headers=admin)
+        assert r.status_code == 400 and "manutenção" in r.json()["detail"]
+
+
+def test_nao_atualiza_agente_com_cliente_usando(c, admin, cenario):
+    nome = cenario["estacao"]
+    with c.websocket_connect(f"/ws/estacao/{nome}") as ws:
+        _agente_na_versao(ws, "1.16.0")
+        c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+        assert _logar_no_pc(ws, cenario["cliente"])["ok"]
+        r = c.post(f"/api/estacoes/{nome}/atualizar_agente", headers=admin)
+        assert r.status_code == 400 and "uso" in r.json()["detail"]
+        # em massa: diz o motivo por estacao
+        r = c.post("/api/estacoes/acoes", headers=admin, json={"acao": "atualizar", "estacoes": [nome]})
+        assert r.status_code == 200 and "uso" in r.json()["resultados"][nome]
+
+
+# ── Bugs relatados em 09/11 ──────────────────────────────────────────────────
+
+def test_nao_exclui_estacao_em_uso_e_registra_exclusao(c, admin, cenario):
+    nome = cenario["estacao"]
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    with c.websocket_connect(f"/ws/estacao/{nome}") as ws:
+        c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        r = c.delete(f"/api/estacoes/{est['id']}", headers=admin)
+        assert r.status_code == 400 and "uso" in r.json()["detail"]
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+    assert c.delete(f"/api/estacoes/{est['id']}", headers=admin).status_code == 200
+    assert _acoes(c, admin, acao="excluir_estacao")[0]["estacao"] == nome
+
+
+def test_nascimento_no_futuro_e_recusado(c, admin):
+    from datetime import date, timedelta
+    amanha = (date.today() + timedelta(days=2)).isoformat()
+    r = c.post("/api/clientes/", headers=admin, json={"login": "futuro1", "nome": "Futuro", "senha": "senha-futuro",
+                                                       "data_nascimento": amanha})
+    assert r.status_code == 422 and "futuro" in r.text
+    r = c.post("/api/clientes/", headers=admin, json={"login": "futuro2", "nome": "Futuro", "senha": "senha-futuro",
+                                                       "data_nascimento": "1850-01-01"})
+    assert r.status_code == 422
+    cid = c.post("/api/clientes/", headers=admin, json={"login": "futuro3", "nome": "Ok", "senha": "senha-futuro",
+                                                         "data_nascimento": "2015-05-20"}).json()["id"]
+    assert c.put(f"/api/clientes/{cid}", headers=admin, json={"data_nascimento": amanha}).status_code == 422
+
+
+def test_rg_so_com_numeros_e_x(c, admin):
+    r = c.post("/api/clientes/", headers=admin, json={"login": "rg1", "nome": "RG", "senha": "senha-rg",
+                                                       "documento": "12.345.678-x"})
+    assert r.status_code == 200, r.text
+    assert r.json()["documento"] == "12345678X"  # pontuacao some, x vira X
+    r = c.post("/api/clientes/", headers=admin, json={"login": "rg2", "nome": "RG", "senha": "senha-rg",
+                                                       "documento": "AB12#"})
+    assert r.status_code == 422 and "RG" in r.text
+    cid = c.post("/api/clientes/", headers=admin, json={"login": "rg3", "nome": "RG", "senha": "senha-rg"}).json()["id"]
+    assert c.put(f"/api/clientes/{cid}", headers=admin, json={"documento": "abc"}).status_code == 422
+    assert c.put(f"/api/clientes/{cid}", headers=admin, json={"documento": ""}).status_code == 200  # apagar pode

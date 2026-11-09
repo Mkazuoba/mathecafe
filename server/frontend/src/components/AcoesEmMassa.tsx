@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { IconMessage, IconPlayerStop, IconPower, IconRefresh, IconWifi, IconX } from "@tabler/icons-react"
+import { IconDownload, IconMessage, IconPlayerStop, IconPower, IconRefresh, IconWifi, IconX } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Campo, MensagemErro, Textarea } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 
-type Acao = "mensagem" | "encerrar" | "reiniciar" | "desligar" | "ligar"
+type Acao = "mensagem" | "encerrar" | "reiniciar" | "desligar" | "ligar" | "atualizar"
 
 const PERGUNTA: Partial<Record<Acao, string>> = {
   encerrar: "Encerrar as sessões de {n}? O tempo que sobrou volta para cada cliente.",
   reiniciar: "Reiniciar {n}? Quem estiver usando sai da sessão e o tempo que sobrou volta para o cliente.",
   desligar: "Desligar {n}? Quem estiver usando sai da sessão e o tempo que sobrou volta para o cliente.",
+  atualizar:
+    "Atualizar o agente de {n}? Só as estações sem cliente atualizam: o agente baixa a versão do servidor e volta na tela de login.",
 }
 const FEITO: Record<Acao, string> = {
   mensagem: "Mensagem enviada",
@@ -20,6 +22,7 @@ const FEITO: Record<Acao, string> = {
   reiniciar: "Reiniciando",
   desligar: "Desligando",
   ligar: "Comando de ligar enviado",
+  atualizar: "Atualizando o agente",
 }
 
 function nomesDe(n: number) {
@@ -102,6 +105,9 @@ export function AcoesEmMassa({ estacoes, aoLimpar }: { estacoes: string[]; aoLim
       </Button>
       <Button size="xs" variant="outline" disabled={enviando} onClick={() => executar("reiniciar")}>
         <IconRefresh size={13} className="mr-1" /> Reiniciar
+      </Button>
+      <Button size="xs" variant="outline" disabled={enviando} onClick={() => executar("atualizar")}>
+        <IconDownload size={13} className="mr-1" /> Atualizar agente
       </Button>
       <Button size="xs" variant="perigo" disabled={enviando} onClick={() => executar("desligar")}>
         <IconPower size={13} className="mr-1" /> Desligar

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-09 — Substituir computador, atualizar pelo painel e correções (agente 1.16.0)
+
+- **Computador formatado ou trocado**: em Mapa → Novas estações, **É o computador de → Substitui a AD-3** (sugerido quando o nome bate). O PC novo vira a AD-3 com o mesmo nome, zona, lugar no mapa e histórico; recusado se a AD-3 ainda está ligada.
+- **Atualizar o agente pelo painel**: botão **Atualizar agora** na linha Agente do painel da estação e **Atualizar agente** nas ações em massa. Só sem cliente usando; vale a partir do agente 1.16 (as estações em 1.15 ou antes atualizam uma vez pela manutenção).
+- Corrigido: digitar a data à mão nos relatórios. Cada dígito do ano (0002, 0020...) virava uma consulta de séculos e travava a tela; agora o campo só consulta com a data completa.
+- Corrigido: relatórios aceitavam data no futuro (o campo vai até hoje) e o cadastro aceitava nascimento no futuro (o servidor também recusa, e antes de 1900).
+- Corrigido: RG/documento aceitava qualquer caractere. Agora só números e X (pontos e traços saem; x vira X). Documentos antigos com pontuação só mudam quando editados.
+- Corrigido: dava para excluir no Mapa uma estação em uso (o botão some e o servidor recusa) e a exclusão não aparecia em Ações dos operadores (agora aparecem excluir, substituir e atualizar agente).
+- Corrigido: mensagem longa do operador era cortada. A janela no PC cresce com o texto (rola se passar de 60% da tela) e, durante a sessão, clicar na notificação abre a mensagem inteira.
+
 ## 2026-11-09 — Estação nova aparece sozinha no painel (6.4; agente 1.14.0)
 
 - **Instalar o agente já liga o PC ao servidor**: o `instalar.bat` só pergunta o nome da estação (Enter = o nome do Windows), o endereço do servidor e a senha do `cliente`. Saíram o login de admin e o cadastro pela API (que não funcionava: o login era mandado no formato errado).

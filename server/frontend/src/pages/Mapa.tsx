@@ -332,6 +332,7 @@ export default function Mapa() {
   }
 
   async function excluir(e: Estacao) {
+    if (sessaoDaEstacao(e.nome)) return avisar(`A ${e.nome} está em uso: encerre a sessão antes de excluir`, "erro")
     if (!window.confirm(`Excluir a estação ${e.nome}?`)) return
     try {
       const r = await Api.del<{ desativada?: boolean }>(`/api/estacoes/${e.id}`)
@@ -768,7 +769,8 @@ function QuadradoEstacao({
       {semConexao && (
         <IconWifiOff size={12} className="absolute top-0.5 right-0.5 opacity-80" aria-label="sem conexão" />
       )}
-      {modoConfig && (
+      {/* em uso nao se exclui (o servidor tambem recusa) */}
+      {modoConfig && restante == null && e.status !== "ocupada" && (
         <button
           type="button"
           onClick={(ev) => {
@@ -1224,6 +1226,11 @@ function ModalNovaEstacao({
 
 function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
   const { pendentes, piso, grupos } = useDados()
+  // todas as estacoes (de todos os pisos), para "Substitui a ..."
+  const [existentes, setExistentes] = useState<Estacao[]>([])
+  useEffect(() => {
+    if (aberto) Api.get<Estacao[]>("/api/estacoes/").then(setExistentes, () => setExistentes([]))
+  }, [aberto, pendentes])
   return (
     <Modal titulo="Novas estações" aberto={aberto} aoFechar={aoFechar}>
       <div className="flex flex-col gap-3">
@@ -1232,16 +1239,38 @@ function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =>
           e a zona {piso ? `(zonas do piso ${piso.nome}; troque o piso no topo para ver outras)` : ""}.
         </p>
         {pendentes.map((p) => (
-          <LinhaPendente key={p.id} estacao={p} grupos={grupos} />
+          <LinhaPendente key={p.id} estacao={p} grupos={grupos} existentes={existentes} />
         ))}
       </div>
     </Modal>
   )
 }
 
-function LinhaPendente({ estacao: p, grupos }: { estacao: Estacao; grupos: Grupo[] }) {
+/** "AD-3-2" -> "AD-3": o nome que o PC pediu, sem o sufixo que o servidor pôs. */
+function semSufixo(nome: string) {
+  return nome.replace(/-\d+$/, "")
+}
+
+function LinhaPendente({
+  estacao: p,
+  grupos,
+  existentes,
+}: {
+  estacao: Estacao
+  grupos: Grupo[]
+  existentes: Estacao[]
+}) {
   const { recarregarEstacoes, recarregarPendentes } = useDados()
   const avisar = useAvisos()
+  // mesmo nome de uma estacao que ja existe: provavelmente o PC dela, formatado ou trocado
+  const parecida = existentes.find((e) => e.nome === semSufixo(p.nome) && e.nome !== p.nome)
+  const [substitui, setSubstitui] = useState(parecida ? String(parecida.id) : "")
+  // a lista de estacoes chega depois: sugere assim que ela vier
+  const idParecida = parecida?.id
+  useEffect(() => {
+    if (idParecida) setSubstitui((atual) => atual || String(idParecida))
+  }, [idParecida])
+  const alvo = existentes.find((e) => String(e.id) === substitui)
   const [nome, setNome] = useState(p.nome)
   const [grupoId, setGrupoId] = useState(String(grupos[0]?.id ?? ""))
   const [erro, setErro] = useState("")
@@ -1249,15 +1278,20 @@ function LinhaPendente({ estacao: p, grupos }: { estacao: Estacao; grupos: Grupo
 
   async function aprovar(ev: React.FormEvent) {
     ev.preventDefault()
-    if (!nome.trim()) return setErro("Informe o nome da estação")
+    if (!alvo && !nome.trim()) return setErro("Informe o nome da estação")
     setSalvando(true)
     setErro("")
     try {
-      await Api.post(`/api/estacoes/${p.id}/aprovar`, {
-        nome: nome.trim(),
-        grupo_id: grupoId ? Number(grupoId) : null,
-      })
-      avisar(`Estação ${nome.trim()} aprovada`)
+      if (alvo) {
+        await Api.post(`/api/estacoes/${p.id}/substituir`, { estacao_id: alvo.id })
+        avisar(`Este computador agora é a ${alvo.nome} (mesmo lugar no mapa e histórico)`)
+      } else {
+        await Api.post(`/api/estacoes/${p.id}/aprovar`, {
+          nome: nome.trim(),
+          grupo_id: grupoId ? Number(grupoId) : null,
+        })
+        avisar(`Estação ${nome.trim()} aprovada`)
+      }
       await Promise.all([recarregarEstacoes(), recarregarPendentes()])
     } catch (e) {
       setErro((e as Error).message)
@@ -1298,7 +1332,31 @@ function LinhaPendente({ estacao: p, grupos }: { estacao: Estacao; grupos: Grupo
         {p.versao_agente && <span>agente {p.versao_agente}</span>}
         {p.ip && <span>{p.ip}</span>}
       </div>
+      <Campo rotulo="É o computador de" id={`pend-subst-${p.id}`}>
+        <Select
+          id={`pend-subst-${p.id}`}
+          className="mb-2 h-9"
+          value={substitui}
+          onChange={(e) => setSubstitui(e.target.value)}
+        >
+          <option value="">Uma estação nova</option>
+          {existentes.map((e) => (
+            <option key={e.id} value={e.id}>
+              Substitui a {e.nome}
+              {e.grupo_nome ? ` (${e.grupo_nome})` : ""}
+            </option>
+          ))}
+        </Select>
+      </Campo>
+      {alvo && (
+        <p className="mb-2 text-xs text-texto-fraco">
+          Para um computador formatado ou trocado: ele vira a {alvo.nome}, com o mesmo nome, zona, lugar no mapa e
+          histórico. {alvo.online && <strong className="text-perigo">A {alvo.nome} está ligada agora: desligue o computador antigo antes.</strong>}
+        </p>
+      )}
       <div className="flex flex-wrap items-end gap-2">
+        {!alvo && (
+          <>
         <Campo rotulo="Nome" id={`pend-nome-${p.id}`}>
           <Input
             id={`pend-nome-${p.id}`}
@@ -1324,12 +1382,14 @@ function LinhaPendente({ estacao: p, grupos }: { estacao: Estacao; grupos: Grupo
             {!grupos.length && <option value="">Sem zona</option>}
           </Select>
         </Campo>
+          </>
+        )}
         <div className="flex flex-1 justify-end gap-1.5">
           <Button type="button" size="sm" variant="outline" onClick={recusar}>
             Recusar
           </Button>
           <Button type="submit" size="sm" className="gap-1" disabled={salvando}>
-            <IconCheck size={14} /> {salvando ? "Aprovando..." : "Aprovar"}
+            <IconCheck size={14} /> {salvando ? "Salvando..." : alvo ? "Substituir" : "Aprovar"}
           </Button>
         </div>
       </div>

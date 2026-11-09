@@ -5,7 +5,7 @@ import { useDados } from "@/lib/dados"
 import { EtiquetaPiso, textoIdade } from "@/lib/piso"
 import type { Cliente } from "@/lib/tipos"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, MensagemErro, Textarea } from "@/components/ui/campos"
+import { Campo, Input, InputData, MensagemErro, Textarea, hojeIso, soRg } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { PainelFoto } from "@/components/QuadroFoto"
 
@@ -120,7 +120,7 @@ export function ModalNovoCliente({
                 autoComplete="off"
                 placeholder="Opcional"
                 value={documento}
-                onChange={(e) => setDocumento(e.target.value)}
+                onChange={(e) => setDocumento(soRg(e.target.value))}
               />
             </Campo>
             <Campo rotulo="E-mail" id="cli-email">
@@ -134,7 +134,7 @@ export function ModalNovoCliente({
               />
             </Campo>
             <Campo rotulo="Data de nascimento" id="cli-nasc">
-              <Input id="cli-nasc" type="date" value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
+              <InputData id="cli-nasc" min="1900-01-01" max={hojeIso()} value={nascimento} onChange={setNascimento} />
             </Campo>
             <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave">
               {textoIdade(nascimento || null) ?? ""}

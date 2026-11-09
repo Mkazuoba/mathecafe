@@ -12,7 +12,7 @@ import { ModalSaldo } from "@/components/ModalSaldo"
 import { PainelFoto, QuadroFoto } from "@/components/QuadroFoto"
 import { useFotoDoCliente } from "@/lib/fotos"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Interruptor, MensagemErro, Select, Textarea } from "@/components/ui/campos"
+import { Campo, Input, InputData, Interruptor, MensagemErro, Select, Textarea, hojeIso, soRg } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
@@ -175,7 +175,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
       aoSalvar(
         await Api.put<Cliente>(`/api/clientes/${cliente.id}`, {
           nome: nome.trim(),
-          documento: documento.trim(),
+          ...(documento.trim() !== (cliente.documento ?? "") ? { documento: documento.trim() } : {}),
           email: email.trim(),
           data_nascimento: nascimento || null,
           observacao: obs.trim(),
@@ -201,7 +201,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
             <Input id="ficha-login" value={cliente.login} disabled />
           </Campo>
           <Campo rotulo="Documento (CPF/RG)" id="ficha-doc">
-            <Input id="ficha-doc" autoComplete="off" value={documento} onChange={(e) => setDocumento(e.target.value)} />
+            <Input id="ficha-doc" autoComplete="off" inputMode="numeric" placeholder="Só números e X" value={documento} onChange={(e) => setDocumento(soRg(e.target.value))} />
           </Campo>
           <Campo rotulo="E-mail" id="ficha-email">
             <Input
@@ -213,7 +213,7 @@ function AbaGeral({ cliente, aoSalvar }: { cliente: Cliente; aoSalvar: (c: Clien
             />
           </Campo>
           <Campo rotulo="Data de nascimento" id="ficha-nasc">
-            <Input id="ficha-nasc" type="date" value={nascimento} onChange={(e) => setNascimento(e.target.value)} />
+            <InputData id="ficha-nasc" min="1900-01-01" max={hojeIso()} value={nascimento} onChange={setNascimento} />
           </Campo>
           <div className="flex flex-col justify-end pb-2 text-sm text-texto-suave sm:col-span-2">
             {textoIdade(nascimento || null) ?? ""}
