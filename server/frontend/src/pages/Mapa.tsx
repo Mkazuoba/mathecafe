@@ -64,7 +64,7 @@ function rolarNaBorda(area: HTMLElement | null, ev: { clientX: number; clientY: 
 // Cores do estado (o que a imagem de referência mostra nos quadrados)
 const COR_QUADRADO: Record<StatusEstacao, string> = {
   livre: "border-livre bg-livre-fundo text-livre",
-  ocupada: "border-ocupada bg-ocupada text-white",
+  ocupada: "border-ocupada bg-ocupada text-zinc-100",
   desligada: "border-borda bg-superficie-2 text-texto-fraco",
   manutencao: "border-manutencao bg-manutencao-fundo text-manutencao",
 }
@@ -403,7 +403,7 @@ export default function Mapa() {
             onClick={() => setVendoPendentes(true)}
           >
             <IconDeviceDesktopPlus size={14} /> Novas estações
-            <span className="rounded-full bg-manutencao px-1.5 text-[0.7rem] font-bold text-fundo tabular-nums">
+            <span className="rounded-full bg-manutencao px-1.5 text-[0.7rem] font-semibold text-fundo tabular-nums">
               {aguardando}
             </span>
           </Button>
@@ -780,7 +780,7 @@ function QuadradoEstacao({
             aoExcluir()
           }}
           aria-label={`Excluir estação ${e.nome}`}
-          className="absolute -top-2 -right-2 flex size-5 cursor-pointer items-center justify-center rounded-full bg-perigo text-white"
+          className="absolute -top-2 -right-2 flex size-5 cursor-pointer items-center justify-center rounded-full bg-perigo text-zinc-100"
         >
           <IconX size={12} />
         </button>

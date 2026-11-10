@@ -76,7 +76,7 @@ npm install
 npm run dev          # painel em http://localhost:5173, com recarga automática
 ```
 
-O `npm run dev` usa o servidor Python (porta 8000) para `/api` e `/ws`, então deixe o `uvicorn` rodando junto.
+O `npm run dev` usa o servidor Python (porta 8000) para `/api` e `/ws`, então deixe o `uvicorn` rodando junto. Para apontar para outro servidor (o de teste, por exemplo), defina `MATHECAFE_API=http://127.0.0.1:8010` antes do `npm run dev`.
 
 Terminou uma mudança? Gere o build e faça o commit dos arquivos de `server/app/static/` junto com o código:
 

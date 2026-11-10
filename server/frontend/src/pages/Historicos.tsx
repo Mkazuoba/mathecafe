@@ -140,7 +140,7 @@ export default function Historicos() {
               onClick={() => mudar({ aba: id })}
               className={cn(
                 "rounded px-3 py-1 font-medium",
-                aba === id ? "bg-destaque text-white" : "text-texto-suave hover:text-texto",
+                aba === id ? "bg-destaque text-zinc-100" : "text-texto-suave hover:text-texto",
               )}
             >
               {rotulo}

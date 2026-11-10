@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-10 — Visual novo do painel (estilo shadcn/ui)
+
+- **Menu lateral** de 260px que recolhe para só os ícones, com o bloco MatheCafé · SP Leituras no topo, os grupos Operação e Gestão e quem está logado (com Sair) embaixo. Históricos e Configurações abrem **subitens** (abas e seções), recuados, com linha vertical e seta que gira; com o menu aberto, a lista própria de Configurações some.
+- **Cabeçalho** com o botão do menu, o caminho (MatheCafé › tela), a escolha de piso e a busca.
+- **Busca global (Ctrl+K)**: telas, estações e clientes do piso; a estação abre a janela dela no Painel e o cliente, a ficha.
+- **Cores Zinc** (escuro e claro), colunas do Painel em cartões arredondados e **selos de status** em pílula: Livre verde, Ocupada âmbar, Desligada cinza; Manutenção passou a azul.
+- **Tipografia**: Geist em tudo e Geist Mono nos horários, com antialiased; títulos de grupo e cabeçalhos de tabela em 11px caixa alta; sem negrito e sem branco ou preto puro no texto.
+- As fontes vêm do Google Fonts; sem internet, o painel cai para Inter/Segoe UI.
+
 ## 2026-11-10 — Nome trocado no PC pede aprovação (agente 1.18.0)
 
 - Corrigido: trocar o nome da estação no próprio PC (Ctrl+Shift+M → Configurar conexão) não fazia nada e não dava erro (o servidor reconhece o PC pelo identificador e devolvia o nome antigo).

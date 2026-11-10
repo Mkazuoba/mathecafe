@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
-import { Navigate, useSearchParams } from "react-router-dom"
+import { Navigate, useOutletContext, useSearchParams } from "react-router-dom"
+import type { ContextoLayout } from "@/components/Layout"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
@@ -34,12 +35,14 @@ type Secao = (typeof SECOES)[number]["id"]
 
 export default function Configuracoes() {
   const [params, setParams] = useSearchParams()
+  const { menuAberto } = useOutletContext<ContextoLayout>()
   if (!Api.ehAdmin()) return <Navigate to="/" replace />
   const secao = (SECOES.find((s) => s.id === params.get("secao"))?.id ?? "operadores") as Secao
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <nav aria-label="Seções" className="w-52 shrink-0 border-r border-borda bg-superficie py-2.5">
+      {/* com o menu lateral aberto as seções já aparecem nele, como subitens */}
+      {!menuAberto && <nav aria-label="Seções" className="w-52 shrink-0 border-r border-borda py-2.5">
         {SECOES.map((s) => (
           <button
             key={s.id}
@@ -47,14 +50,14 @@ export default function Configuracoes() {
             onClick={() => setParams({ secao: s.id })}
             aria-current={s.id === secao ? "page" : undefined}
             className={cn(
-              "block w-full cursor-pointer px-4.5 py-2.5 text-left text-sm",
-              s.id === secao ? "bg-destaque text-white" : "text-texto-suave hover:bg-superficie-2 hover:text-texto",
+              "mx-2 block w-[calc(100%-1rem)] cursor-pointer rounded-md px-2.5 py-1.5 text-left text-[13px] transition-all duration-200 ease-in-out",
+              s.id === secao ? "bg-texto/10 font-medium text-texto" : "text-texto-suave hover:bg-texto/5 hover:text-texto",
             )}
           >
             {s.rotulo}
           </button>
         ))}
-      </nav>
+      </nav>}
       <div className="min-h-0 flex-1 overflow-auto px-8 py-6">
         {/* a grade de apps usa a largura toda */}
         <div className={secao === "apps" ? "max-w-6xl" : "max-w-2xl"}>
