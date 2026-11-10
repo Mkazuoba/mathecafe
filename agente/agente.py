@@ -7,7 +7,7 @@ Conecta a estação ao servidor via WebSocket e oferece:
 - Encerramento manual ou automático (tempo esgotado)
 - Launcher de apps com grade visual
 - Modo manutenção autenticado pelo servidor (Ctrl+Shift+M)
-- Log de comunicação para debug
+- Log de comunicação enviado ao servidor (painel > estação > Log)
 
 Uso:
     python agente.py --servidor ws://localhost:8000 --estacao PC-01
@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.18.0"
+VERSAO = "1.19.0"
 
 import asyncio
 import json
@@ -42,8 +42,9 @@ import uuid
 import urllib.request
 import sys
 import traceback
+from collections import deque
 import tkinter as tk
-from tkinter import font as tkfont, scrolledtext, simpledialog
+from tkinter import font as tkfont, simpledialog
 
 # Com pythonw (tarefa agendada) não há console: qualquer erro fatal vai para
 # agente_erro.log, ao lado deste arquivo, e aparece numa janela.
@@ -442,6 +443,8 @@ PALETAS = {
     },
 }
 ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
+# o computador acima do login: conectando, online, offline
+COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f97316", "#22c55e", "#ef4444"
 
 CORES_DOS_WIDGETS = ("background", "foreground", "activebackground", "activeforeground",
                      "highlightbackground", "highlightcolor", "insertbackground",
@@ -2002,6 +2005,8 @@ class AgenteApp:
         # (lista de (mensagem, time.monotonic() do fim); so mexida na thread do Tk
         # e lida pela do WebSocket ao conectar)
         self._pendentes = []
+        # log de quando estava sem servidor: vai com a hora original ao reconectar
+        self._logs_offline = deque(maxlen=100)
 
         # Estado da sessão
         self.sessao_ativa = False
@@ -2178,21 +2183,6 @@ class AgenteApp:
         self.f_app = tkfont.Font(family="Segoe UI", size=10, weight="bold")
         self.f_icon = tkfont.Font(family="Segoe UI", size=22, weight="bold")
 
-        # ── Cabeçalho ──
-        self.header_frame = header = tk.Frame(self.root, bg=bg2)
-        header.pack(fill="x")
-        tk.Label(header, text="MatheCafe", font=title_font, fg=accent, bg=bg2).pack(side="left", padx=(14,4), pady=10)
-        ver_font = tkfont.Font(family="Segoe UI", size=9)
-        tk.Label(header, text=f"v{VERSAO}", font=ver_font, fg=p["fraco"], bg=bg2).pack(side="left", pady=10)
-        self.lbl_estacao = tk.Label(header, text=self.estacao, font=normal_font, fg=text2, bg=bg2)
-        self.lbl_estacao.pack(side="left", padx=4)
-        self.lbl_status = tk.Label(header, text="conectando...", font=small_font, fg="#f97316", bg=bg2)
-        self.lbl_status.pack(side="right", padx=14)
-        self.btn_tema = tk.Button(header, text=ROTULO_TEMA[self.tema], font=small_font, bg=bg3, fg=text2,
-                                  activebackground=p["superficie3"], relief="flat", padx=10,
-                                  command=self.alternar_tema)
-        self.btn_tema.pack(side="right", padx=4, pady=8)
-
         # ── Frame de login ──
         # duas metades: formulário à esquerda, cartazes da programação à direita
         self.frame_login = tk.Frame(self.root, bg=bg)
@@ -2207,10 +2197,22 @@ class AgenteApp:
         # espacador fixa a largura; pack_propagate(False) sem height colapsava o form em 1px
         tk.Frame(_form, bg=bg, width=380, height=0).pack()
 
-        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family="Segoe UI", size=20, weight="bold"),
+        # sem barra em cima: o nome do PC bem grande, com o computador verde
+        # (online) ou vermelho (offline)
+        self._icone_pc = tk.Canvas(_form, width=120, height=100, bg=bg, highlightthickness=0)
+        self._icone_pc.pack()
+        self._desenhar_icone_pc(COR_CONECTANDO)
+        self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family="Segoe UI", size=40, weight="bold"),
+                                    fg=text, bg=bg, wraplength=520)
+        self.lbl_estacao.pack(pady=(2, 0))
+        self.lbl_status = tk.Label(_form, text="conectando...", font=tkfont.Font(family="Segoe UI", size=11, weight="bold"),
+                                   fg=COR_CONECTANDO, bg=bg)
+        self.lbl_status.pack(pady=(0, 30))
+
+        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family="Segoe UI", size=18, weight="bold"),
                  fg=text, bg=bg).pack()
         tk.Label(_form, text="Use o login e a senha do seu cadastro na biblioteca",
-                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack(pady=(4, 28))
+                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack(pady=(4, 22))
 
         f_rotulo = tkfont.Font(family="Segoe UI", size=10, weight="bold")
         campo = dict(font=normal_font, bg=bg3, fg=text, insertbackground=text, relief="flat",
@@ -2244,6 +2246,16 @@ class AgenteApp:
         tk.Frame(_form, bg=p["superficie3"], height=1).pack(fill="x", pady=(6, 14))
         tk.Label(_form, text="Não tem cadastro? Fale com um funcionário da biblioteca.",
                  font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack()
+
+        # canto de baixo: tema e versão (ficavam na barra de cima)
+        rodape = tk.Frame(esquerda, bg=bg)
+        rodape.place(x=20, rely=1, y=-16, anchor="sw")
+        self.btn_tema = tk.Button(rodape, text=ROTULO_TEMA[self.tema], font=small_font, bg=bg3, fg=text2,
+                                  activebackground=p["superficie3"], relief="flat", padx=10, cursor="hand2",
+                                  command=self.alternar_tema)
+        self.btn_tema.pack(side="left")
+        tk.Label(rodape, text=f"MatheCafé v{VERSAO}", font=tkfont.Font(family="Segoe UI", size=9),
+                 fg=p["fraco"], bg=bg).pack(side="left", padx=10)
 
         # ── Frame de sessão (launcher) ──
         self.frame_sessao = tk.Frame(self.root, bg=bg)
@@ -2285,15 +2297,6 @@ class AgenteApp:
                                           font=big_font, fg="#f59e0b", bg=bg)
         self._lbl_enc_relogio.pack(pady=20)
 
-        # ── Log ──
-        self.frame_log = tk.Frame(self.root, bg=bg)
-        tk.Label(self.frame_log, text="LOG DE COMUNICACAO", font=small_font, fg=text2, bg=bg).pack(anchor="w", padx=10)
-        self.log = scrolledtext.ScrolledText(self.frame_log, height=8, bg=bg3, fg=text2,
-                                              font=small_font, relief="flat", wrap="word")
-        self.log.pack(fill="both", padx=10, pady=(2, 10), expand=False)
-        self.log.configure(state="disabled")
-        self.frame_log.pack(fill="both", expand=False)
-
         # ── Barra de manutenção (oculta inicialmente) ──
         self.frame_manutencao = tk.Frame(self.root, bg="#f59e0b")
         tk.Label(self.frame_manutencao, text="Modo Manutencao ativo",
@@ -2311,21 +2314,37 @@ class AgenteApp:
         self.btn_atualizar.pack(side="right", padx=(0, 6), pady=8)
 
     def _log(self, msg, _remoto=True):
-        self.log.configure(state="normal")
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.log.insert("end", f"[{ts}] {msg}\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
-        # Repassa o log para o servidor (visivel no painel do operador)
-        # _remoto=False evita loop quando _enviar() por si chama _log()
-        if _remoto and self.loop and self.ws:
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    self.ws.send(json.dumps({"evento": "log_agente", "dados": {"msg": msg}})),
-                    self.loop
-                )
-            except Exception:
-                pass
+        """O log de comunicação vai ao servidor (painel > estação > Log); não aparece no PC.
+        Sem conexão, guarda as linhas e manda ao reconectar. _remoto=False: só o
+        eco do que foi enviado, que não interessa."""
+        if not _remoto:
+            return
+        linha = {"msg": msg, "ts": datetime.now().strftime("%H:%M:%S")}
+        if not (self.loop and self.ws):
+            self._logs_offline.append(linha)
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps({"evento": "log_agente", "dados": linha})), self.loop)
+        except Exception:
+            self._logs_offline.append(linha)
+
+    def _enviar_logs_offline(self):
+        """Ao reconectar: as linhas de quando estava sem servidor, na ordem."""
+        while self._logs_offline and self.loop and self.ws:
+            linha = self._logs_offline.popleft()
+            asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps({"evento": "log_agente", "dados": linha})), self.loop)
+
+    def _desenhar_icone_pc(self, cor):
+        """O computador acima do nome do PC, na cor da conexão."""
+        c = self._icone_pc
+        c.delete("all")
+        BarraSessao._retangulo(c, 10, 4, 110, 74, 10, fill=cor, outline="")
+        c.create_rectangle(19, 13, 101, 65, fill=escurecer(cor, 0.55), outline="")
+        c.create_line(28, 22, 46, 22, fill=cor, width=3, capstyle="round")  # brilho da tela
+        c.create_polygon(52, 74, 68, 74, 72, 88, 48, 88, fill=cor, outline="")
+        BarraSessao._retangulo(c, 34, 86, 86, 96, 4, fill=cor, outline="")
 
     # ── WebSocket (thread separada) ──────────────────────────────────────────
     def _start_ws_thread(self):
@@ -2410,8 +2429,10 @@ class AgenteApp:
         dados = msg.get("dados", {})
 
         if evento == "_conectado":
-            self.lbl_status.config(text="online", fg="#22c55e")
+            self.lbl_status.config(text="online", fg=COR_ONLINE)
+            self._desenhar_icone_pc(COR_ONLINE)
             self.btn_login.config(state="normal")
+            self._enviar_logs_offline()
             self._log("Conectado ao servidor")
             self._programacao.recarregar()  # cartazes do login (e do banner da sessão)
             if self.sessao_ativa and getattr(self, "_avisou_queda", False):
@@ -2423,7 +2444,8 @@ class AgenteApp:
                 self._enviar({"evento": "status_estacao", "status": "manutencao"})
 
         elif evento == "_desconectado":
-            self.lbl_status.config(text="offline", fg="#ef4444")
+            self.lbl_status.config(text="offline", fg=COR_OFFLINE)
+            self._desenhar_icone_pc(COR_OFFLINE)
             self.btn_login.config(state="disabled")
             self._log("Desconectado - tentando reconectar em 3s...")
             if self.sessao_ativa:
@@ -2780,7 +2802,6 @@ class AgenteApp:
 
         self._montar_launcher()
 
-        self.frame_log.pack_forget()
         self.frame_login.pack_forget()
         self.frame_sessao.pack(fill="both", expand=True)
 
@@ -2944,7 +2965,6 @@ class AgenteApp:
         self.root.lift()
         self.frame_sessao.pack_forget()
         self.frame_login.pack_forget()
-        self.frame_log.pack_forget()
         self.frame_encerramento.pack(fill="both", expand=True)
         self._countdown_encerramento(6)
 
@@ -2962,7 +2982,6 @@ class AgenteApp:
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
         self.frame_login.pack(fill="both", expand=True)
-        self.frame_log.pack(fill="both", expand=False)
 
     # ── Manutenção admin ─────────────────────────────────────────────────────
     def _abrir_prompt_admin(self, event=None):
@@ -3252,7 +3271,7 @@ class AgenteApp:
         self.modo_manutencao_ativo = True
         self._liberar_janela(True)
         self._enviar({"evento": "status_estacao", "status": "manutencao"})
-        self.frame_manutencao.pack(fill="x", before=self.header_frame)
+        self.frame_manutencao.pack(fill="x", side="top", before=self.root.pack_slaves()[0])
         self._log("Modo manutencao ativado")
         # confere se ha versao nova, para o botao ja mostrar
         self._mostrar_botao_atualizar(texto="Verificando atualizacao...")
@@ -3265,7 +3284,6 @@ class AgenteApp:
         self._enviar({"evento": "status_estacao", "status": "livre"})
         self.frame_sessao.pack_forget()
         self.frame_login.pack(fill="both", expand=True)
-        self.frame_log.pack(fill="both", expand=False)
         self.root.attributes("-topmost", True)
         self.root.attributes("-fullscreen", True)
         self.root.lift()

@@ -2149,3 +2149,37 @@ def test_pc_pendente_trocando_de_nome_so_muda_o_nome_pendente(c, admin):
     with c.websocket_connect("/ws/estacao/PEND-B?id=uuid-pedido-4") as ws:
         assert _estado_114(ws) == {"nome": "PEND-B", "aprovada": False}
     assert _pendente(c, admin, "uuid-pedido-4")["nome"] == "PEND-B"
+
+
+def test_log_do_agente_fica_no_servidor(c, admin, operador, cenario):
+    # 10/11: o log saiu da tela do PC; o servidor guarda as ultimas linhas de
+    # cada estacao e o painel le por aqui
+    from app.logs_estacoes import LIMITE
+    eid = next(e["id"] for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+    assert c.get(f"/api/estacoes/{eid}/logs", headers=operador).json() == []
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "versao": "1.18.0", "sessao_id": None})
+        # agente 1.18 manda a hora de cada linha (as de quando estava sem conexao chegam depois)
+        ws.send_json({"evento": "log_agente", "dados": {"msg": "Desconectado - tentando reconectar", "ts": "09:58:01"}})
+        for i in range(LIMITE + 5):
+            ws.send_json({"evento": "log_agente", "dados": {"msg": f"linha {i}", "ts": "10:00:00"}})
+        ws.send_json({"evento": "teste_conexao"})
+        while ws.receive_json()["evento"] != "pong":
+            pass
+    linhas = c.get(f"/api/estacoes/{eid}/logs", headers=operador).json()
+    assert len(linhas) == LIMITE  # so as ultimas
+    assert linhas[-1] == {"ts": "10:00:00", "msg": f"linha {LIMITE + 4}"}
+    assert c.get("/api/estacoes/999999/logs", headers=admin).status_code == 404
+    assert c.get(f"/api/estacoes/{eid}/logs").status_code == 401
+
+
+def test_log_do_agente_sem_hora_e_comprido(c, admin, cenario):
+    eid = next(e["id"] for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "versao": "1.17.0", "sessao_id": None})
+        ws.send_json({"evento": "log_agente", "dados": {"msg": "x" * 2000}})
+        ws.send_json({"evento": "teste_conexao"})
+        while ws.receive_json()["evento"] != "pong":
+            pass
+    [linha] = c.get(f"/api/estacoes/{eid}/logs", headers=admin).json()
+    assert len(linha["msg"]) <= 500 and len(linha["ts"]) == 8  # hora do servidor, HH:MM:SS

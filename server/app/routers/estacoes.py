@@ -9,6 +9,7 @@ from app.security import requer_perfil
 from app.registro import registrar
 from app.routers.agente import _numeros, _versao_dist, desatualizado
 from app.websocket_manager import manager
+from app import logs_estacoes
 from app.tempo_diario import ESGOTADO_OPERADOR, reservar_tempo, saldo_do_dia
 from app.models import Piso
 from app.estacoes_novas import info_para_o_agente, nome_livre
@@ -393,11 +394,19 @@ async def excluir(id: int, db: Session = Depends(get_db), quem=Depends(requer_pe
     else:
         db.delete(e)
     db.commit()
+    logs_estacoes.apagar(id)
     registrar(db, quem, "excluir_estacao", estacao=nome,
               detalhe="o histórico de uso foi mantido" if desativada else None)
     # o agente 1.14+ que continuar instalado volta em Novas estacoes
     await _soltar_conexao(nome, 4004, "Estação excluída no painel")
     return {"ok": True, "desativada": True} if desativada else {"ok": True}
+
+@router.get("/{id}/logs")
+def logs(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    """O log de comunicacao do agente (saiu da tela do PC): as ultimas linhas, da mais antiga a mais nova."""
+    if not db.query(Estacao).filter(Estacao.id == id).first():
+        raise HTTPException(404, "Estação não encontrada")
+    return logs_estacoes.linhas(id)
 
 # ── Fila de espera ────────────────────────────────────────────────────────────
 @router.get("/fila")

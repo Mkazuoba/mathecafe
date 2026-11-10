@@ -8,6 +8,12 @@
 - Agente 1.18.0: ao salvar um nome novo em Configurar conexão, avisa que ele vai para aprovação no painel.
 - Registro de ações: aceitar entra como "Renomeou estação" (pedido do PC); recusar, "Recusou o nome pedido pelo PC".
 
+## 2026-11-10 — Log do PC vai para o painel; nome do PC grande no login (9.10; agente 1.19.0)
+
+- **O log de comunicação saiu da tela do cliente.** Agora fica no servidor: no painel, clique na estação → aba **Log** (últimas 300 linhas, chegando ao vivo; botão Atualizar). As linhas de quando o PC estava sem conexão chegam ao reconectar, com a hora em que aconteceram. O log fica só na memória do servidor: reiniciar o servidor apaga.
+- **Sem a barra de cima no PC.** O nome do computador fica bem grande acima do formulário de login, com um computador **verde** (online), **vermelho** (offline) ou laranja (conectando). O botão de tema e a versão foram para o canto de baixo.
+- O nome grande e o fim da barra valem a partir do agente 1.19.0. Os agentes anteriores já mandam o log, então a aba Log funciona com eles assim que o servidor for atualizado; só a hora é a do servidor.
+
 ## 2026-11-10 — Instalador instala o Python e as dependências sozinho
 
 - Máquina nova não precisa de nada antes, só de internet: o `instalar.bat` baixa o Python 3.13.17 do python.org e instala um **Python só do agente** em `C:\MatheCafe\python` (com Tkinter; sem atalho, sem PATH e sem mexer em outro Python da máquina). Depois instala as dependências do `requirements.txt` (websockets, psutil, Pillow) pelo pip.

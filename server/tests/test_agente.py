@@ -811,3 +811,30 @@ def test_nome_trocado_no_pc_avisa_que_vai_para_aprovacao():
     salvar = src[src.index("        def salvar():"):src.index('("Salvar e reiniciar"')]
     assert "Novas estações" in salvar and "self.identificador and self.aprovada" in salvar
     assert salvar.index("showinfo") < salvar.index("salvar_cfg(")
+
+
+def test_login_sem_log_e_sem_barra_de_cima():
+    # 10/11: o log de comunicacao saiu da tela do PC (vai so ao servidor) e a
+    # barra de cima sumiu; o nome do PC fica grande acima do formulario, com
+    # um computador verde (online) ou vermelho (offline)
+    src = _fonte()
+    assert "LOG DE COMUNICACAO" not in src
+    assert "scrolledtext" not in src
+    assert "self.frame_log " not in src and "self.frame_log." not in src and "self.header_frame" not in src
+    login = src[src.index("        # ── Frame de login ──"):src.index("        # ── Frame de sessão (launcher) ──")]
+    assert login.index("self.lbl_estacao") < login.index("self.entry_login")
+    assert "self._icone_pc" in login
+    conectado = src[src.index('if evento == "_conectado":'):src.index('elif evento == "_info":')]
+    assert 'self._desenhar_icone_pc(COR_ONLINE)' in conectado
+    assert 'self._desenhar_icone_pc(COR_OFFLINE)' in conectado
+
+
+def test_log_sem_conexao_vai_ao_servidor_depois():
+    # As linhas de quando o PC estava sem servidor (as que mais ajudam) ficam
+    # guardadas e vao com a hora original quando ele reconecta
+    src = _fonte()
+    log = src[src.index("    def _log(self, msg, _remoto=True):"):src.index("    # ── WebSocket (thread separada)")]
+    assert "self._logs_offline.append(" in log
+    assert '"ts": ' in log
+    conectado = src[src.index('if evento == "_conectado":'):src.index('elif evento == "_desconectado":')]
+    assert "self._enviar_logs_offline()" in conectado
