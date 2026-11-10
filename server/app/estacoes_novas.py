@@ -50,6 +50,7 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
         e = db.query(Estacao).filter(Estacao.identificador == identificador).first()
         if e:
             if e.ativa:
+                _nome_vindo_do_pc(db, e, nome)
                 return e, False
             if not e.aprovada:
                 return None, False  # recusada em "Novas estacoes"
@@ -73,6 +74,23 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
     db.commit()
     db.refresh(e)
     return e, True
+
+
+def _nome_vindo_do_pc(db: Session, e: Estacao, nome: str):
+    """O agente conectou com outro nome (trocado no PC, em Configurar conexao).
+    Pendente: e so o nome que ela vai ter na aprovacao. Aprovada: vira um
+    pedido de troca para o admin aceitar (o agente recebe o nome atual de
+    volta em estacao_info e segue com ele)."""
+    nome = (nome or "").strip()[:TAMANHO_NOME]
+    if not nome or nome == e.nome:
+        return
+    if not e.aprovada:
+        e.nome = nome_livre(db, nome, ignorar_id=e.id)
+    elif e.nome_pedido != nome:
+        e.nome_pedido = nome
+    else:
+        return
+    db.commit()
 
 
 def info_para_o_agente(e: Estacao) -> dict:

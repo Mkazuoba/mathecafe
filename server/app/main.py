@@ -279,7 +279,8 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
     estacao.status = "ocupada" if tem_sessao else "livre"
     db.commit()
     await manager.broadcast_paineis("estacao_online", {"nome": nome})
-    if not estacao.aprovada:
+    if not estacao.aprovada or estacao.nome_pedido:
+        # Novas estacoes: PC novo ou pedido de troca de nome
         await manager.broadcast_paineis("estacao_pendente", {"nome": nome, "nova": nova})
     estado_recebido = False
 

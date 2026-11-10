@@ -2083,3 +2083,69 @@ def test_reiniciar_servidor_pelo_windows_sem_admin(monkeypatch, tmp_path):
     assert b"\r\n" in bat and b"reiniciar.pedido" in bat and b"/health" in bat
     assert b"timeout " not in bat
     assert "reiniciar.pedido" in open(os.path.join(os.path.dirname(__file__), "..", "..", ".gitignore")).read()
+
+
+# ── Nome trocado no proprio PC (Configurar conexao) vira pedido de aprovacao ──
+
+def _pedidos_nome(c, admin):
+    r = c.get("/api/estacoes/pedidos_nome", headers=admin)
+    assert r.status_code == 200, r.text
+    return {e["nome"]: e["nome_pedido"] for e in r.json()}
+
+
+def test_nome_trocado_no_pc_pede_aprovacao(c, admin, cenario):
+    nome = cenario["estacao"]
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-pedido-1") as ws:
+        _estado_114(ws)  # adota o id
+    novo = f"{nome}-NOVO"
+    # o tecnico troca o nome no PC: o agente volta com o nome novo e o mesmo id
+    with c.websocket_connect(f"/ws/estacao/{novo}?id=uuid-pedido-1") as ws:
+        assert _estado_114(ws) == {"nome": nome, "aprovada": True}  # segue com o nome atual
+        assert manager.estacao_conectada(nome)
+        assert _pedidos_nome(c, admin)[nome] == novo
+        est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+        r = c.post(f"/api/estacoes/{est['id']}/nome_pedido", headers=admin)
+        assert r.status_code == 200, r.text
+        assert ws.receive_json() == {"evento": "estacao_info", "dados": {"nome": novo, "aprovada": True}}
+    assert nome not in _pedidos_nome(c, admin) and novo not in _pedidos_nome(c, admin)
+    assert novo in [e["nome"] for e in c.get("/api/estacoes/", headers=admin).json()]
+    assert _acoes(c, admin, acao="renomear_estacao")[0]["estacao"] == novo
+
+
+def test_recusar_troca_de_nome_do_pc(c, admin, cenario):
+    nome = cenario["estacao"]
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-pedido-2") as ws:
+        _estado_114(ws)
+    with c.websocket_connect(f"/ws/estacao/OUTRO-NOME?id=uuid-pedido-2") as ws:
+        _estado_114(ws)
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    assert c.delete(f"/api/estacoes/{est['id']}/nome_pedido", headers=admin).status_code == 200
+    assert nome not in _pedidos_nome(c, admin)
+    # voltar com o nome atual nao cria pedido
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-pedido-2") as ws:
+        _estado_114(ws)
+    assert nome not in _pedidos_nome(c, admin)
+
+
+def test_troca_de_nome_para_um_que_ja_existe(c, admin, cenario):
+    nome = cenario["estacao"]
+    outra = f"PC-OCUPADO-{next(_contador)}"
+    c.post(f"/api/estacoes/?nome={outra}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-pedido-3") as ws:
+        _estado_114(ws)
+    with c.websocket_connect(f"/ws/estacao/{outra}?id=uuid-pedido-3") as ws:
+        _estado_114(ws)
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
+    r = c.post(f"/api/estacoes/{est['id']}/nome_pedido", headers=admin)
+    assert r.status_code == 400 and "Já existe" in r.json()["detail"]
+    # renomear pelo lapis do Mapa tambem resolve o pedido
+    c.put(f"/api/estacoes/{est['id']}", headers=admin, json={"nome": f"{nome}-L"})
+    assert f"{nome}-L" not in _pedidos_nome(c, admin)
+
+
+def test_pc_pendente_trocando_de_nome_so_muda_o_nome_pendente(c, admin):
+    with c.websocket_connect("/ws/estacao/PEND-A?id=uuid-pedido-4") as ws:
+        _estado_114(ws)
+    with c.websocket_connect("/ws/estacao/PEND-B?id=uuid-pedido-4") as ws:
+        assert _estado_114(ws) == {"nome": "PEND-B", "aprovada": False}
+    assert _pendente(c, admin, "uuid-pedido-4")["nome"] == "PEND-B"

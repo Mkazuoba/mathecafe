@@ -43,6 +43,8 @@ export interface Estacao extends PisoDe {
   identificador?: string | null
   /** false: PC novo esperando em "Novas estações" (ninguém faz login até aprovar) */
   aprovada?: boolean
+  /** nome trocado no próprio PC, esperando o admin aceitar (Novas estações) */
+  nome_pedido?: string | null
 }
 
 /** Mapa (sala). piso_id vazio: mapa antigo ainda sem piso, o painel avisa. */

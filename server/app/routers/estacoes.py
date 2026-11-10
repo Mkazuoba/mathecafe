@@ -51,6 +51,7 @@ def serial_estacao(e: Estacao):
         "versao_agente": e.versao_agente,
         "identificador": e.identificador,
         "aprovada": bool(e.aprovada),
+        "nome_pedido": e.nome_pedido,
         "versao_atual": _versao_dist(),
         "agente_desatualizado": bool(e.versao_agente) and desatualizado(e.versao_agente),
     }
@@ -182,8 +183,45 @@ async def _renomear(db: Session, e: Estacao, nome: str):
         raise HTTPException(400, "Já existe uma estação com esse nome")
     antigo = e.nome
     e.nome = nome[:20]
+    e.nome_pedido = None  # renomeada: o pedido do PC (se havia) fica resolvido
     db.commit()
     manager.renomear_estacao(antigo, e.nome)
+
+
+@router.get("/pedidos_nome")
+def listar_pedidos_de_nome(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+    """Estacoes cujo nome foi trocado no proprio PC e espera aprovacao."""
+    q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada != False, Estacao.nome_pedido != None)
+    return [serial_estacao(e) for e in q.order_by(Estacao.nome).all()]
+
+
+def _com_pedido(db: Session, id: int) -> Estacao:
+    e = db.query(Estacao).filter(Estacao.id == id, Estacao.ativa == True, Estacao.nome_pedido != None).first()
+    if not e:
+        raise HTTPException(404, "Pedido de troca de nome não encontrado")
+    return e
+
+
+@router.post("/{id}/nome_pedido")
+async def aceitar_nome_pedido(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    e = _com_pedido(db, id)
+    antigo, novo = e.nome, e.nome_pedido
+    await _renomear(db, e, novo)
+    registrar(db, quem, "renomear_estacao", estacao=e.nome, detalhe=f"pedido do PC; antes: {antigo}")
+    await manager.enviar_estacao(e.nome, "estacao_info", info_para_o_agente(e))
+    await manager.broadcast_paineis("estacao_online", {"nome": e.nome})
+    return serial_estacao(e)
+
+
+@router.delete("/{id}/nome_pedido")
+async def recusar_nome_pedido(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    e = _com_pedido(db, id)
+    pedido = e.nome_pedido
+    e.nome_pedido = None
+    db.commit()
+    registrar(db, quem, "recusar_nome_estacao", estacao=e.nome, detalhe=f"pedia {pedido}")
+    await manager.broadcast_paineis("estacao_online", {"nome": e.nome})
+    return {"ok": True}
 
 
 @router.post("/{id}/aprovar")

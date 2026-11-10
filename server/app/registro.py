@@ -35,6 +35,7 @@ ROTULOS = {
     "aprovar_estacao": "Aprovou estação nova",
     "recusar_estacao": "Recusou estação nova",
     "renomear_estacao": "Renomeou estação",
+    "recusar_nome_estacao": "Recusou o nome pedido pelo PC",
     "substituir_estacao": "Substituiu o computador da estação",
     "excluir_estacao": "Excluiu estação",
     "atualizar_agente": "Atualizou o agente",

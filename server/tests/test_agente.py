@@ -802,3 +802,12 @@ def test_instalador_instala_python_proprio():
     assert "import sys, tkinter" in texto  # o agente e Tkinter
     assert "GetSystemWebProxy" in texto and "HTTPS_PROXY" in texto  # rede da biblioteca tem proxy
     assert '"%DESTINO%\python\python.exe" -m venv' in texto
+
+
+def test_nome_trocado_no_pc_avisa_que_vai_para_aprovacao():
+    # 1.18: trocar o nome em Configurar conexao nao muda sozinho (o servidor
+    # reconhece o PC pelo id e devolve o nome atual); o tecnico e avisado
+    src = _fonte()
+    salvar = src[src.index("        def salvar():"):src.index('("Salvar e reiniciar"')]
+    assert "Novas estações" in salvar and "self.identificador and self.aprovada" in salvar
+    assert salvar.index("showinfo") < salvar.index("salvar_cfg(")

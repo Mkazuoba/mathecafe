@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.17.0"
+VERSAO = "1.18.0"
 
 import asyncio
 import json
@@ -3094,6 +3094,14 @@ class AgenteApp:
             servidor, estacao = lidos()
             if not servidor or not estacao:
                 return lbl.config(text="Preencha o servidor e o nome da estacao", fg="#ef4444")
+            if estacao != self.estacao and self.identificador and self.aprovada:
+                # 1.18: o servidor reconhece o PC pelo id; nome novo vira um
+                # pedido em Novas estacoes (ate aceitar, segue com o atual)
+                import tkinter.messagebox as _mb
+                _mb.showinfo("Troca de nome", (
+                    f"O nome {estacao} vai para aprovação no painel (Mapa → Novas estações).\n\n"
+                    f"Até um administrador aceitar, este computador continua como {self.estacao}. "
+                    "Também dá para trocar direto pelo lápis da estação no Mapa."), parent=janela)
             salvar_cfg(servidor, estacao)
             self._log(f"Conexao trocada para {servidor} / {estacao} - reiniciando o agente")
             # Recomeca do zero com o agente.cfg novo (como na atualizacao)

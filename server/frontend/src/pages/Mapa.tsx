@@ -184,7 +184,9 @@ function montarZonas(grupos: Grupo[], estacoes: Estacao[], comSemGrupo: boolean)
 }
 
 export default function Mapa() {
-  const { estacoes, grupos, piso, sessaoDaEstacao, agora, recarregar, recarregarEstacoes, pendentes } = useDados()
+  const { estacoes, grupos, piso, sessaoDaEstacao, agora, recarregar, recarregarEstacoes, pendentes, pedidosNome } =
+    useDados()
+  const aguardando = pendentes.length + pedidosNome.length
   const [vendoPendentes, setVendoPendentes] = useState(false)
   const avisar = useAvisos()
   const admin = Api.ehAdmin()
@@ -393,7 +395,7 @@ export default function Mapa() {
             Ajustar
           </button>
         </div>
-        {admin && pendentes.length > 0 && (
+        {admin && aguardando > 0 && (
           <Button
             size="sm"
             variant="outline"
@@ -402,7 +404,7 @@ export default function Mapa() {
           >
             <IconDeviceDesktopPlus size={14} /> Novas estações
             <span className="rounded-full bg-manutencao px-1.5 text-[0.7rem] font-bold text-fundo tabular-nums">
-              {pendentes.length}
+              {aguardando}
             </span>
           </Button>
         )}
@@ -507,7 +509,7 @@ export default function Mapa() {
         )}
       </div>
 
-      <ModalPendentes aberto={vendoPendentes && pendentes.length > 0} aoFechar={() => setVendoPendentes(false)} />
+      <ModalPendentes aberto={vendoPendentes && aguardando > 0} aoFechar={() => setVendoPendentes(false)} />
       <ModalNovaEstacao
         aberto={novaEstacaoEm !== undefined}
         grupoInicial={novaEstacaoEm ?? null}
@@ -1225,7 +1227,7 @@ function ModalNovaEstacao({
 // ── Novas estações (PCs instalados esperando aprovação) ─────────────────────
 
 function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
-  const { pendentes, piso, grupos } = useDados()
+  const { pendentes, pedidosNome, piso, grupos } = useDados()
   // todas as estacoes (de todos os pisos), para "Substitui a ..."
   const [existentes, setExistentes] = useState<Estacao[]>([])
   useEffect(() => {
@@ -1234,13 +1236,25 @@ function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =>
   return (
     <Modal titulo="Novas estações" aberto={aberto} aoFechar={aoFechar}>
       <div className="flex flex-col gap-3">
-        <p className="text-sm text-texto-suave">
+        {pendentes.length > 0 && <p className="text-sm text-texto-suave">
           Computadores instalados que ainda não foram aprovados. Até aprovar, ninguém faz login neles. Escolha o nome
           e a zona {piso ? `(zonas do piso ${piso.nome}; troque o piso no topo para ver outras)` : ""}.
-        </p>
+        </p>}
         {pendentes.map((p) => (
           <LinhaPendente key={p.id} estacao={p} grupos={grupos} existentes={existentes} />
         ))}
+        {pedidosNome.length > 0 && (
+          <>
+            <h3 className="mt-2 text-sm font-semibold">Nome trocado no computador</h3>
+            <p className="-mt-2 text-xs text-texto-fraco">
+              Alguém trocou o nome na Configuração de conexão do próprio PC. Até você aceitar, a estação segue com o
+              nome atual.
+            </p>
+            {pedidosNome.map((e) => (
+              <LinhaPedidoNome key={e.id} estacao={e} />
+            ))}
+          </>
+        )}
       </div>
     </Modal>
   )
@@ -1395,5 +1409,48 @@ function LinhaPendente({
       </div>
       <MensagemErro>{erro}</MensagemErro>
     </form>
+  )
+}
+
+/** "AD-01 quer se chamar AD-05": aceitar renomeia (e avisa o PC); recusar mantém. */
+function LinhaPedidoNome({ estacao: e }: { estacao: Estacao }) {
+  const { recarregarEstacoes, recarregarPendentes } = useDados()
+  const avisar = useAvisos()
+  const [enviando, setEnviando] = useState(false)
+
+  async function responder(aceitar: boolean) {
+    setEnviando(true)
+    try {
+      if (aceitar) {
+        await Api.post(`/api/estacoes/${e.id}/nome_pedido`)
+        avisar(`${e.nome} agora se chama ${e.nome_pedido}`)
+      } else {
+        await Api.del(`/api/estacoes/${e.id}/nome_pedido`)
+        avisar(`${e.nome} continua com o mesmo nome`)
+      }
+      await Promise.all([recarregarEstacoes(), recarregarPendentes()])
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-borda bg-superficie-2 p-3 text-sm">
+      <span>
+        <strong>{e.nome}</strong>
+        {e.grupo_nome && <span className="text-texto-fraco"> ({e.grupo_nome})</span>} quer se chamar{" "}
+        <strong>{e.nome_pedido}</strong>
+      </span>
+      <div className="flex flex-1 justify-end gap-1.5">
+        <Button type="button" size="sm" variant="outline" disabled={enviando} onClick={() => responder(false)}>
+          Recusar
+        </Button>
+        <Button type="button" size="sm" className="gap-1" disabled={enviando} onClick={() => responder(true)}>
+          <IconCheck size={14} /> Aceitar
+        </Button>
+      </div>
+    </div>
   )
 }

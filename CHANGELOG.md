@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-10 — Nome trocado no PC pede aprovação (agente 1.18.0)
+
+- Corrigido: trocar o nome da estação no próprio PC (Ctrl+Shift+M → Configurar conexão) não fazia nada e não dava erro (o servidor reconhece o PC pelo identificador e devolvia o nome antigo).
+- Agora vira um pedido em **Mapa → Novas estações**: "AD-01 quer se chamar AD-05", com **Aceitar** (renomeia e avisa o PC na hora) e **Recusar**. Até aceitar, a estação segue com o nome atual. O botão Novas estações conta os pedidos junto com os PCs novos.
+- PC ainda não aprovado: trocar o nome no PC só muda o nome com que ele aparece para aprovar.
+- Agente 1.18.0: ao salvar um nome novo em Configurar conexão, avisa que ele vai para aprovação no painel.
+- Registro de ações: aceitar entra como "Renomeou estação" (pedido do PC); recusar, "Recusou o nome pedido pelo PC".
+
 ## 2026-11-10 — Instalador instala o Python e as dependências sozinho
 
 - Máquina nova não precisa de nada antes, só de internet: o `instalar.bat` baixa o Python 3.13.17 do python.org e instala um **Python só do agente** em `C:\MatheCafe\python` (com Tkinter; sem atalho, sem PATH e sem mexer em outro Python da máquina). Depois instala as dependências do `requirements.txt` (websockets, psutil, Pillow) pelo pip.

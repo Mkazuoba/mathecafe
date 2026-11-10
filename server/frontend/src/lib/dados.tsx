@@ -29,6 +29,8 @@ interface Dados {
   recarregarEstacoes: () => Promise<void>
   /** PCs instalados que esperam aprovação (Mapa → Novas estações), de todos os pisos. */
   pendentes: Estacao[]
+  /** Estações cujo nome foi trocado no próprio PC e espera aprovação. */
+  pedidosNome: Estacao[]
   recarregarPendentes: () => Promise<void>
   sessaoDaEstacao: (nome: string) => Sessao | undefined
 }
@@ -61,9 +63,15 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     setEstacoes(await Api.get<Estacao[]>("/api/estacoes/"))
   }, [])
   const [pendentes, setPendentes] = useState<Estacao[]>([])
+  const [pedidosNome, setPedidosNome] = useState<Estacao[]>([])
   const recarregarPendentes = useCallback(async () => {
     // servidor antigo (sem a rota) devolve 404/422: sem pendentes
-    setPendentes(await Api.get<Estacao[]>("/api/estacoes/pendentes").catch(() => []))
+    const [p, n] = await Promise.all([
+      Api.get<Estacao[]>("/api/estacoes/pendentes").catch(() => []),
+      Api.get<Estacao[]>("/api/estacoes/pedidos_nome").catch(() => []),
+    ])
+    setPendentes(p)
+    setPedidosNome(n)
   }, [])
   // Clientes (~43k) nunca sao carregados em massa: cada tela busca no
   // servidor com useBuscaClientes (lib/buscaClientes.ts).
@@ -200,11 +208,12 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       recarregarFila,
       recarregarEstacoes,
       pendentes,
+      pedidosNome,
       recarregarPendentes,
       sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
     }),
     [pisos, piso, trocarPiso, recarregarPisos, doPiso, versaoClientes, sessoes, grupos, carregado, tempoReal, agora, recarregar,
-     recarregarClientes, recarregarFila, recarregarEstacoes, pendentes, recarregarPendentes],
+     recarregarClientes, recarregarFila, recarregarEstacoes, pendentes, pedidosNome, recarregarPendentes],
   )
 
   return <DadosContext.Provider value={valor}>{children}</DadosContext.Provider>
