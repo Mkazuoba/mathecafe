@@ -35,7 +35,15 @@ interface SessaoHistorico {
   motivo_encerramento: string | null
 }
 
-type AbaEstacao = "geral" | "comandos" | "historico"
+type AbaEstacao = "geral" | "comandos" | "historico" | "log"
+
+// Uma linha do log de comunicacao do agente (saiu da tela do PC)
+interface LinhaLog {
+  ts: string
+  msg: string
+}
+
+const LIMITE_LOG = 300
 
 // Cliente sendo arrastado (drag and drop nativo do navegador)
 const TIPO_ARRASTO = "application/x-mathecafe-cliente"
@@ -577,6 +585,18 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
 
   const [streaming, setStreaming] = useState(false)
   const [frameUrl, setFrameUrl] = useState<string | null>(null)
+  // log do agente: o servidor guarda as ultimas linhas; as novas chegam pelo WS
+  const [log, setLog] = useState<LinhaLog[] | null>(null)
+  const [erroLog, setErroLog] = useState("")
+  const carregarLog = () => {
+    setErroLog("")
+    Api.get<LinhaLog[]>(`/api/estacoes/${e.id}/logs`)
+      .then((r) => setLog(r ?? []))
+      .catch((err: Error) => setErroLog(err.message))
+  }
+  useEffect(() => {
+    if (aba === "log") carregarLog()
+  }, [aba, e.id])
 
   // Escuta captura_tela, tela_frame e log_agente via WebSocket.
   // Usa polling para re-registrar quando o WS for substituido apos reconexao.
@@ -592,8 +612,8 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
           setFrameUrl("data:image/jpeg;base64," + msg.dados.imagem)
         }
         if (msg.evento === "log_agente") {
-          const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-          void ts // log_agente ignorado nesta versao
+          const linha: LinhaLog = { ts: msg.dados.ts, msg: msg.dados.msg }
+          setLog((atual) => (atual ? [...atual, linha].slice(-LIMITE_LOG) : atual))
         }
       } catch { /* ignore */ }
     }
@@ -638,6 +658,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
     { id: "geral", label: "Geral" },
     { id: "comandos", label: "Comandos" },
     { id: "historico", label: "Historico" },
+    { id: "log", label: "Log" },
   ]
 
   return (
@@ -726,6 +747,9 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
           )}
           {aba === "historico" && (
             <AbaHistorico estacao={e.nome} />
+          )}
+          {aba === "log" && (
+            <AbaLog linhas={log} erro={erroLog} aoAtualizar={carregarLog} />
           )}
         </div>
 
@@ -1134,6 +1158,51 @@ function SecaoComando({ titulo, children }: { titulo: string; children: React.Re
 // ---------------------------------------------------------------------------
 // Aba: Histórico
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Aba: Log (o log de comunicacao que ficava na tela do PC)
+// ---------------------------------------------------------------------------
+function AbaLog({ linhas, erro, aoAtualizar }: { linhas: LinhaLog[] | null; erro: string; aoAtualizar: () => void }) {
+  const caixa = useRef<HTMLDivElement>(null)
+  const [seguir, setSeguir] = useState(true)
+
+  // acompanha o fim enquanto o operador nao rolar para cima
+  useEffect(() => {
+    if (seguir && caixa.current) caixa.current.scrollTop = caixa.current.scrollHeight
+  }, [linhas, seguir])
+
+  if (erro) return <p className="text-sm text-perigo">{erro}</p>
+  if (!linhas) return <p className="py-8 text-center text-sm text-texto-fraco">Carregando...</p>
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        ref={caixa}
+        onScroll={(ev) => {
+          const el = ev.currentTarget
+          setSeguir(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
+        }}
+        className="h-72 overflow-auto rounded-md border border-borda bg-superficie-2 p-2 font-mono text-xs leading-relaxed"
+      >
+        {linhas.length === 0 ? (
+          <p className="py-6 text-center font-sans text-texto-fraco">Nada registrado desde que o servidor iniciou.</p>
+        ) : (
+          linhas.map((l, i) => (
+            <div key={i} className="break-words">
+              <span className="text-texto-fraco">[{l.ts}]</span> {l.msg}
+            </div>
+          ))
+        )}
+      </div>
+      <div className="flex items-center justify-between text-xs text-texto-fraco">
+        <span>Últimas {LIMITE_LOG} linhas, ao vivo. Reiniciar o servidor apaga.</span>
+        <Button variant="outline" size="sm" onClick={aoAtualizar}>
+          <IconRefresh size={14} className="mr-1.5" /> Atualizar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function AbaHistorico({ estacao }: { estacao: string }) {
   const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
   const [carregando, setCarregando] = useState(true)

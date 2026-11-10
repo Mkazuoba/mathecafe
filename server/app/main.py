@@ -11,7 +11,7 @@ from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppP
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
 from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso, whitelist_para_o_agente
-from app import horario
+from app import horario, logs_estacoes
 from app.estacoes_novas import AGUARDANDO, estacao_do_agente, info_para_o_agente
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
 from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router, categorias
@@ -515,6 +515,12 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
             elif evento == "tela_frame":
                 imagem_b64 = (dados.get("dados") or {}).get("imagem", "")
                 await manager.broadcast_paineis("tela_frame", {"estacao": nome, "imagem": imagem_b64})
+
+            elif evento == "log_agente":
+                # o log de comunicacao do agente (nao aparece mais na tela do PC)
+                d = dados.get("dados") or {}
+                linha = logs_estacoes.registrar(estacao_id, d.get("msg"), d.get("ts"))
+                await manager.broadcast_paineis("log_agente", {"estacao": nome, **linha})
 
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
