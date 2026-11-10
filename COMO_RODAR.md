@@ -97,7 +97,7 @@ npm run build        # compila para server/app/static
 
 Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/)). Se ele estiver instalado só para o admin (o padrão do python.org, no perfil dele), o instalador **copia o Python para `C:\MatheCafe\python`**, porque o `cliente` não lê o perfil do admin. O Python da Microsoft Store não serve: o instalador recusa.
 
-Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas: o **nome da estação** (Enter usa o nome do Windows), o **endereço do servidor** e a senha do usuário `cliente`. Não pede login do painel. Ele:
+Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas: o **nome da estação** (Enter usa o nome do Windows), o **endereço do servidor** (Enter usa o de `agente/servidor.txt`, hoje `10.26.31.77:8000`; se o servidor mudar de IP, troque esse arquivo) e a senha do usuário `cliente`. Não pede login do painel. Ele testa na hora se o servidor responde: se não, avisa e pede o endereço de novo (ou continua com **C**). Ele:
 
 1. cria o usuário Windows `cliente` (sem admin, senha que não expira) e liga o autologin;
 2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;

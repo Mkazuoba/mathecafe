@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-10 — Instalador sugere e testa o endereço do servidor
+
+- O `instalar.bat` sugere o endereço do servidor (Enter = a 1ª linha de `agente/servidor.txt`, hoje `10.26.31.77:8000`) e **testa a conexão na hora**. Se o servidor não responde, avisa e pede o endereço de novo, ou continua com **C**. Antes, um endereço errado terminava em "Instalação concluída" e o PC só nunca aparecia no painel.
+- Corrigido: o exemplo do instalador apontava para 10.26.31.99 (o servidor é o .77).
+- Aceita o endereço com `http://`, `https://`, `ws://` e barra no fim.
+
 ## 2026-11-10 — Reiniciar o servidor pelo Windows, sem administrador
 
 - **`server\reiniciar_servidor.bat`**: clique duplo no computador do servidor reinicia o MatheCafé (aplica atualizações do código) sem reiniciar o computador, sem PowerShell de administrador e sem entrar no painel. Ele deixa um pedido (`reiniciar.pedido`) que o servidor da tarefa atende em até 2 s; o `iniciar_servidor.bat` sobe de novo e o `.bat` avisa quando voltou.

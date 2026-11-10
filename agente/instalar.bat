@@ -81,16 +81,47 @@ if "!ESTACAO!"=="" set ESTACAO=%COMPUTERNAME%
 :: o servidor guarda ate 20 caracteres
 set ESTACAO=!ESTACAO:~0,20!
 
-set /p SERVIDOR="Endereco do servidor (ex: 10.26.31.99:8000): "
-if "!SERVIDOR!"=="" (
-    echo ERRO: Endereco do servidor nao pode ser vazio.
-    pause
-    exit /b 1
+:: Endereco sugerido: a 1a linha do servidor.txt ao lado deste instalador
+:: (troque la se o servidor mudar de IP). Enter vazio = ele.
+set SERVIDOR_PADRAO=
+if exist "%ORIGEM%servidor.txt" set /p SERVIDOR_PADRAO=<"%ORIGEM%servidor.txt"
+if defined SERVIDOR_PADRAO set SERVIDOR_PADRAO=!SERVIDOR_PADRAO: =!
+
+:pedir_servidor
+set SERVIDOR=
+if defined SERVIDOR_PADRAO (
+    set /p SERVIDOR="Endereco do servidor [Enter = !SERVIDOR_PADRAO!]: "
+    if "!SERVIDOR!"=="" set SERVIDOR=!SERVIDOR_PADRAO!
+) else (
+    set /p SERVIDOR="Endereco do servidor (IP:porta, ex: 10.26.31.77:8000): "
 )
-:: Aceita o endereco com ou sem protocolo
+if "!SERVIDOR!"=="" (
+    echo Informe o endereco do servidor.
+    goto pedir_servidor
+)
+:: Aceita o endereco com ou sem protocolo e barra no fim
 set SERVIDOR=!SERVIDOR: =!
+set SERVIDOR=!SERVIDOR:https://=!
 set SERVIDOR=!SERVIDOR:http://=!
+set SERVIDOR=!SERVIDOR:wss://=!
 set SERVIDOR=!SERVIDOR:ws://=!
+if "!SERVIDOR:~-1!"=="/" set SERVIDOR=!SERVIDOR:~0,-1!
+
+:: Confere agora se o servidor responde: endereco errado nao da erro nenhum
+:: depois, o PC so nunca aparece no painel. --noproxy: a rede tem proxy.
+echo Testando a conexao com o servidor !SERVIDOR!...
+curl -s -f -m 5 --noproxy "*" -o nul "http://!SERVIDOR!/health"
+if errorlevel 1 (
+    echo.
+    echo ATENCAO: o servidor nao respondeu em http://!SERVIDOR!
+    echo Confira o endereco, se o servidor esta ligado e se este PC esta na rede.
+    set RESPOSTA=
+    set /p RESPOSTA="Digitar o endereco de novo [Enter] ou continuar assim mesmo [C]? "
+    if /i not "!RESPOSTA!"=="C" goto pedir_servidor
+    echo Continuando: o PC aparece no painel quando conseguir falar com o servidor.
+) else (
+    echo   O servidor respondeu.
+)
 
 echo.
 echo ---- Conta Windows do cliente ----

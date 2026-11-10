@@ -772,3 +772,17 @@ def test_rolagem_da_grade_volta_em_cada_sessao():
     mostrar = src[src.index("class TelaApps:"):]
     mostrar = mostrar[mostrar.index("    def mostrar(self, apps):"):mostrar.index("    def _baixar_capa(")]
     assert 'bind_all("<MouseWheel>", self._rolar)' in mostrar
+
+
+def test_instalador_sugere_e_testa_o_servidor():
+    # 10/11: o exemplo apontava para 10.26.31.99 (o servidor e o .77) e um
+    # endereco errado so aparecia como "o PC nunca chega ao painel"
+    pasta = os.path.dirname(AGENTE)
+    texto = open(os.path.join(pasta, "instalar.bat"), "rb").read().decode("ascii")
+    assert "10.26.31.99" not in texto
+    assert 'servidor.txt' in texto and "SERVIDOR_PADRAO" in texto
+    assert "/health" in texto and "goto pedir_servidor" in texto
+    assert "--noproxy" in texto  # rede da biblioteca tem proxy
+    padrao = open(os.path.join(pasta, "servidor.txt"), encoding="ascii").readline().strip()
+    host, porta = padrao.rsplit(":", 1)
+    assert host.count(".") == 3 and porta.isdigit() and "://" not in padrao
