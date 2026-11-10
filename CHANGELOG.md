@@ -2,8 +2,16 @@
 
 ## 2026-11-10 — Reiniciar o servidor pelo Windows, sem administrador
 
-- **`servereiniciar_servidor.bat`**: clique duplo no computador do servidor reinicia o MatheCafé (aplica atualizações do código) sem reiniciar o computador, sem PowerShell de administrador e sem entrar no painel. Ele deixa um pedido (`reiniciar.pedido`) que o servidor da tarefa atende em até 2 s; o `iniciar_servidor.bat` sobe de novo e o `.bat` avisa quando voltou.
+- **`server\reiniciar_servidor.bat`**: clique duplo no computador do servidor reinicia o MatheCafé (aplica atualizações do código) sem reiniciar o computador, sem PowerShell de administrador e sem entrar no painel. Ele deixa um pedido (`reiniciar.pedido`) que o servidor da tarefa atende em até 2 s; o `iniciar_servidor.bat` sobe de novo e o `.bat` avisa quando voltou.
 - Só é atendido por um servidor de 10/11 em diante: na primeira vez, reinicie pelo botão do painel (Configurações → Servidor → Reiniciar servidor).
+
+## 2026-11-10 — Login do PC em duas metades, com os cartazes (9.9; agente 1.17.0)
+
+- **Tela de login do cliente redesenhada** (modelo enviado pelo Matheus): formulário à esquerda ("Entre na sua conta", Login, Senha com o **olho** para mostrar/esconder, Entrar) e, à direita, os **cartazes da Programação** inteiros sobre eles mesmos desfocados, com o título digitando letra a letra entre aspas. Os cartazes passam sozinhos (fade).
+- Sem cartaz, a metade direita fica num degradê da cor do piso com "Bem-vindo(a) à biblioteca! Faça login para começar."
+- No lugar de "criar conta"/Google: "Não tem cadastro? Fale com um funcionário da biblioteca."
+- Os cartazes agora são carregados ao conectar e sempre que mudam no painel (antes só durante a sessão).
+- Corrigido: a roda do mouse parava de rolar a grade a partir da segunda sessão.
 
 ## 2026-11-09 — Substituir computador, atualizar pelo painel e correções (agente 1.16.0)
 

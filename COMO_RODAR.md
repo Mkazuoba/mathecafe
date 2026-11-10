@@ -51,7 +51,7 @@ Ele cria a tarefa `MatheCafe-Servidor` (na inicialização do Windows, como SYST
 
 - Log: `server\logs\servidor.log`.
 - **Reiniciar** (depois de atualizar o código ou trocar o banco), sem reiniciar o computador e sem administrador do Windows, de um destes jeitos:
-  - no computador do servidor, clique duas vezes em **`servereiniciar_servidor.bat`**: ele pede o reinício e espera o servidor voltar (uns 10 s);
+  - no computador do servidor, clique duas vezes em **`server\reiniciar_servidor.bat`**: ele pede o reinício e espera o servidor voltar (uns 10 s);
   - no painel, Configurações → Servidor → **Reiniciar servidor** (admin do MatheCafé).
 
   Os dois só funcionam com o servidor aberto pela tarefa `MatheCafe-Servidor` (desde 10/11 o `reiniciar_servidor.bat` só é atendido por servidor de 10/11 em diante: na primeira vez, use o botão do painel). O servidor termina e o `iniciar_servidor.bat` o sobe de novo em 3 s; as estações com agente 1.8+ seguem a sessão. Pela linha de comando, num PowerShell **como administrador** ("Executar como administrador"): `schtasks /end /tn MatheCafe-Servidor` e `schtasks /run /tn MatheCafe-Servidor`.
