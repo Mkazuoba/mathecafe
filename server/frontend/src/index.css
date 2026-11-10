@@ -3,37 +3,47 @@
 /* Mesma identidade do painel HTML: fundo escuro, índigo como destaque e uma
    cor por status de estação (livre, ocupada, desligada, manutenção). */
 @theme {
-  --font-sans: "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Geist", "Inter", "Segoe UI", system-ui, sans-serif;
+  /* horários e números (tabular-nums vira Geist Mono, ver abaixo) */
+  --font-mono: "Geist Mono", ui-monospace, Consolas, monospace;
 
-  --color-fundo: #0f1117;
-  --color-superficie: #171b26;
-  --color-superficie-2: #1e2333;
-  --color-superficie-3: #252b3b;
-  --color-borda: #2a3045;
-  --color-borda-forte: #3a4560;
-  --color-texto: #e2e8f0;
-  --color-texto-suave: #94a3b8;
-  --color-texto-fraco: #64748b;
+  /* Teste visual (ramo teste-visual): paleta Zinc, cartões translúcidos e
+     selos de status em tons suaves, no estilo shadcn/ui. */
+  --color-fundo: #09090b; /* zinc-950 */
+  --color-superficie: #111113; /* zinc-900/50 sobre o fundo */
+  --color-superficie-2: #18181b; /* zinc-900 */
+  --color-superficie-3: #1f1f23;
+  --color-borda: #232326; /* zinc-800/60 */
+  --color-borda-forte: #3f3f46; /* zinc-700 */
+  --color-texto: #f4f4f5; /* zinc-100: nunca branco puro */
+  --color-texto-suave: #a1a1aa; /* zinc-400 */
+  --color-texto-fraco: #71717a; /* zinc-500 */
+  /* escala de tipografia (21st.dev/shadcn): cada papel com seu cinza */
+  --color-texto-menu: #e4e4e7; /* zinc-200: itens do menu */
+  --color-texto-sub: #a1a1aa; /* zinc-400: subitens do menu */
+  --color-texto-celula: #d4d4d8; /* zinc-300: células de tabela */
+  --color-rotulo: #a1a1aa; /* zinc-400: títulos de grupo e cabeçalhos */
 
   --color-destaque: #6366f1;
   --color-destaque-forte: #4f46e5;
   --color-destaque-fundo: #1e1b4b;
 
-  --color-livre: #22c55e;
-  --color-livre-fundo: #052e16;
-  --color-livre-borda: #166534;
-  --color-ocupada: #f97316;
-  --color-ocupada-fundo: #2c1003;
-  --color-ocupada-borda: #7c2d12;
-  --color-desligada: #64748b;
-  --color-desligada-fundo: #1e2333;
-  --color-manutencao: #f59e0b;
-  --color-manutencao-fundo: #2c1a00;
-  --color-manutencao-borda: #78350f;
+  --color-livre: #34d399; /* emerald-400 */
+  --color-livre-fundo: color-mix(in srgb, #10b981 10%, transparent);
+  --color-livre-borda: color-mix(in srgb, #10b981 20%, transparent);
+  --color-ocupada: #fbbf24; /* amber-400 */
+  --color-ocupada-fundo: color-mix(in srgb, #f59e0b 10%, transparent);
+  --color-ocupada-borda: color-mix(in srgb, #f59e0b 20%, transparent);
+  --color-desligada: #a1a1aa; /* zinc-400 */
+  --color-desligada-fundo: color-mix(in srgb, #27272a 50%, transparent);
+  --color-desligada-borda: color-mix(in srgb, #3f3f46 50%, transparent);
+  --color-manutencao: #38bdf8; /* sky-400 (o âmbar ficou para "ocupada") */
+  --color-manutencao-fundo: color-mix(in srgb, #0ea5e9 10%, transparent);
+  --color-manutencao-borda: color-mix(in srgb, #0ea5e9 20%, transparent);
 
-  --color-perigo: #ef4444;
-  --color-perigo-fundo: #2c0a0a;
-  --color-perigo-borda: #7f1d1d;
+  --color-perigo: #f87171;
+  --color-perigo-fundo: color-mix(in srgb, #ef4444 10%, transparent);
+  --color-perigo-borda: color-mix(in srgb, #ef4444 30%, transparent);
 
   /* Piso escolhido no cabeçalho: --color-piso recebe a cor cadastrada do piso
      (lib/piso.tsx, aplicarCorDoPiso); o fundo e a borda saem dela. */
@@ -51,15 +61,19 @@
 :root[data-tema="claro"] {
   color-scheme: light;
 
-  --color-fundo: #f4f5fa;
+  --color-fundo: #fafafa;
   --color-superficie: #ffffff;
-  --color-superficie-2: #f0f2f7;
-  --color-superficie-3: #e5e8f0;
-  --color-borda: #dcdfeb;
-  --color-borda-forte: #c3c8d8;
-  --color-texto: #171b26;
-  --color-texto-suave: #4b5368;
-  --color-texto-fraco: #7a8298;
+  --color-superficie-2: #f4f4f5;
+  --color-superficie-3: #e4e4e7;
+  --color-borda: #e4e4e7;
+  --color-borda-forte: #d4d4d8;
+  --color-texto: #18181b; /* zinc-900: nunca preto puro */
+  --color-texto-suave: #52525b;
+  --color-texto-fraco: #71717a;
+  --color-texto-menu: #27272a; /* zinc-800 */
+  --color-texto-sub: #52525b; /* zinc-600 */
+  --color-texto-celula: #3f3f46; /* zinc-700 */
+  --color-rotulo: #71717a; /* zinc-500 */
 
   --color-destaque: #4f46e5;
   --color-destaque-forte: #4338ca;
@@ -68,14 +82,15 @@
   --color-livre: #15803d;
   --color-livre-fundo: #dcf3e3;
   --color-livre-borda: #86d5a3;
-  --color-ocupada: #c2410c;
-  --color-ocupada-fundo: #ffedd5;
-  --color-ocupada-borda: #f7b37a;
   --color-desligada: #64748b;
   --color-desligada-fundo: #eceef6;
-  --color-manutencao: #b45309;
-  --color-manutencao-fundo: #fef3c7;
-  --color-manutencao-borda: #f0c75e;
+  --color-desligada-borda: #d4d7e2;
+  --color-ocupada: #b45309;
+  --color-ocupada-fundo: #fef3c7;
+  --color-ocupada-borda: #f0c75e;
+  --color-manutencao: #0369a1;
+  --color-manutencao-fundo: #e0f2fe;
+  --color-manutencao-borda: #7dd3fc;
 
   --color-perigo: #dc2626;
   --color-perigo-fundo: #fee2e2;
@@ -96,6 +111,33 @@ body {
   background: var(--color-fundo);
   color: var(--color-texto);
   font-family: var(--font-sans);
+  /* antialiased (Tailwind): texto fino e nítido no fundo escuro */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* números com a mesma largura: os relógios HH:MM:SS não tremem */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabelas do painel todo: cabeçalho pequeno em caixa alta, células em 13px.
+   Fica em base, então uma classe no próprio elemento ainda vale mais. */
+@layer base {
+  th {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-rotulo);
+  }
+  td {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-texto-celula);
+  }
+}
+
+/* Horários e contadores (já marcados com tabular-nums) em Geist Mono */
+.tabular-nums {
+  font-family: var(--font-mono);
 }
 
 ::-webkit-scrollbar {
@@ -123,4 +165,23 @@ body {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Busca global (Ctrl+K): entrada com zoom sutil, como o zoom-in-95 do shadcn */
+@keyframes entrar-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+@keyframes entrar-fade {
+  from {
+    opacity: 0;
+  }
+}
+.animar-zoom {
+  animation: entrar-zoom 150ms ease-out;
+}
+.animar-fade {
+  animation: entrar-fade 150ms ease-out;
 }

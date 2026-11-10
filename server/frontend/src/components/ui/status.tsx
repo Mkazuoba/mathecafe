@@ -11,13 +11,14 @@ export const ROTULO_STATUS: Record<StatusEstacao, string> = {
 const CORES: Record<StatusEstacao, string> = {
   livre: "border-livre-borda bg-livre-fundo text-livre",
   ocupada: "border-ocupada-borda bg-ocupada-fundo text-ocupada",
-  desligada: "border-transparent bg-desligada-fundo text-desligada",
+  desligada: "border-desligada-borda bg-desligada-fundo text-desligada",
   manutencao: "border-manutencao-borda bg-manutencao-fundo text-manutencao",
 }
 
 export function SeloStatus({ status }: { status: StatusEstacao }) {
   return (
-    <span className={cn("rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold tracking-wide uppercase", CORES[status])}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize", CORES[status])}>
+      <span className="size-1.5 rounded-full bg-current" />
       {ROTULO_STATUS[status]}
     </span>
   )
@@ -28,7 +29,7 @@ export function SeloAtivo({ ativo }: { ativo: boolean }) {
     <span
       className={cn(
         "rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold uppercase",
-        ativo ? "border-livre-borda bg-livre-fundo text-livre" : "border-transparent bg-desligada-fundo text-desligada",
+        ativo ? "border-livre-borda bg-livre-fundo text-livre" : "border-desligada-borda bg-desligada-fundo text-desligada",
       )}
     >
       {ativo ? "Ativo" : "Inativo"}

@@ -128,15 +128,14 @@ export function ColunasAjustaveis<Id extends string>({ layout, padrao, aoMudar, 
   return (
     <div
       ref={caixa}
-      className={cn("flex min-h-0 flex-1 flex-col overflow-auto lg:flex-row lg:overflow-hidden", arrastando != null && "cursor-col-resize select-none")}
+      className={cn("flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 lg:flex-row lg:overflow-hidden", arrastando != null && "cursor-col-resize select-none")}
     >
       {layout.ordem.map((id, i) => (
         <div
           key={id}
-          style={larga ? { width: `${layout.larguras[id]}%` } : undefined}
+          style={larga ? { width: `calc(${layout.larguras[id]}% - ${(12 * (layout.ordem.length - 1)) / layout.ordem.length}px)` } : undefined}
           className={cn(
-            "relative flex min-w-0 shrink-0 flex-col border-borda lg:min-h-0",
-            i < layout.ordem.length - 1 && "border-b lg:border-r lg:border-b-0",
+            "relative flex min-w-0 shrink-0 flex-col rounded-xl border border-borda bg-superficie/50 lg:min-h-0",
           )}
         >
           {children(id, i)}
@@ -149,7 +148,7 @@ export function ColunasAjustaveis<Id extends string>({ layout, padrao, aoMudar, 
               onPointerDown={(ev) => iniciarArrasto(ev, i)}
               onDoubleClick={() => aoMudar({ ...layout, larguras: padrao.larguras })}
               className={cn(
-                "absolute top-0 -right-1 z-20 h-full w-2 cursor-col-resize transition-colors hover:bg-destaque/40",
+                "absolute top-0 -right-[10px] z-20 h-full w-2 cursor-col-resize rounded-full transition-colors hover:bg-destaque/40",
                 arrastando === i && "bg-destaque/60",
               )}
             />

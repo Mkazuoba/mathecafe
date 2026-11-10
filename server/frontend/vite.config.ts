@@ -6,6 +6,9 @@ import { defineConfig } from "vite"
 // O build vai direto para server/app/static, que o FastAPI serve: assim o
 // deploy (Render) não precisa de Node. Em desenvolvimento (`npm run dev`),
 // as chamadas /api e /ws vão para o servidor Python em 127.0.0.1:8000.
+// MATHECAFE_API troca o servidor do `npm run dev` (ex.: o de teste na 8010).
+const api = process.env.MATHECAFE_API ?? "http://127.0.0.1:8000"
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -15,8 +18,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/ws": { target: "ws://127.0.0.1:8000", ws: true },
+      "/api": api,
+      "/ws": { target: api.replace(/^http/, "ws"), ws: true },
     },
   },
   build: {

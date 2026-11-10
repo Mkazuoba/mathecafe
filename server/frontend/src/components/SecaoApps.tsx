@@ -216,7 +216,7 @@ export function SecaoApps() {
               }}
               className={cn(
                 "rounded-md px-3 py-1",
-                status === v ? "bg-destaque text-white" : "text-texto-suave hover:text-texto",
+                status === v ? "bg-destaque text-zinc-100" : "text-texto-suave hover:text-texto",
               )}
             >
               {rotulo}
@@ -361,7 +361,7 @@ export function SecaoApps() {
                   onClick={() => setPagina(i)}
                   className={cn(
                     "size-8 rounded-full text-sm",
-                    i === paginaAtual ? "bg-destaque text-white" : "text-texto-suave hover:text-texto",
+                    i === paginaAtual ? "bg-destaque text-zinc-100" : "text-texto-suave hover:text-texto",
                   )}
                 >
                   {i + 1}
@@ -447,7 +447,7 @@ function CartaoApp({
       ) : (
         <div
           className={cn(
-            "absolute inset-0 flex items-center justify-center bg-gradient-to-br from-superficie-3 to-superficie-2 text-5xl font-bold text-texto-fraco",
+            "absolute inset-0 flex items-center justify-center bg-gradient-to-br from-superficie-3 to-superficie-2 text-5xl font-semibold text-texto-fraco",
             !ligado && "opacity-40",
           )}
         >
@@ -464,7 +464,7 @@ function CartaoApp({
             <span
               key={p.id}
               title={`Ligado também no piso ${p.nome}`}
-              className="inline-flex max-w-full items-center gap-1 truncate rounded bg-black/55 px-1.5 py-0.5 text-[0.62rem] font-medium text-white"
+              className="inline-flex max-w-full items-center gap-1 truncate rounded bg-black/55 px-1.5 py-0.5 text-[0.62rem] font-medium text-zinc-100"
             >
               <span className="size-1.5 shrink-0 rounded-full" style={{ background: p.cor }} />
               {p.nome}
@@ -475,7 +475,7 @@ function CartaoApp({
           <span
             className={cn(
               "flex size-5 shrink-0 items-center justify-center rounded border-2",
-              marcado ? "border-destaque bg-destaque text-white" : "border-white/80 bg-black/40",
+              marcado ? "border-destaque bg-destaque text-zinc-100" : "border-white/80 bg-black/40",
             )}
           >
             {marcado && <IconCheck size={13} />}
@@ -507,10 +507,10 @@ function CartaoApp({
       </div>
 
       <div className="absolute inset-x-2 bottom-2.5 text-center">
-        <div className="line-clamp-2 text-sm font-bold tracking-wide text-white uppercase drop-shadow">{a.nome}</div>
-        <div className="mt-0.5 truncate text-[0.66rem] text-white/75">{a.categoria_nome || "Outros"}</div>
+        <div className="line-clamp-2 text-sm font-semibold tracking-wide text-zinc-100 uppercase drop-shadow">{a.nome}</div>
+        <div className="mt-0.5 truncate text-[0.66rem] text-zinc-100/75">{a.categoria_nome || "Outros"}</div>
         {!a.caminho && <div className="mt-0.5 text-[0.62rem] text-manutencao">sem caminho: não aparece no menu</div>}
-        {!ligado && <div className="mt-0.5 text-[0.62rem] text-white/70">desligado neste piso</div>}
+        {!ligado && <div className="mt-0.5 text-[0.62rem] text-zinc-100/70">desligado neste piso</div>}
       </div>
     </div>
   )
@@ -598,12 +598,12 @@ function ModalApp({
                 onError={(e) => (e.currentTarget.style.display = "none")}
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-4xl font-bold text-texto-fraco">
+              <div className="absolute inset-0 flex items-center justify-center text-4xl font-semibold text-texto-fraco">
                 {(nome.trim() || "?").slice(0, 1).toUpperCase()}
               </div>
             )}
             <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/85 to-transparent" />
-            <div className="absolute inset-x-1.5 bottom-2 line-clamp-2 text-center text-xs font-bold text-white uppercase">
+            <div className="absolute inset-x-1.5 bottom-2 line-clamp-2 text-center text-xs font-semibold text-zinc-100 uppercase">
               {nome.trim() || "Nome do app"}
             </div>
           </div>

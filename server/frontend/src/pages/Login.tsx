@@ -42,7 +42,7 @@ export default function Login() {
     <div className="flex h-full items-center justify-center bg-fundo p-4">
       <form onSubmit={entrar} className="w-full max-w-[340px] rounded-xl border border-borda bg-superficie p-10">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-widest text-destaque">MatheCafé</h1>
+          <h1 className="text-3xl font-semibold tracking-widest text-destaque">MatheCafé</h1>
           <p className="mt-1 text-sm text-texto-suave">Sistema de gerenciamento</p>
         </div>
         <div className="flex flex-col gap-4">

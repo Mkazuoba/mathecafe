@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
@@ -20,7 +20,7 @@ import { FiltrosBusca } from "@/components/FiltrosBusca"
 import { ModalNovoCliente } from "@/components/ModalNovoCliente"
 
 import { Button } from "@/components/ui/button"
-import { ROTULO_STATUS, SeloStatus, Vazio } from "@/components/ui/status"
+import { SeloStatus, Vazio } from "@/components/ui/status"
 
 interface SessaoHistorico {
   id: number
@@ -60,6 +60,16 @@ export default function Painel() {
   const [ficha, setFicha] = useState<number | null>(null)
   const [novoCliente, setNovoCliente] = useState(false)
   const { layout, setLayout, mover, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    const id = Number(params.get("cliente"))
+    if (!id) return
+    setFicha(id)
+    setParams((p) => {
+      p.delete("cliente")
+      return p
+    }, { replace: true })
+  }, [params, setParams])
 
   const contagem = useMemo(
     () => ({
@@ -73,7 +83,7 @@ export default function Painel() {
 
   return (
     <>
-      <div className="flex shrink-0 gap-6 border-b border-borda bg-superficie px-5 py-1.5 text-sm">
+      <div className="flex shrink-0 gap-2 px-3 pt-3 text-sm">
         <Contador cor="bg-livre" valor={contagem.livre} rotulo="livres" />
         <Contador cor="bg-ocupada" valor={contagem.ocupada} rotulo="ocupadas" />
         <Contador cor="bg-desligada" valor={contagem.desligada} rotulo="desligadas" />
@@ -108,7 +118,7 @@ export default function Painel() {
 
 function Contador({ cor, valor, rotulo }: { cor: string; valor: number; rotulo: string }) {
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5 rounded-lg border border-borda bg-superficie/50 px-3 py-1.5">
       <span className={cn("size-2 rounded-full", cor)} />
       <strong className="font-semibold">{valor}</strong>
       <span className="text-xs text-texto-fraco">{rotulo}</span>
@@ -134,18 +144,14 @@ function Coluna({
   piso?: Piso | null
 } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <section className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", piso && "bg-piso-fundo/40")} {...props}>
-      <div
-        className={cn(
-          "flex shrink-0 items-center gap-2 border-b px-3.5 py-2",
-          piso ? "border-piso-borda bg-piso-fundo" : "border-borda bg-superficie-2",
-        )}
-      >
-        <h2 className={cn("truncate text-xs font-semibold tracking-wider uppercase", piso ? "text-piso" : "text-texto-suave")}>
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl" {...props}>
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-borda px-3.5">
+        {piso && <span className="size-2 shrink-0 rounded-full bg-piso" title={`Piso ${piso.nome}`} />}
+        <h2 className={cn("truncate", "text-[11px] font-semibold tracking-[0.05em] text-rotulo uppercase")}>
           {titulo}
           {piso && <> · {piso.nome}</>}
         </h2>
-        <span className={cn("rounded-full px-2 text-xs font-semibold text-white", piso ? "bg-piso" : "bg-destaque")}>{total}</span>
+        <span className="rounded-md border border-borda bg-superficie-3 px-1.5 text-[11px] font-medium text-texto-suave">{total}</span>
         {controles && <span className="ml-auto">{controles}</span>}
       </div>
       {topo}
@@ -233,6 +239,16 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
   const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
   const [abertaId, setAbertaId] = useState<number | null>(null)
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    const id = Number(params.get("estacao"))
+    if (!id) return
+    setAbertaId(id)
+    setParams((p) => {
+      p.delete("estacao")
+      return p
+    }, { replace: true })
+  }, [params, setParams])
   // Estações marcadas para um comando em massa (pelo nome, que é o que a API usa)
   const [marcadas, setMarcadas] = useState<Set<string>>(() => new Set())
 
@@ -290,12 +306,13 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
 
   return (
     // só as estações do piso escolhido (dados.tsx), na cor dele, como as outras colunas
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-piso-fundo/40">
-      <div className="flex shrink-0 items-center gap-2 border-b border-piso-borda bg-piso-fundo px-3.5 py-1.5">
-        <h2 className="text-xs font-semibold tracking-wider whitespace-nowrap text-piso uppercase">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-borda px-3.5">
+        {piso && <span className="size-2 shrink-0 rounded-full bg-piso" title={`Piso ${piso.nome}`} />}
+        <h2 className={cn("whitespace-nowrap", "text-[11px] font-semibold tracking-[0.05em] text-rotulo uppercase")}>
           Controle de sessões{piso && <> · {piso.nome}</>}
         </h2>
-        <span className="rounded-full bg-piso px-2 text-xs font-semibold text-white">
+        <span className="rounded-md border border-borda bg-superficie-3 px-1.5 text-[11px] font-medium text-texto-suave">
           {linhas.length}
         </span>
         <Select
@@ -326,8 +343,8 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
           <Vazio>Nenhuma estação neste grupo.</Vazio>
         ) : (
           <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-superficie">
-              <tr className="border-b border-borda text-left text-xs text-texto-suave">
+            <thead className="sticky top-0 z-10 bg-superficie-2">
+              <tr className="border-b border-borda text-left">
                 <th scope="col" className="w-8 py-1.5 pl-3">
                   <input
                     type="checkbox"
@@ -430,7 +447,7 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
       onClick={aoAbrir}
       onKeyDown={(ev) => ev.key === "Enter" && aoAbrir()}
       className={cn(
-        "cursor-pointer border-b border-borda/60 hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none",
+        "cursor-pointer border-b border-borda/60 transition-all duration-200 ease-in-out hover:bg-texto/5 focus-visible:bg-texto/5 focus-visible:outline-none",
         e.status === "desligada" && "text-texto-suave",
         marcada && "bg-piso-fundo",
         alvo && "bg-destaque/15",
@@ -459,8 +476,8 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
           className="size-4 cursor-pointer accent-[var(--color-piso)]"
         />
       </td>
-      <td className={cn("px-2 py-1.5 font-semibold whitespace-nowrap capitalize", COR_TEXTO_STATUS[e.status])}>
-        {ROTULO_STATUS[e.status]}
+      <td className="px-2 py-1.5 whitespace-nowrap">
+        <SeloStatus status={e.status} />
       </td>
       <td className="px-2 py-1.5 whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5">
@@ -480,7 +497,7 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
           <>
             {cliente}
             {sessao.pausada && (
-              <span className="ml-1.5 rounded bg-manutencao/20 px-1 py-0.5 text-[10px] font-bold text-manutencao uppercase">
+              <span className="ml-1.5 rounded bg-manutencao/20 px-1 py-0.5 text-[10px] font-semibold text-manutencao uppercase">
                 Pausada
               </span>
             )}
@@ -489,8 +506,8 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
       </td>
       <td
         className={cn(
-          "px-2 py-1.5 text-right whitespace-nowrap tabular-nums",
-          !sessao ? "text-texto-fraco" : restante < 300 ? "font-semibold text-perigo" : "text-texto",
+          "px-2 py-1.5 text-right text-[12px] whitespace-nowrap tabular-nums",
+          !sessao ? "text-texto-fraco" : restante < 300 ? "font-medium text-perigo" : "text-texto-celula",
         )}
       >
         {formatarTempo(restante)}
@@ -871,7 +888,7 @@ function VisorTela({ src, estacao, titulo, aoVivo = false, aoFechar }: {
     else caixa.current?.requestFullscreen().catch(() => {})
   }
 
-  const botao = "flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+  const botao = "flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-white/20"
   return createPortal(
     <div
       ref={caixa}
@@ -880,8 +897,8 @@ function VisorTela({ src, estacao, titulo, aoVivo = false, aoFechar }: {
       className="fixed inset-0 z-[2000] flex flex-col bg-black"
       onClick={(ev) => ev.stopPropagation()}
     >
-      <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-sm text-white">
-        {aoVivo && <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold uppercase">● ao vivo</span>}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-sm text-zinc-100">
+        {aoVivo && <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase">● ao vivo</span>}
         <span className="font-semibold">{titulo}</span>
         <span className="flex-1" />
         <button type="button" className={botao} onClick={() => salvarImagem(src, estacao)} title="Salva a imagem que está na tela agora">
@@ -974,14 +991,14 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
                 )
                 : <div className="flex h-32 items-center justify-center text-xs text-texto-fraco">Aguardando primeiro frame...</div>
               }
-              <span className="absolute top-1.5 left-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">● ao vivo</span>
+              <span className="absolute top-1.5 left-1.5 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-100">● ao vivo</span>
               {frameUrl && (
                 <div className="absolute top-1.5 right-1.5 flex gap-1">
                   <button
                     type="button"
                     onClick={() => salvarImagem(frameUrl, e.nome)}
                     title="Salvar a imagem de agora"
-                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-white hover:bg-black/80"
+                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-zinc-100 hover:bg-black/80"
                   >
                     <IconDownload size={13} /> Salvar
                   </button>
@@ -989,7 +1006,7 @@ function AbaComandos({ estacao: e, sessao, encerrarSessao, reiniciarPc, enviarMe
                     type="button"
                     onClick={() => setAmpliado(true)}
                     title="Ampliar"
-                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-white hover:bg-black/80"
+                    className="flex items-center gap-1 rounded bg-black/60 px-1.5 py-1 text-[11px] font-semibold text-zinc-100 hover:bg-black/80"
                   >
                     <IconMaximize size={13} /> Ampliar
                   </button>
@@ -1422,7 +1439,7 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
         fila.map((f, i) => (
           <div key={f.id} className="rounded-lg border border-destaque bg-superficie-2 px-3 py-2.5">
             <div className="mb-1 flex items-center gap-2">
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-destaque text-xs font-bold text-white">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-destaque text-xs font-semibold text-zinc-100">
                 {i + 1}
               </span>
               <span className="flex-1 text-sm font-semibold">{f.cliente_nome}</span>

@@ -53,7 +53,7 @@ export function FiltrosBusca({ valor, padrao, campos, aoMudar, className }: {
         )}
       >
         <IconAdjustmentsHorizontal size={16} />
-        {ligados > 0 && <span className="rounded-full bg-destaque px-1.5 text-[0.65rem] font-bold text-white">{ligados}</span>}
+        {ligados > 0 && <span className="rounded-full bg-destaque px-1.5 text-[0.65rem] font-semibold text-zinc-100">{ligados}</span>}
       </button>
       {aberto && (
         <div className="absolute top-full right-0 z-30 mt-1 flex w-64 flex-col gap-2.5 rounded-lg border border-borda bg-superficie p-3 shadow-xl">
