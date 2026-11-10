@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-10 — Instalador instala o Python e as dependências sozinho
+
+- Máquina nova não precisa de nada antes, só de internet: o `instalar.bat` baixa o Python 3.13.17 do python.org e instala um **Python só do agente** em `C:\MatheCafe\python` (com Tkinter; sem atalho, sem PATH e sem mexer em outro Python da máquina). Depois instala as dependências do `requirements.txt` (websockets, psutil, Pillow) pelo pip.
+- O download e o pip usam o **proxy do Windows** (o mesmo do navegador); antes o pip ignorava o proxy.
+- Numa reinstalação o Python do agente é reaproveitado. Se a mesma versão já existia na máquina, ela é copiada para `C:\MatheCafe\python`.
+- Saiu a exigência de Python instalado antes (e a recusa do Python da Microsoft Store, que não é mais usado).
+
 ## 2026-11-10 — Instalador sugere e testa o endereço do servidor
 
 - O `instalar.bat` sugere o endereço do servidor (Enter = a 1ª linha de `agente/servidor.txt`, hoje `10.26.31.77:8000`) e **testa a conexão na hora**. Se o servidor não responde, avisa e pede o endereço de novo, ou continua com **C**. Antes, um endereço errado terminava em "Instalação concluída" e o PC só nunca aparecia no painel.

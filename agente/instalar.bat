@@ -8,7 +8,8 @@ echo ============================================================
 echo.
 echo Este instalador vai:
 echo   1. Criar o usuario Windows "cliente" (autologin)
-echo   2. Copiar o agente para C:\MatheCafe e instalar as dependencias
+echo   2. Copiar o agente para C:\MatheCafe, baixar e instalar o Python do
+echo      agente e as dependencias (precisa de internet)
 echo   3. Configurar o agente para abrir sozinho no login do "cliente"
 echo   4. Ligar esta estacao ao servidor: ela aparece no painel em
 echo      Mapa -^> Novas estacoes, para um admin aprovar
@@ -35,39 +36,11 @@ if not exist "%ORIGEM%agente.py" (
     exit /b 1
 )
 
-:: ---- Descobrir Python ----
-:: O usuario "cliente" precisa conseguir ler a instalacao do Python. Uma
-:: instalacao "so para mim" (o padrao do instalador do python.org) fica no
-:: perfil de quem instalou e o cliente nao tem acesso: nesse caso o Python e
-:: copiado para %DESTINO%\python (funciona de qualquer pasta). O da Microsoft
-:: Store (WindowsApps) nao pode ser copiado.
-set PYTHON=
-where py >nul 2>&1
-if !errorlevel!==0 (
-    set PYTHON=py -3
-) else (
-    where python >nul 2>&1
-    if !errorlevel!==0 set PYTHON=python
-)
-if "!PYTHON!"=="" goto :python_ausente
-
-set PYBASE=
-for /f "delims=" %%i in ('!PYTHON! -c "import sys; print(sys.base_prefix)" 2^>nul') do set PYBASE=%%i
-if "!PYBASE!"=="" goto :python_ausente
-
-if not "!PYBASE:WindowsApps=!"=="!PYBASE!" (
-    echo ERRO: o Python encontrado e o da Microsoft Store:
-    echo        !PYBASE!
-    echo Ele nao pode ser usado pelo usuario "cliente". Instale pelo python.org
-    echo ou, num terminal de administrador:
-    echo     winget install -e --id Python.Python.3.13 --scope machine
-    pause
-    exit /b 1
-)
-set COPIAR_PY=
-if not "!PYBASE:\Users\=!"=="!PYBASE!" set COPIAR_PY=1
-echo Python encontrado: !PYBASE!
-if defined COPIAR_PY echo   ^(instalado so para este usuario: sera copiado para %DESTINO%\python^)
+:: ---- Python do agente ----
+:: O agente usa um Python so dele, em %DESTINO%\python (com Tkinter), baixado
+:: do python.org na etapa 3 se ainda nao estiver la. Nao mexe em outro Python
+:: da maquina. Para trocar a versao, mude PY_VERSAO (ver python.org/downloads).
+set PY_VERSAO=3.13.17
 
 :: ---- Coletar dados ----
 echo.
@@ -177,14 +150,11 @@ echo [3/6] Copiando o agente para %DESTINO% e instalando dependencias...
 if not exist "%DESTINO%" mkdir "%DESTINO%"
 :: Reinstalacao: fecha o agente que esteja rodando de %DESTINO% (prende os arquivos)
 powershell -NoProfile -Command "Get-Process | Where-Object { $_.Path -like '%DESTINO%\*' } | Stop-Process -Force" >nul 2>&1
-if defined COPIAR_PY (
-    robocopy "!PYBASE!" "%DESTINO%\python" /MIR /XD "!PYBASE!\Lib\site-packages" __pycache__ /NFL /NDL /NJH /NJS /NP >nul
-    if !errorlevel! geq 8 (
-        echo ERRO: Nao foi possivel copiar o Python para %DESTINO%\python.
-        pause
-        exit /b 1
-    )
-    set PYTHON="%DESTINO%\python\python.exe"
+call :preparar_proxy
+call :python_do_agente
+if errorlevel 1 (
+    pause
+    exit /b 1
 )
 if /i not "%ORIGEM%"=="%DESTINO%\" (
     for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 politicas_cliente.ps1 desinstalar.bat) do (
@@ -192,7 +162,7 @@ if /i not "%ORIGEM%"=="%DESTINO%\" (
     )
 )
 if exist "%DESTINO%\venv" rmdir /s /q "%DESTINO%\venv"
-!PYTHON! -m venv "%DESTINO%\venv"
+"%DESTINO%\python\python.exe" -m venv "%DESTINO%\venv"
 if !errorlevel! neq 0 (
     echo ERRO: Nao foi possivel criar o ambiente Python em %DESTINO%\venv.
     pause
@@ -201,7 +171,8 @@ if !errorlevel! neq 0 (
 "%DESTINO%\venv\Scripts\python.exe" -m pip install --upgrade pip -q
 "%DESTINO%\venv\Scripts\python.exe" -m pip install -r "%DESTINO%\requirements.txt" -q
 if !errorlevel! neq 0 (
-    echo ERRO: Falha ao instalar as dependencias. Confira a conexao com a internet.
+    echo ERRO: Falha ao instalar as dependencias ^(websockets, psutil, Pillow^).
+    echo Confira a internet deste PC e o proxy da rede.
     pause
     exit /b 1
 )
@@ -264,9 +235,63 @@ echo.
 pause
 exit /b 0
 
-:python_ausente
-echo ERRO: Python nao encontrado. Instale o Python 3.11+ para todos os usuarios:
-echo     winget install -e --id Python.Python.3.13 --scope machine
-echo ou pelo python.org ("Customize installation" -^> "Install Python for all users").
-pause
-exit /b 1
+:: ============================================================
+:: Sub-rotinas (call :nome)
+:: ============================================================
+
+:preparar_proxy
+:: O pip e o download nao usam o proxy do Windows sozinhos: pega o do sistema
+:: (o mesmo do navegador) e passa adiante. Sem proxy, nada muda.
+set PROXY=
+for /f "delims=" %%p in ('powershell -NoProfile -Command "$u=[Uri]'https://pypi.org/'; $p=[Net.WebRequest]::GetSystemWebProxy().GetProxy($u); if ($p.AbsoluteUri -ne $u.AbsoluteUri) { $p.AbsoluteUri.TrimEnd('/') }"') do set PROXY=%%p
+if defined PROXY (
+    echo       Usando o proxy da rede: !PROXY!
+    set HTTPS_PROXY=!PROXY!
+    set HTTP_PROXY=!PROXY!
+)
+exit /b 0
+
+:python_do_agente
+set PY_AGENTE=%DESTINO%\python\python.exe
+"%PY_AGENTE%" -c "import sys, tkinter; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+if not errorlevel 1 (
+    echo       Python do agente ja instalado em %DESTINO%\python.
+    exit /b 0
+)
+:instalar_python
+set PY_INSTALADOR=%TEMP%\mathecafe-python-%PY_VERSAO%-amd64.exe
+if exist "%PY_INSTALADOR%" del "%PY_INSTALADOR%" >nul 2>&1
+echo       Baixando o Python %PY_VERSAO% do python.org ^(cerca de 30 MB^)...
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $w=New-Object Net.WebClient; $w.Proxy=[Net.WebRequest]::GetSystemWebProxy(); $w.Proxy.Credentials=[Net.CredentialCache]::DefaultCredentials; $w.DownloadFile('https://www.python.org/ftp/python/%PY_VERSAO%/python-%PY_VERSAO%-amd64.exe', '%PY_INSTALADOR%')"
+if not exist "%PY_INSTALADOR%" (
+    echo ERRO: Nao foi possivel baixar o Python. Confira a internet deste PC e o proxy da rede.
+    exit /b 1
+)
+echo       Instalando o Python em %DESTINO%\python ^(1 a 3 minutos^)...
+"%PY_INSTALADOR%" /quiet InstallAllUsers=1 TargetDir="%DESTINO%\python" Include_launcher=0 InstallLauncherAllUsers=0 PrependPath=0 Shortcuts=0 AssociateFiles=0 Include_test=0 Include_doc=0 Include_tcltk=1 Include_pip=1 CompileAll=0
+del "%PY_INSTALADOR%" >nul 2>&1
+:: Se esta mesma versao ja estava instalada em outro lugar, o instalador do
+:: python.org so "modifica" aquela: copia ela para %DESTINO%\python
+if not exist "%PY_AGENTE%" call :copiar_python_existente
+"%PY_AGENTE%" -c "import sys, tkinter" >nul 2>&1
+if errorlevel 1 (
+    echo ERRO: O Python nao ficou pronto em %DESTINO%\python.
+    echo Instale o Python %PY_VERSAO% pelo python.org ^(com tcl/tk^) e rode este instalador de novo.
+    exit /b 1
+)
+echo       Python instalado.
+exit /b 0
+
+:copiar_python_existente
+set PY_BASE=
+for /f "tokens=1,2 delims=." %%a in ("%PY_VERSAO%") do set PY_MM=%%a.%%b
+for %%h in (HKLM HKCU) do (
+    if not defined PY_BASE (
+        for /f "tokens=2,*" %%a in ('reg query "%%h\SOFTWARE\Python\PythonCore\!PY_MM!\InstallPath" /ve 2^>nul ^| findstr REG_SZ') do set PY_BASE=%%b
+    )
+)
+if not defined PY_BASE exit /b 1
+if "!PY_BASE:~-1!"=="\" set PY_BASE=!PY_BASE:~0,-1!
+echo       Copiando o Python que ja existia ^(!PY_BASE!^) para %DESTINO%\python...
+robocopy "!PY_BASE!" "%DESTINO%\python" /MIR /XD "!PY_BASE!\Lib\site-packages" __pycache__ /NFL /NDL /NJH /NJS /NP >nul
+exit /b 0

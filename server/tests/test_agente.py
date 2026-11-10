@@ -786,3 +786,19 @@ def test_instalador_sugere_e_testa_o_servidor():
     padrao = open(os.path.join(pasta, "servidor.txt"), encoding="ascii").readline().strip()
     host, porta = padrao.rsplit(":", 1)
     assert host.count(".") == 3 and porta.isdigit() and "://" not in padrao
+
+
+def test_instalador_instala_python_proprio():
+    # 10/11: maquina nova nao tem Python; o instalador baixa do python.org e
+    # instala um Python so do agente em C:\MatheCafe\python (com Tkinter), sem
+    # mexer em outro Python da maquina; dependencias pelo pip com o proxy do Windows
+    texto = open(os.path.join(os.path.dirname(AGENTE), "instalar.bat"), "rb").read().decode("ascii")
+    assert "where py" not in texto and "python_ausente" not in texto  # nao exige Python antes
+    assert "set PY_VERSAO=3." in texto and "https://www.python.org/ftp/python/" in texto
+    instalar = texto[texto.index(":instalar_python"):]
+    for opcao in ("/quiet", "InstallAllUsers=1", 'TargetDir="%DESTINO%\python"', "Include_tcltk=1",
+                  "Include_pip=1", "PrependPath=0", "Include_launcher=0", "AssociateFiles=0", "Shortcuts=0"):
+        assert opcao in instalar, opcao
+    assert "import sys, tkinter" in texto  # o agente e Tkinter
+    assert "GetSystemWebProxy" in texto and "HTTPS_PROXY" in texto  # rede da biblioteca tem proxy
+    assert '"%DESTINO%\python\python.exe" -m venv' in texto

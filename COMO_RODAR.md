@@ -95,12 +95,12 @@ npm run build        # compila para server/app/static
 
 ## 4. Agente (em cada estação)
 
-Precisa do Python 3.11+ na estação ([python.org](https://www.python.org/downloads/)). Se ele estiver instalado só para o admin (o padrão do python.org, no perfil dele), o instalador **copia o Python para `C:\MatheCafe\python`**, porque o `cliente` não lê o perfil do admin. O Python da Microsoft Store não serve: o instalador recusa.
+**Não precisa instalar nada antes**, só ter **internet** na estação. O instalador baixa o Python (versão em `PY_VERSAO`, no começo do `instalar.bat`) do python.org e instala um Python **só do agente** em `C:\MatheCafe\python`, com Tkinter, sem atalho e sem mexer em outro Python da máquina. Depois instala as dependências do `requirements.txt` pelo pip. O download e o pip usam o proxy do Windows (o mesmo do navegador). Numa reinstalação, se o Python do agente já estiver lá, ele é reaproveitado. Se a mesma versão do Python já existia em outro lugar da máquina, o instalador do python.org não instala de novo: ela é copiada para `C:\MatheCafe\python`.
 
 Copie a pasta `agente/` para o PC, clique com o botão direito em **`instalar.bat`** → Executar como administrador e responda as perguntas: o **nome da estação** (Enter usa o nome do Windows), o **endereço do servidor** (Enter usa o de `agente/servidor.txt`, hoje `10.26.31.77:8000`; se o servidor mudar de IP, troque esse arquivo) e a senha do usuário `cliente`. Não pede login do painel. Ele testa na hora se o servidor responde: se não, avisa e pede o endereço de novo (ou continua com **C**). Ele:
 
 1. cria o usuário Windows `cliente` (sem admin, senha que não expira) e liga o autologin;
-2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente (e, se preciso, o Python) para lá; cria o `venv` e instala as dependências;
+2. fecha o agente, se já estiver rodando de `C:\MatheCafe`; copia o agente para lá; baixa e instala o Python do agente em `C:\MatheCafe\python` (se ainda não estiver); cria o `venv` e instala as dependências;
 3. grava `agente.cfg` (numa reinstalação, mantém o `ID=` que já estava lá) e dá ao `cliente` permissão de escrita na pasta (para o `agente.cfg` e a atualização);
 4. registra a tarefa `MatheCafe-Agente` (`registrar_tarefa.ps1`): abre o `pythonw agente.py` no logon do `cliente`, **dentro da sessão dele**, sem limite de tempo e reabrindo se cair;
 5. desliga, no perfil do `cliente`, o Gerenciador de Tarefas, o Bloquear e o Alterar senha, que aparecem no Ctrl+Alt+Del, e prende os downloads do Chrome e do Edge na pasta Downloads, bloqueando os perigosos (`politicas_cliente.ps1`). Se o `cliente` nunca entrou no Windows, o perfil dele é criado na hora;
