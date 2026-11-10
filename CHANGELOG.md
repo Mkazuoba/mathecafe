@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-10 — Reiniciar o servidor pelo Windows, sem administrador
+
+- **`servereiniciar_servidor.bat`**: clique duplo no computador do servidor reinicia o MatheCafé (aplica atualizações do código) sem reiniciar o computador, sem PowerShell de administrador e sem entrar no painel. Ele deixa um pedido (`reiniciar.pedido`) que o servidor da tarefa atende em até 2 s; o `iniciar_servidor.bat` sobe de novo e o `.bat` avisa quando voltou.
+- Só é atendido por um servidor de 10/11 em diante: na primeira vez, reinicie pelo botão do painel (Configurações → Servidor → Reiniciar servidor).
+
 ## 2026-11-09 — Substituir computador, atualizar pelo painel e correções (agente 1.16.0)
 
 - **Computador formatado ou trocado**: em Mapa → Novas estações, **É o computador de → Substitui a AD-3** (sugerido quando o nome bate). O PC novo vira a AD-3 com o mesmo nome, zona, lugar no mapa e histórico; recusado se a AD-3 ainda está ligada.

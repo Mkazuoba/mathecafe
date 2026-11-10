@@ -222,6 +222,35 @@ def _encerrar_processo():
     os._exit(3)  # o .bat sobe de novo em seguida
 
 
+# Reiniciar pelo Windows, sem administrador e sem o painel: o
+# reiniciar_servidor.bat (clique duplo) cria este arquivo na pasta server/; o
+# servidor da tarefa (que roda como SYSTEM) apaga e sai, e o .bat da tarefa o
+# sobe de novo com o codigo novo.
+from pathlib import Path
+PEDIDO_REINICIO = Path(__file__).resolve().parents[2] / "reiniciar.pedido"
+
+
+def pedido_de_reinicio() -> bool:
+    """Ha um pedido de reinicio para atender? So com o servidor supervisionado
+    (aberto a mao, ninguem o subiria de novo: o pedido fica la)."""
+    if not _supervisionado() or not PEDIDO_REINICIO.exists():
+        return False
+    try:
+        PEDIDO_REINICIO.unlink()
+    except OSError:
+        return False
+    return True
+
+
+async def vigiar_pedido_de_reinicio():
+    import asyncio
+    while True:
+        await asyncio.sleep(2)
+        if pedido_de_reinicio():
+            print("Reiniciando o servidor a pedido do reiniciar_servidor.bat")
+            _encerrar_processo()
+
+
 @router.get("/servidor")
 def ver_servidor(_=Depends(requer_perfil("admin"))):
     return {"pode_reiniciar": _supervisionado(), "no_ar_desde": NO_AR_DESDE.isoformat() + "Z"}

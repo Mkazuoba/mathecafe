@@ -2063,3 +2063,23 @@ def test_rg_so_com_numeros_e_x(c, admin):
     cid = c.post("/api/clientes/", headers=admin, json={"login": "rg3", "nome": "RG", "senha": "senha-rg"}).json()["id"]
     assert c.put(f"/api/clientes/{cid}", headers=admin, json={"documento": "abc"}).status_code == 422
     assert c.put(f"/api/clientes/{cid}", headers=admin, json={"documento": ""}).status_code == 200  # apagar pode
+
+
+def test_reiniciar_servidor_pelo_windows_sem_admin(monkeypatch, tmp_path):
+    # 10/11: reiniciar_servidor.bat (clique duplo, sem administrador) deixa
+    # server/reiniciar.pedido; o servidor da tarefa ve o arquivo, apaga e sai,
+    # e o iniciar_servidor.bat sobe de novo
+    import os
+    import app.routers.config as cfg
+    pedido = tmp_path / "reiniciar.pedido"
+    monkeypatch.setattr(cfg, "PEDIDO_REINICIO", pedido)
+    monkeypatch.delenv("MATHECAFE_SUPERVISIONADO", raising=False)
+    pedido.write_text("pedido")
+    assert cfg.pedido_de_reinicio() is False and pedido.exists()  # aberto a mao: ninguem subiria de novo
+    monkeypatch.setenv("MATHECAFE_SUPERVISIONADO", "1")
+    assert cfg.pedido_de_reinicio() is True and not pedido.exists()
+    assert cfg.pedido_de_reinicio() is False  # um pedido, um reinicio
+    bat = open(os.path.join(os.path.dirname(__file__), "..", "reiniciar_servidor.bat"), "rb").read()
+    assert b"\r\n" in bat and b"reiniciar.pedido" in bat and b"/health" in bat
+    assert b"timeout " not in bat
+    assert "reiniciar.pedido" in open(os.path.join(os.path.dirname(__file__), "..", "..", ".gitignore")).read()

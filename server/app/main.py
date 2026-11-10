@@ -180,13 +180,17 @@ async def startup():
     finally:
         db.close()
     app.state.batimento = asyncio.create_task(_batimento())
+    # reiniciar_servidor.bat (Windows, sem admin): ver routers/config.py
+    from app.routers.config import vigiar_pedido_de_reinicio
+    app.state.vigia_reinicio = asyncio.create_task(vigiar_pedido_de_reinicio())
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    tarefa = getattr(app.state, "batimento", None)
-    if tarefa:
-        tarefa.cancel()
+    for nome in ("batimento", "vigia_reinicio"):
+        tarefa = getattr(app.state, nome, None)
+        if tarefa:
+            tarefa.cancel()
 
 # ── WebSocket: painel ─────────────────────────────────────────────────────────
 @app.websocket("/ws/painel")

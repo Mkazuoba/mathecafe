@@ -18,3 +18,5 @@ Arquivos VSCyber/
 
 # Capturas de tela do painel de teste (podem ter dados de clientes)
 capturas/
+# pedido do reiniciar_servidor.bat (o servidor apaga ao atender)
+server/reiniciar.pedido
