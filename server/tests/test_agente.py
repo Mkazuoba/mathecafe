@@ -999,3 +999,20 @@ def test_reinstalar_em_outro_piso_troca_o_id():
     assert passo4.index("call :conferir_piso_do_id") < passo4.index("echo ID=!ID_PC!")
     rotina = texto[texto.index("\r\n:conferir_piso_do_id"):texto.index("\r\n:escolher_piso")]
     assert 'if "!PISO_ATUAL!"=="!PISO!" exit /b 0' in rotina and "set ID_PC=" in rotina
+
+
+def test_trocar_o_piso_pela_manutencao():
+    # 11/11 (pedido do Matheus): trocar o piso sem reinstalar, em Configurar
+    # conexao (Ctrl+Shift+M). Mesma regra do instalar.bat: outro piso, ID novo
+    ns = _carregar("linhas_id_nome", "piso_mudou")
+    assert ns["linhas_id_nome"]("1;Adulto\r\n2;Infantil\r\n") == [("1", "Adulto"), ("2", "Infantil")]
+    mudou = ns["piso_mudou"]
+    assert mudou("1;AD-01\r\n", "2") and not mudou("1;AD-01\r\n", "1")
+    assert not mudou("", "2")  # o servidor nao conhece este ID: nada a trocar
+    assert not mudou("1;AD-01", None)  # pisos nao carregaram
+    src = _fonte()
+    janela = src[src.index('janela.title("Configurar conexao")'):src.index("def _exibir_mensagem_operador")]
+    assert "/api/agente/pisos" in janela and "/api/agente/estacao?id=" in janela
+    salvar = janela[janela.index("        def salvar():"):]
+    assert 'gravar_cfg(PISO=piso, ID="")' in salvar and "askyesno" in salvar
+    assert salvar.index("askyesno") < salvar.index('gravar_cfg(PISO=piso, ID="")') < salvar.index("os.execv")

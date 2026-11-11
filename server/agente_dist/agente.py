@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.21.0"
+VERSAO = "1.22.0"
 
 import asyncio
 import json
@@ -3594,7 +3594,7 @@ class AgenteApp:
         janela.configure(bg="#1A1B26")
         janela.resizable(False, False)
         janela.attributes("-topmost", True)
-        w, h = 420, 300
+        w, h = 420, 380
         janela.geometry(f"{w}x{h}+{(janela.winfo_screenwidth() - w) // 2}+{(janela.winfo_screenheight() - h) // 2}")
         janela.grab_set()
 
@@ -3608,6 +3608,47 @@ class AgenteApp:
 
         e_servidor = campo("Endereco do servidor (ex: 10.26.31.99:8000):", self.servidor)
         e_estacao = campo("Nome desta estacao:", self.estacao)
+        # Piso (6.18): a lista vem do servidor; mudar de piso faz este PC entrar
+        # no outro piso como computador novo (igual a reinstalar escolhendo outro)
+        tk.Label(janela, text="Piso:", bg="#1A1B26", fg="white",
+                 font=("Segoe UI", 10)).pack(anchor="w", padx=24, pady=(14, 2))
+        pisos = {"lista": [], "estacao": ""}  # [(id, nome)] e "piso_id;nome" deste PC
+        v_piso = tk.StringVar(value="(carregando...)")
+        m_piso = tk.OptionMenu(janela, v_piso, "(carregando...)")
+        m_piso.config(font=("Segoe UI", 10), bg="#2A2B3D", fg="white", activebackground="#3A3B4D",
+                      activeforeground="white", relief="flat", highlightthickness=0, anchor="w")
+        m_piso["menu"].config(font=("Segoe UI", 10), bg="#2A2B3D", fg="white")
+        m_piso.pack(padx=24, fill="x")
+
+        def mostrar_pisos(lista, estacao):
+            if not janela.winfo_exists():
+                return
+            pisos["lista"], pisos["estacao"] = lista, estacao
+            menu = m_piso["menu"]
+            menu.delete(0, "end")
+            for _, nome in lista:
+                menu.add_command(label=nome, command=lambda n=nome: v_piso.set(n))
+            if not lista:
+                v_piso.set("(sem conexao com o servidor)")
+                return
+            atual = (linhas_id_nome(estacao) or [(piso_da_instalacao(), "")])[0][0]
+            v_piso.set(next((n for i, n in lista if i == atual), lista[0][1]))
+
+        def baixar_pisos():
+            # thread: so rede aqui
+            base = self.servidor.replace("wss://", "https://").replace("ws://", "http://")
+            lista, estacao = [], ""
+            try:
+                with abrir_url(f"{base}/api/agente/pisos", timeout=5) as r:
+                    lista = linhas_id_nome(r.read().decode("utf-8", "replace"))
+                if self.identificador:
+                    alvo = f"{base}/api/agente/estacao?id={urllib.parse.quote(self.identificador)}"
+                    with abrir_url(alvo, timeout=5) as r:
+                        estacao = r.read().decode("utf-8", "replace")
+            except Exception as ex:
+                self._log(f"Configurar conexao: pisos nao carregaram ({ex})")
+            self.root.after(0, lambda: mostrar_pisos(lista, estacao))
+        threading.Thread(target=baixar_pisos, daemon=True).start()
         e_servidor.focus()
         lbl = tk.Label(janela, text="", bg="#1A1B26", fg="#94a3b8", font=("Segoe UI", 9),
                        wraplength=w - 48, justify="left")
@@ -3634,14 +3675,30 @@ class AgenteApp:
             servidor, estacao = lidos()
             if not servidor or not estacao:
                 return lbl.config(text="Preencha o servidor e o nome da estacao", fg="#ef4444")
-            if estacao != self.estacao and self.identificador and self.aprovada:
-                # 1.18: o servidor reconhece o PC pelo id; nome novo vira um
-                # pedido em Novas estacoes (ate aceitar, segue com o atual)
-                import tkinter.messagebox as _mb
-                _mb.showinfo("Troca de nome", (
-                    f"O nome {estacao} vai para aprovação no painel (Mapa → Novas estações).\n\n"
-                    f"Até um administrador aceitar, este computador continua como {self.estacao}. "
-                    "Também dá para trocar direto pelo lápis da estação no Mapa."), parent=janela)
+            import tkinter.messagebox as _mb
+            piso = next((i for i, n in pisos["lista"] if n == v_piso.get()), None)
+            if piso_mudou(pisos["estacao"], piso):
+                antes = linhas_id_nome(pisos["estacao"])[0]
+                nome_antes = next((n for i, n in pisos["lista"] if i == antes[0]), "anterior")
+                if not _mb.askyesno("Mudar de piso", (
+                        f"Este computador é a {antes[1]} do piso {nome_antes}.\n\n"
+                        f"No piso {v_piso.get()} ele entra como computador novo: assume a estação "
+                        f"{estacao} do mapa desse piso, ou vai para aprovação (Mapa → Novas estações). "
+                        f"A {antes[1]} do piso {nome_antes} fica no mapa sem computador (exclua no painel).\n\n"
+                        "Mudar de piso?"), parent=janela):
+                    return
+                gravar_cfg(PISO=piso, ID="")  # sem ID: o agente cria outro ao reiniciar
+                self._log(f"Piso trocado para {v_piso.get()}: este PC entra como computador novo")
+            else:
+                if piso:
+                    gravar_cfg(PISO=piso)
+                if estacao != self.estacao and self.identificador and self.aprovada:
+                    # 1.18: o servidor reconhece o PC pelo id; nome novo vira um
+                    # pedido em Novas estacoes (ate aceitar, segue com o atual)
+                    _mb.showinfo("Troca de nome", (
+                        f"O nome {estacao} vai para aprovação no painel (Mapa → Novas estações).\n\n"
+                        f"Até um administrador aceitar, este computador continua como {self.estacao}. "
+                        "Também dá para trocar direto pelo lápis da estação no Mapa."), parent=janela)
             salvar_cfg(servidor, estacao)
             self._log(f"Conexao trocada para {servidor} / {estacao} - reiniciando o agente")
             # Recomeca do zero com o agente.cfg novo (como na atualizacao)
@@ -4041,6 +4098,26 @@ def piso_da_instalacao():
     existir no Adulto e no Infantil (6.18)."""
     piso = carregar_cfg().get("PISO", "").strip()
     return piso if piso.isdigit() else None
+
+
+def linhas_id_nome(texto):
+    """Respostas em texto do servidor ("1;Adulto" por linha) -> [("1", "Adulto"), ...]."""
+    linhas = []
+    for linha in (texto or "").splitlines():
+        if ";" in linha:
+            a, _, b = linha.strip().partition(";")
+            if a.strip():
+                linhas.append((a.strip(), b.strip()))
+    return linhas
+
+
+def piso_mudou(resposta_estacao, piso_escolhido):
+    """Trocar para piso_escolhido muda de piso? resposta_estacao e o que o servidor
+    diz deste PC (/api/agente/estacao: "piso_id;nome", vazio se nao conhece).
+    Mudou: o PC precisa de um ID novo, senao o servidor o acha pela estacao do
+    piso antigo (como no instalar.bat, 6.18)."""
+    atual = linhas_id_nome(resposta_estacao)
+    return bool(atual and piso_escolhido and atual[0][0] != str(piso_escolhido))
 
 
 def url_da_estacao(servidor, estacao, identificador=None, piso=None):

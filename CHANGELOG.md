@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-11 — Trocar o piso pela manutenção (agente 1.22.0)
+
+- Configurar conexão (Ctrl+Shift+M, modo manutenção) ganhou o campo **Piso**, com a lista do servidor e o piso atual do PC já escolhido. Trocar para outro piso pede confirmação e faz o PC entrar lá como computador novo (mesma regra do instalar.bat: ID novo); no mesmo piso, só grava o piso.
+
 ## 2026-11-11 — Corrigido: reinstalar em outro piso
 
 - Reinstalado escolhendo o Infantil, o PC continuava no Adulto: o instalador mantém o ID do PC e o servidor reconhece pelo ID antes de olhar o piso.
