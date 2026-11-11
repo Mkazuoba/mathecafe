@@ -2525,3 +2525,24 @@ def test_cartaz_com_link(c, admin):
     assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"link": "exemplo.org"}).json()["link"] == "https://exemplo.org"
     assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"link": ""}).json()["link"] is None
     c.delete(f"/api/programacao/{item['id']}", headers=admin)
+
+
+def test_historico_do_cliente_separa_o_mesmo_nome_nos_dois_pisos(c, admin):
+    """AD-01 do Adulto e AD-01 do Infantil são duas linhas, cada uma com o piso
+    (antes o histórico juntava pelo nome)."""
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    s = next(_contador)
+    cid = c.post("/api/clientes/", headers=admin,
+                 json={"login": f"dp{s}", "nome": "Dois pisos", "senha": "x12345"}).json()["id"]
+    db = SessionLocal()
+    agora = datetime.utcnow()
+    for chave, minutos in (("Adulto", 10), ("Infantil", 20)):
+        db.add(Sessao(cliente_id=cid, estacao_id=est[chave]["id"], tempo_total_segundos=3600,
+                      iniciada_em=agora - timedelta(hours=2), encerrada_em=agora - timedelta(hours=1),
+                      tempo_consumido_segundos=minutos * 60, motivo_encerramento="cliente"))
+    db.commit()
+    db.close()
+    itens = c.get(f"/api/relatorios/cliente/{cid}", headers=admin).json()["itens"]
+    assert sorted((i["estacao"], i["piso_id"], i["tempo_segundos"]) for i in itens) == sorted([
+        (nome, pisos["Adulto"]["id"], 600), (nome, pisos["Infantil"]["id"], 1200)])
+    assert {i["estacao_id"] for i in itens} == {est["Adulto"]["id"], est["Infantil"]["id"]}
