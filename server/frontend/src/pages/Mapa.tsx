@@ -985,7 +985,7 @@ function CartaoEstacao({
 
   async function ligar() {
     try {
-      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/ligar`)
+      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/ligar?id=${e.id}`)
       avisar(`Comando de ligar enviado para ${e.nome}`)
     } catch (err) {
       avisar((err as Error).message, "erro")

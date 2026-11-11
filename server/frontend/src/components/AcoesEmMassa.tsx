@@ -36,7 +36,7 @@ function nomesDe(n: number) {
  */
 export function AcoesEmMassa({ estacoes, aoLimpar }: { estacoes: string[]; aoLimpar: () => void }) {
   const avisar = useAvisos()
-  const { recarregar } = useDados()
+  const { recarregar, estacoes: doPiso } = useDados()
   const [enviando, setEnviando] = useState(false)
   const [escrevendo, setEscrevendo] = useState(false)
   const [texto, setTexto] = useState("")
@@ -49,7 +49,9 @@ export function AcoesEmMassa({ estacoes, aoLimpar }: { estacoes: string[]; aoLim
     try {
       const r = await Api.post<{ resultados: Record<string, string> }>("/api/estacoes/acoes", {
         acao,
-        estacoes,
+        estacoes, // servidor antigo (até reiniciar): só os nomes
+        // pelo id: o nome pode estar nos dois pisos (o painel mostra um por vez)
+        ids: estacoes.map((n) => doPiso.find((e) => e.nome === n)?.id).filter((id) => id != null),
         texto: mensagem,
       })
       const falhas = Object.entries(r.resultados).filter(([, res]) => res !== "ok")

@@ -1,3 +1,5 @@
+import os
+import re
 import unicodedata
 from pathlib import Path
 from sqlalchemy import create_engine, event, text
@@ -83,6 +85,8 @@ def _migrar_colunas_faltantes():
                 conn.commit()
                 print(f"Migracao: coluna '{coluna.name}' adicionada em {tabela.name}")
 
+        _tirar_nome_unico_das_estacoes(conn)
+
         # Indice para busca rapida de clientes por nome/login (42k+ registros)
         indices = conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'")).fetchall()
         nomes_indices = {r[0] for r in indices}
@@ -91,9 +95,48 @@ def _migrar_colunas_faltantes():
             conn.commit()
             print("Migracao: indice ix_usuarios_nome_login criado em usuarios")
 
+def _tirar_nome_unico_das_estacoes(conn):
+    """6.18: o nome da estacao deixou de ser unico no sistema (vale por piso).
+    O SQLite nao tira um UNIQUE da tabela: refaz estacoes sem ele, com os mesmos
+    dados e ids (as sessoes continuam apontando para elas)."""
+    sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='estacoes'")).scalar()
+    if not sql or "UNIQUE (nome)" not in sql:
+        return
+    # copia do banco antes de refazer a tabela (uma vez so; fica ao lado dele)
+    arquivo = conn.engine.url.database
+    if arquivo and arquivo != ":memory:" and os.path.exists(arquivo):
+        copia = f"{os.path.splitext(arquivo)[0]}.antes-6.18.db"
+        if not os.path.exists(copia):
+            conn.commit()
+            conn.exec_driver_sql(f"VACUUM INTO '{copia}'")
+            print(f"Migracao: copia do banco em {copia}")
+    nova = re.sub(r",\s*UNIQUE\s*\(nome\)", "", sql, count=1)
+    nova = re.sub(r'^CREATE TABLE\s+"?estacoes"?', "CREATE TABLE estacoes_nova", nova, count=1)
+    conn.commit()
+    conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+    conn.exec_driver_sql(nova)
+    conn.exec_driver_sql("INSERT INTO estacoes_nova SELECT * FROM estacoes")
+    conn.exec_driver_sql("DROP TABLE estacoes")
+    conn.exec_driver_sql("ALTER TABLE estacoes_nova RENAME TO estacoes")
+    conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_estacoes_id ON estacoes (id)")
+    conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_estacoes_nome ON estacoes (nome)")
+    conn.commit()
+    print("Migracao: o nome da estacao passou a ser unico so dentro do piso")
+
+
+def _tirar_nome_unico_postgres():
+    if _eh_sqlite:
+        return
+    with engine.connect() as conn:
+        conn.exec_driver_sql("ALTER TABLE estacoes DROP CONSTRAINT IF EXISTS estacoes_nome_key")
+        conn.exec_driver_sql("ALTER TABLE estacoes ADD COLUMN IF NOT EXISTS piso_id INTEGER REFERENCES pisos(id)")
+        conn.commit()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrar_colunas_faltantes()
+    _tirar_nome_unico_postgres()
 
     db = SessionLocal()
     try:

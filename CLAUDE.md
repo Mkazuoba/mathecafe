@@ -43,6 +43,7 @@ Rode os testes antes de dar um ciclo por concluído e acrescente um teste para c
 
 - **Sem passlib** — bcrypt direto (`app/security.py`).
 - **`db.expire_all()`** a cada mensagem no handler da estação (`main.py`): a sessão do SQLAlchemy vive a conexão WS inteira e ficaria com cache velho. Não remover.
+- **Nome de estação é único só dentro do piso** (6.18): AD-01 pode estar no Adulto e no Infantil. Conexões, comandos e eventos vão pelo **id** da estação (`app/nomes_estacao.py`, `manager.estacoes[id]`); nunca procurar estação só pelo nome sem tratar dois iguais.
 - **`autorizacoes.cliente_id` é único** — reaproveitar o registro ao reliberar (resetar `usado=False`), nunca criar outro.
 - **Queda do servidor ou da rede não derruba o cliente** (agente 1.8): a sessão segue no PC e o agente a retoma ao reconectar (evento `estado`). Só encerra como `conexao_perdida` quando o PC volta sem a sessão (reiniciou) ou nunca volta (quando o tempo acabaria), cobrando até a queda. A primeira mensagem do agente tem de ser `estado` (ou `teste_conexao`): `ping` primeiro é tratado como agente antigo e encerra a sessão aberta da estação.
 - **Nada de emoji em `print`** no servidor — derruba a inicialização num console Windows (cp1252). No agente, emoji só dentro da interface Tkinter.

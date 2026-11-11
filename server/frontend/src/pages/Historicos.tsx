@@ -317,10 +317,11 @@ function AbaEstacao({ estacaoNome, de, ate, mudar, abrirCliente }: {
   mudar: (n: Record<string, string | null>) => void
   abrirCliente: (id: number) => void
 }) {
-  const { estacoes } = useDados()
+  const { estacoes, piso } = useDados()
   const ordenadas = useMemo(() => [...estacoes].sort((a, b) => compararNome(a.nome, b.nome)), [estacoes])
   const { dados, erro, carregando } = useHistorico<HistoricoEstacao>(
-    estacaoNome ? `/api/relatorios/estacao/${encodeURIComponent(estacaoNome)}` : null, de, ate,
+    // o nome pode estar nos dois pisos (6.18): vale o piso do topo
+    estacaoNome && piso ? `/api/relatorios/estacao/${encodeURIComponent(estacaoNome)}?piso_id=${piso.id}` : null, de, ate,
   )
 
   const linhas: Linha[] = (dados?.itens ?? []).map((i) => ({

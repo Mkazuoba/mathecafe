@@ -7,7 +7,13 @@ import { formatarTempo } from "@/lib/tempo"
 /** Ações do operador usadas em mais de uma tela. */
 export function useAcoes() {
   const avisar = useAvisos()
-  const { recarregar, recarregarFila, recarregarClientes } = useDados()
+  const { recarregar, recarregarFila, recarregarClientes, estacoes } = useDados()
+  // O painel mostra um piso por vez, onde o nome é único; a API recebe o id
+  // (AD-01 pode existir no Adulto e no Infantil).
+  const rota = (nome: string, acao: string) => {
+    const id = estacoes.find((e) => e.nome === nome)?.id
+    return `/api/estacoes/${encodeURIComponent(nome)}/${acao}${id != null ? `?id=${id}` : ""}`
+  }
 
   const liberar = useCallback(
     async (clienteId: number) => {
@@ -59,58 +65,58 @@ export function useAcoes() {
     async (nomeEstacao: string) => {
       if (!window.confirm(`Reiniciar o PC da estacao ${nomeEstacao}?`)) return
       try {
-        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/reiniciar`)
+        await Api.post(rota(nomeEstacao, "reiniciar"))
         avisar(`Comando de reinicio enviado para ${nomeEstacao}`)
       } catch (e) {
         avisar((e as Error).message, "erro")
       }
     },
-    [avisar],
+    [avisar, estacoes],
   )
 
   const desligarPc = useCallback(
     async (nomeEstacao: string) => {
       if (!window.confirm(`Desligar o PC da estação ${nomeEstacao}? Se houver cliente, a sessão é encerrada e o tempo que sobrou volta para ele.`)) return
       try {
-        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/desligar`)
+        await Api.post(rota(nomeEstacao, "desligar"))
         avisar(`${nomeEstacao} desliga em 10 segundos`)
         await recarregar()
       } catch (e) {
         avisar((e as Error).message, "erro")
       }
     },
-    [avisar, recarregar],
+    [avisar, recarregar, estacoes],
   )
 
   const enviarMensagem = useCallback(
     async (nomeEstacao: string, texto: string) => {
       try {
-        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/mensagem`, { texto })
+        await Api.post(rota(nomeEstacao, "mensagem"), { texto })
         avisar("Mensagem enviada")
       } catch (e) {
         avisar((e as Error).message, "erro")
       }
     },
-    [avisar],
+    [avisar, estacoes],
   )
 
   const alternarManutencao = useCallback(
     async (nomeEstacao: string) => {
       try {
-        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/manutencao`)
+        await Api.post(rota(nomeEstacao, "manutencao"))
         avisar("Modo manutencao alternado")
         await recarregar()
       } catch (e) {
         avisar((e as Error).message, "erro")
       }
     },
-    [avisar, recarregar],
+    [avisar, recarregar, estacoes],
   )
 
   const liberarDireto = useCallback(
     async (nomeEstacao: string, clienteId: number) => {
       try {
-        await Api.post(`/api/estacoes/${encodeURIComponent(nomeEstacao)}/iniciar_direto`, { cliente_id: clienteId })
+        await Api.post(rota(nomeEstacao, "iniciar_direto"), { cliente_id: clienteId })
         avisar(`Cliente liberado diretamente para ${nomeEstacao}`)
         await recarregar()
         return true
@@ -119,7 +125,7 @@ export function useAcoes() {
         return false
       }
     },
-    [avisar, recarregar],
+    [avisar, recarregar, estacoes],
   )
 
   return { liberar, removerDaFila, encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, alternarManutencao, liberarDireto }

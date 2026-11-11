@@ -23,6 +23,8 @@ def piso_da_estacao(estacao) -> Optional[Piso]:
     grupo = estacao.grupo
     if grupo is not None and grupo.piso is not None:
         return grupo.piso
+    if estacao.piso is not None:  # sem grupo: o piso guardado nela (6.18)
+        return estacao.piso
     return piso_padrao(object_session(estacao))
 
 

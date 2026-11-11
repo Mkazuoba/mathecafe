@@ -621,7 +621,8 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
     function onMessage(ev: MessageEvent) {
       try {
         const msg = JSON.parse(ev.data)
-        if (msg.dados?.estacao !== e.nome) return
+        // pelo id (o nome pode estar nos dois pisos); servidor antigo só manda o nome
+        if (msg.dados?.estacao_id != null ? msg.dados.estacao_id !== e.id : msg.dados?.estacao !== e.nome) return
         if (msg.evento === "captura_tela") {
           setScreenshot("data:image/jpeg;base64," + msg.dados.imagem)
         }
@@ -655,18 +656,18 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
   useEffect(() => {
     return () => {
       if (streaming) {
-        Api.post(`/api/estacoes/${e.nome}/parar_streaming`, {}).catch(() => {})
+        Api.post(`/api/estacoes/${e.nome}/parar_streaming?id=${e.id}`, {}).catch(() => {})
       }
     }
   }, [streaming, e.nome])
 
   async function toggleStreaming() {
     if (streaming) {
-      await Api.post(`/api/estacoes/${e.nome}/parar_streaming`, {})
+      await Api.post(`/api/estacoes/${e.nome}/parar_streaming?id=${e.id}`, {})
       setStreaming(false)
       setFrameUrl(null)
     } else {
-      await Api.post(`/api/estacoes/${e.nome}/iniciar_streaming`, {})
+      await Api.post(`/api/estacoes/${e.nome}/iniciar_streaming?id=${e.id}`, {})
       setStreaming(true)
     }
   }
@@ -756,14 +757,14 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
               alternarManutencao={alternarManutencao}
               liberarDireto={liberarDireto}
               aoFechar={aoFechar}
-              aoCapturarTela={() => Api.post(`/api/estacoes/${e.nome}/capturar_tela`, {})}
+              aoCapturarTela={() => Api.post(`/api/estacoes/${e.nome}/capturar_tela?id=${e.id}`, {})}
               streaming={streaming}
               frameUrl={frameUrl}
               toggleStreaming={toggleStreaming}
             />
           )}
           {aba === "historico" && (
-            <AbaHistorico estacao={e.nome} />
+            <AbaHistorico estacao={e.nome} estacaoId={e.id} />
           )}
           {aba === "log" && (
             <AbaLog linhas={log} erro={erroLog} aoAtualizar={carregarLog} />
@@ -777,7 +778,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
               variant="outline"
               size="sm"
               onClick={() =>
-                Api.post(`/api/estacoes/${e.nome}/ligar`, {})
+                Api.post(`/api/estacoes/${e.nome}/ligar?id=${e.id}`, {})
                   .then(() => avisar("Magic packet enviado!"))
                   .catch((err: Error) => avisar(err.message, "erro"))
               }
@@ -1220,7 +1221,7 @@ function AbaLog({ linhas, erro, aoAtualizar }: { linhas: LinhaLog[] | null; erro
   )
 }
 
-function AbaHistorico({ estacao }: { estacao: string }) {
+function AbaHistorico({ estacao, estacaoId }: { estacao: string; estacaoId: number }) {
   const [sessoes, setSessoes] = useState<SessaoHistorico[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState("")
@@ -1228,7 +1229,7 @@ function AbaHistorico({ estacao }: { estacao: string }) {
   useEffect(() => {
     setCarregando(true)
     setErro("")
-    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?estacao_nome=${encodeURIComponent(estacao)}`)
+    Api.get<SessaoHistorico[]>(`/api/sessoes/historico?estacao_id=${estacaoId}&estacao_nome=${encodeURIComponent(estacao)}`)
       .then((r) => setSessoes(r ?? []))
       .catch((e) => setErro((e as Error).message))
       .finally(() => setCarregando(false))
@@ -1471,7 +1472,7 @@ function BotaoAtualizarAgente({ estacao: e }: { estacao: Estacao }) {
   async function atualizar() {
     setEnviando(true)
     try {
-      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/atualizar_agente`)
+      await Api.post(`/api/estacoes/${encodeURIComponent(e.nome)}/atualizar_agente?id=${e.id}`)
       avisar(`${e.nome}: atualizando o agente para a ${e.versao_atual} (volta na tela de login)`)
     } catch (err) {
       avisar((err as Error).message, "erro")

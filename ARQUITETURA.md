@@ -183,3 +183,11 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - `DELETE /api/estacoes/grupos/{id}`: exclui a zona e as estações dela (como Excluir estação); recusa se alguma está em uso.
 - Seleção de zonas só no painel (`Mapa.tsx`, `selecao`): `zonasArrastadas` aplica o deslocamento (ou o tamanho) da zona arrastada às selecionadas e `salvarZonas` grava todas.
 - `/api/relatorios/cliente/{id}` e `/estacao/{nome}` incluem as sessões em andamento (`_filtrar(..., abertas=True)`), com `em_uso` por linha e, no do cliente, `em_uso` (a estação) e a foto. O painel refaz a consulta quando muda a lista de sessões abertas (WebSocket).
+
+## Mapas separados por piso (6.18)
+
+- `estacoes.nome` é único **por piso**, não no sistema (`app/nomes_estacao.py`). O piso da estação é o do grupo; sem grupo, `estacoes.piso_id` (PC pendente ou excluído junto com a zona); senão o piso padrão (`pisos.piso_da_estacao`).
+- `ConnectionManager.estacoes` é indexado pelo **id** da estação (renomear não mexe na conexão). Os eventos do painel trazem `estacao_id` além do nome.
+- Rotas `/api/estacoes/{nome}/...` aceitam `?id=` (o painel sempre manda; `achar_estacao`). Só pelo nome: 404 se não existe, 409 se há uma em cada piso. `/api/estacoes/acoes` aceita `ids`. `/api/relatorios/estacao/{nome}` aceita `piso_id` ou `id`; `/api/sessoes/historico` aceita `estacao_id`.
+- `estacao_do_agente` (`app/estacoes_novas.py`): pelo identificador; senão pelo nome (`_pelo_nome`): agente 1.14+ adota a única estação sem PC com esse nome, com duas fica pendente; agente antigo pega a do piso padrão.
+- Migração (`database._tirar_nome_unico_das_estacoes`): o SQLite não remove um UNIQUE, então a tabela é refeita (`estacoes_nova` → `estacoes`, mesmos ids; as referências das outras tabelas continuam valendo), depois de `VACUUM INTO cybercafe.antes-6.18.db`. No PostgreSQL: `DROP CONSTRAINT estacoes_nome_key`.
