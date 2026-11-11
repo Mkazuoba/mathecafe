@@ -8,6 +8,19 @@
 - **Novas estações**: mostra o piso de cada PC; a zona sugerida é a do piso dele (as outras vêm depois, com o piso no nome) e "Substitui a X" mostra o piso de cada estação.
 - Agentes até a 1.19 continuam como antes (pelo nome).
 
+## 2026-11-11 — Área do Cliente no PC (9.11)
+
+- **Tela da sessão redesenhada** (prompt enviado pelo Matheus, feito no agente em Tkinter): cores Zinc (escuro e claro) e três colunas sobre o dock.
+  - **Menu à esquerda**, que recolhe: Início (banner da Programação + apps) e Meus Apps (só os apps). No rodapé, o cliente, a estação e se está online.
+  - **No centro**: pesquisa, pílulas das categorias (cada uma na sua cor) e os cards dos apps com capa, logo, selo da categoria e um botão **Abrir**. Com o mouse em cima, o card sobe e brilha na cor da categoria.
+  - **À direita**: o tempo restante com a barra do quanto já foi usado, e os **Avisos da biblioteca**.
+  - Saiu a faixa de cima da sessão (nome, tempo e Encerrar): o tempo está no widget e no dock; o Encerrar, no dock.
+- **Cor por categoria**: Configurações → Apps permitidos → Categorias tem a cor de cada uma. Categoria nova já nasce com uma cor.
+- **Avisos da biblioteca**: Configurações → **Avisos** (novo). Publicar, editar, ligar/desligar, ordenar e apagar; os PCs atualizam na hora.
+- **Link no cartaz**: em Configurações → Programação cada cartaz pode ter um link. O banner do PC mostra **Ver no navegador / Inscrição**, que abre no navegador (que precisa estar liberado na estação).
+- Sem "pedir +30 min" e sem Histórico no menu, por decisão do Matheus.
+- Vale a partir do agente com essas mudanças (ainda não liberado). O servidor e o painel já funcionam com os agentes atuais (eles ignoram a cor, o link e os avisos).
+
 ## 2026-11-11 — Mapas separados por piso, parte A: o mesmo nome no Adulto e no Infantil (6.18)
 
 - O nome da estação passou a ser único **só dentro do piso**: dá para ter AD-01 no Adulto e AD-01 no Infantil, cada uma com o seu histórico. No mesmo piso continua proibido (criar, várias de uma vez, renomear, aprovar, mudar de zona ou mudar a zona de piso).

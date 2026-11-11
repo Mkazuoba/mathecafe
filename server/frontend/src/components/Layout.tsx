@@ -69,6 +69,7 @@ export const ITENS: {
       ["Mapas", "grupos"],
       ["Apps permitidos", "apps"],
       ["Programação", "programacao"],
+      ["Avisos", "avisos"],
       ["Servidor", "servidor"],
       ["Minha conta", "conta"],
     ].map(([rotulo, valor]) => ({ rotulo, chave: "secao", valor })),

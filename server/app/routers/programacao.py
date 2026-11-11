@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,14 +23,35 @@ CHAVE_SEGUNDOS = "programacao_segundos"
 SEGUNDOS_PADRAO = 10
 
 
+def normalizar_link(valor):
+    """Link do cartaz: só http(s) (o agente abre no navegador); sem esquema vira
+    https. Vazio apaga."""
+    if valor is None:
+        return None
+    valor = valor.strip()
+    if not valor:
+        return ""
+    if "://" not in valor:
+        valor = "https://" + valor
+    if not valor.lower().startswith(("http://", "https://")) or len(valor) > 500:
+        raise ValueError("O link precisa começar com http:// ou https://")
+    return valor
+
+
 class NovoItem(BaseModel):
     titulo: str = ""
     imagem: str  # data URL (o painel reduz antes de enviar)
+    link: Optional[str] = None
+
+    _link = field_validator("link")(normalizar_link)
 
 
 class EditarItem(BaseModel):
     titulo: Optional[str] = None
     ativo: Optional[bool] = None
+    link: Optional[str] = None  # "" apaga
+
+    _link = field_validator("link")(normalizar_link)
 
 
 class Ordem(BaseModel):
@@ -47,6 +68,7 @@ def _serial(i: ItemProgramacao):
         "titulo": i.titulo,
         "ativo": i.ativo,
         "ordem": i.ordem,
+        "link": i.link or None,
         # vai na URL da imagem: o agente e o navegador não usam a antiga
         "versao": int(i.atualizado_em.timestamp()) if i.atualizado_em else 0,
     }
@@ -92,7 +114,7 @@ def imagem(id: int, db: Session = Depends(get_db)):
 async def criar(body: NovoItem, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     tipo, dados = ler_imagem(body.imagem, IMAGEM_MAX_BYTES)
     ultimo = _ordenados(db).order_by(None).order_by(ItemProgramacao.ordem.desc()).first()
-    item = ItemProgramacao(titulo=body.titulo.strip(), tipo=tipo, conteudo=dados,
+    item = ItemProgramacao(titulo=body.titulo.strip(), tipo=tipo, conteudo=dados, link=body.link or None,
                            ordem=(ultimo.ordem + 1) if ultimo else 0, atualizado_em=datetime.utcnow())
     db.add(item)
     db.commit()
@@ -133,6 +155,8 @@ async def editar(id: int, body: EditarItem, db: Session = Depends(get_db), _=Dep
         item.titulo = body.titulo.strip()
     if body.ativo is not None:
         item.ativo = body.ativo
+    if body.link is not None:
+        item.link = body.link or None
     db.commit()
     await _avisar_agentes()
     return _serial(item)

@@ -130,6 +130,8 @@ class CategoriaApp(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(40), nullable=False, unique=True)
     ordem = Column(Integer, nullable=False, default=0)
+    # 9.11: a cor da categoria no agente (selo, fundo da logo e brilho da capa)
+    cor = Column(String(7), nullable=True)
 
 
 class AppPermitido(Base):
@@ -181,6 +183,20 @@ class ItemProgramacao(Base):
     tipo = Column(String(20), nullable=False)
     conteudo = Column(LargeBinary, nullable=False)
     atualizado_em = Column(DateTime, default=datetime.utcnow)
+    # 9.11: botão "Ver no navegador / Inscrição" no banner do agente
+    link = Column(String(500), nullable=True)
+
+
+class AvisoBiblioteca(Base):
+    """Comunicado, regra do espaço ou evento do dia: o widget Avisos da
+    biblioteca, à direita da tela de apps do agente (9.11). Iguais em todas as estações."""
+    __tablename__ = "avisos"
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String(80), default="")
+    texto = Column(String(400), default="")
+    ordem = Column(Integer, default=0)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
 
 
 class AcaoOperador(Base):

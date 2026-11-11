@@ -333,7 +333,9 @@ def test_paletas_do_tema():
     for p in paletas.values():
         # cores repetidas numa paleta tornariam a troca ambigua
         assert len({v.lower() for v in p.values()}) == len(p)
-    assert paletas["escuro"]["fundo"] == "#0f1117"  # o escuro continua como era
+    # 11/11 (9.11): tokens Zinc do prompt da Area do Cliente
+    assert paletas["escuro"]["fundo"] == "#09090b" and paletas["escuro"]["superficie"] == "#18181b"
+    assert paletas["claro"]["fundo"] == "#fafafa" and paletas["claro"]["superficie"] == "#ffffff"
 
 
 def test_trocar_cores_percorre_toda_a_janela():
@@ -866,3 +868,44 @@ def test_instalador_pergunta_o_piso():
     assert "if defined PISO echo PISO=!PISO!" in texto
     rotina = texto[texto.index(":escolher_piso"):]
     assert 'delims=;' in rotina and "goto perguntar_piso" in rotina
+
+
+def test_area_do_cliente_menu_widgets_e_cards():
+    # 11/11 (9.11): Area do Cliente do prompt do Matheus, em Tkinter. Menu da
+    # esquerda (Inicio e Meus Apps, sem Historico), widgets da direita (sessao e
+    # avisos, sem pedir +30 min), pilulas de categoria e cards com "Abrir"
+    src = _fonte()
+    assert "class MenuLateral:" in src and "class PainelDireito:" in src
+    menu = src[src.index("class MenuLateral:"):src.index("class PainelDireito:")]
+    assert '"Início"' in menu and '"Meus Apps"' in menu
+    assert "Histórico" not in menu and "Biblioteca" not in menu
+    assert "LARGURA_ABERTO, LARGURA_FECHADO = 240, 70" in menu
+    direito = src[src.index("class PainelDireito:"):src.index("class AgenteApp:")]
+    assert "AVISOS DA BIBLIOTECA" in direito and "SESSÃO ATIVA" in direito
+    assert "/api/avisos/agente" in direito
+    assert "+30" not in src
+    assert "topo_sessao" not in src  # o tempo e o Encerrar estao no widget e no dock
+    tela = src[src.index("class TelaApps:"):src.index("class TelaLogin:")]
+    assert '"Abrir"' in tela and "self.lista_cat" not in tela  # categorias viraram pilulas
+    atualizado = src[src.index('elif evento == "avisos_atualizados":'):]
+    assert "self._painel_direito.recarregar_avisos()" in atualizado[:300]
+
+
+def test_cor_da_categoria_no_agente():
+    ns = _carregar("cor_do_app", "cor_valida", "_paleta_categorias")
+    ns["re"] = __import__("re")
+    cor = ns["cor_do_app"]
+    assert cor({"categoria": "Jogos", "categoria_cor": "#E11D48"}, "#6366f1") == "#e11d48"
+    # servidor antigo (sem cor): uma da paleta pela ordem da categoria
+    a = cor({"categoria": "Jogos", "categoria_ordem": 1}, "#6366f1")
+    assert a.startswith("#") and a != "#6366f1"
+    assert cor({"categoria": "Jogos", "categoria_ordem": 1}, "#000000") == a
+    assert cor({"categoria": None}, "#6366f1") == "#6366f1"  # Outros: o destaque do piso
+
+
+def test_banner_abre_o_link_do_cartaz():
+    src = _fonte()
+    prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
+    assert "Ver no navegador / Inscrição" in prog
+    assert "webbrowser.open(" in prog
+    assert 'item.get("link")' in prog
