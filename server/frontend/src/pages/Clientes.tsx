@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
 import {
   IconChevronDown,
   IconChevronUp,
@@ -9,6 +8,7 @@ import {
   IconSelector,
 } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
+import { useAvisos } from "@/lib/avisos"
 import { FILTROS_PADRAO, gravarFiltros, lerFiltros, useBuscaClientes, type FiltrosClientes } from "@/lib/buscaClientes"
 import { useDados } from "@/lib/dados"
 import { AbasPiso, textoIdade } from "@/lib/piso"
@@ -36,7 +36,7 @@ const COLUNAS: { titulo: string; ordem?: FiltrosClientes["ordem"] }[] = [
 ]
 
 export default function Clientes() {
-  const navigate = useNavigate()
+  const avisar = useAvisos()
   const admin = Api.ehAdmin()
   const { pisos, piso, trocarPiso } = useDados()
   const [busca, setBusca] = useState("")
@@ -91,7 +91,12 @@ export default function Clientes() {
         />
         <div className="flex-1" />
         {admin && (
-          <Button variant="outline" size="sm" onClick={() => navigate("/configuracoes?secao=relatorios")}>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Todas as sessões encerradas (cliente, estação, horários e tempos)"
+            onClick={() => Api.baixar("/api/relatorios/csv", "relatorio_sessoes.csv").catch((e) => avisar((e as Error).message, "erro"))}
+          >
             Exportar CSV
           </Button>
         )}

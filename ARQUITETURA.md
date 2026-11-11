@@ -175,3 +175,11 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - **Mensagens no console só com caracteres latinos**: emoji em `print` derruba o servidor num console Windows (cp1252).
 - **Backup no batimento** (`main.py`): a cada minuto, se o backup do dia (data de Brasília) ainda não existe, ele é feito numa thread. Assim o primeiro sai logo depois da meia-noite ou quando o servidor sobe. Nome `cybercafe-AAAA-MM-DD-HHMM.db`: o "Fazer backup agora" do painel não sobrescreve o da madrugada. Gravado como `.tmp` e renomeado, para nunca existir um backup pela metade. Só SQLite; no PostgreSQL, o provedor cuida.
 - **Servidor de produção como tarefa do Windows** (`registrar_servidor.ps1`): `MatheCafe-Servidor`, na inicialização, como SYSTEM (servidor não precisa de área de trabalho, ao contrário do agente), reabrindo se cair; libera a porta no firewall. `iniciar_servidor.bat` grava a saída em `server/logs/servidor.log` (sem buffer, sem log de cada requisição).
+
+## Mapa: zonas em lote e histórico ao vivo
+
+- `POST /api/estacoes/lote` (prefixo, início, quantidade, dígitos, zona): cria várias estações; se algum nome já existe ativo, não cria nenhuma (as excluídas com histórico voltam).
+- `POST /api/estacoes/grupos/duplicar` (`itens: [{grupo_id, zona}]`): copia as zonas para a posição dada pelo painel (embaixo de tudo) com as estações renumeradas por `Proximos` (maior número já usado no prefixo + 1, contando excluídas e pendentes).
+- `DELETE /api/estacoes/grupos/{id}`: exclui a zona e as estações dela (como Excluir estação); recusa se alguma está em uso.
+- Seleção de zonas só no painel (`Mapa.tsx`, `selecao`): `zonasArrastadas` aplica o deslocamento (ou o tamanho) da zona arrastada às selecionadas e `salvarZonas` grava todas.
+- `/api/relatorios/cliente/{id}` e `/estacao/{nome}` incluem as sessões em andamento (`_filtrar(..., abertas=True)`), com `em_uso` por linha e, no do cliente, `em_uso` (a estação) e a foto. O painel refaz a consulta quando muda a lista de sessões abertas (WebSocket).

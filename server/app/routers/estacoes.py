@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -134,6 +135,112 @@ def atualizar_grupo(grupo_id: int, data: GrupoUpdate,
     db.commit()
     return serial_grupo(g)
 
+# ── Ilhas do Mapa: duplicar e excluir varias de uma vez ──────────────────────
+
+_NUMERO_NO_FIM = re.compile(r"^(.*?)(\d+)$")
+
+
+class Proximos:
+    """Proximos numeros livres por prefixo ("AD-" 07 -> AD-08), contando todas as
+    estacoes (ate excluidas e pendentes) e as que ja foram dadas nesta copia."""
+
+    def __init__(self, db: Session):
+        self.nomes = {n for (n,) in db.query(Estacao.nome).all()}
+
+    def para(self, nome: str) -> str:
+        m = _NUMERO_NO_FIM.match(nome)
+        if not m:
+            novo = nome_livre_em(self.nomes, nome)
+        else:
+            prefixo, digitos = m.group(1), len(m.group(2))
+            usados = [int(x.group(2)) for x in map(_NUMERO_NO_FIM.match, self.nomes)
+                      if x and x.group(1) == prefixo]
+            novo = f"{prefixo}{str(max(usados, default=0) + 1).zfill(digitos)}"
+        self.nomes.add(novo)
+        return novo
+
+
+def nome_livre_em(nomes: set, base: str) -> str:
+    n = 2
+    while f"{base}-{n}" in nomes:
+        n += 1
+    return f"{base}-{n}"
+
+
+class CopiaDeZona(BaseModel):
+    grupo_id: int
+    zona: Zona  # onde a copia fica no mapa (o painel poe embaixo de tudo)
+
+
+class DuplicarBody(BaseModel):
+    itens: List[CopiaDeZona] = Field(min_length=1, max_length=30)
+
+
+@router.post("/grupos/duplicar")
+def duplicar_grupos(data: DuplicarBody, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """Copia cada ilha (nome, cor, tempo, piso, tamanho) com os PCs nas mesmas
+    posicoes, renumerados com os proximos numeros livres. O PC real que for
+    instalado com um desses nomes assume o lugar."""
+    proximos = Proximos(db)
+    copias = []
+    for item in data.itens:
+        g = db.query(GrupoEstacao).filter(GrupoEstacao.id == item.grupo_id, GrupoEstacao.ativo == True).first()
+        if not g:
+            raise HTTPException(404, "Zona não encontrada")
+        nova = GrupoEstacao(nome=f"{g.nome} (cópia)"[:50], cor=g.cor, piso_id=g.piso_id,
+                            tempo_padrao_segundos=g.tempo_padrao_segundos,
+                            zona_x=item.zona.x, zona_y=item.zona.y,
+                            zona_largura=item.zona.largura, zona_altura=item.zona.altura)
+        db.add(nova)
+        db.flush()
+        pcs = db.query(Estacao).filter(Estacao.grupo_id == g.id, Estacao.ativa == True,
+                                       Estacao.aprovada != False).order_by(Estacao.nome).all()
+        for e in pcs:
+            db.add(Estacao(nome=proximos.para(e.nome), grupo_id=nova.id, pos_x=e.pos_x, pos_y=e.pos_y))
+        copias.append((g.nome, nova, len(pcs)))
+    db.commit()
+    for original, nova, n in copias:
+        registrar(db, quem, "duplicar_zona", detalhe=f"{original} -> {nova.nome} ({n} estações)")
+    return [serial_grupo(nova) for _, nova, _ in copias]
+
+
+@router.delete("/grupos/{grupo_id}")
+async def excluir_grupo(grupo_id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """Exclui a ilha e os PCs dela (como Excluir estação: quem tem historico so e
+    desativado). Com alguem usando um PC da ilha, nao exclui nada."""
+    g = db.query(GrupoEstacao).filter(GrupoEstacao.id == grupo_id, GrupoEstacao.ativo == True).first()
+    if not g:
+        raise HTTPException(404, "Zona não encontrada")
+    pcs = db.query(Estacao).filter(Estacao.grupo_id == g.id, Estacao.ativa == True).all()
+    em_uso = [e.nome for e in pcs
+              if db.query(Sessao).filter(Sessao.estacao_id == e.id, Sessao.encerrada_em == None).first()]
+    if em_uso:
+        raise HTTPException(400, f"{g.nome}: {', '.join(em_uso)} em uso. Encerre a sessão antes de excluir")
+    nomes = []
+    for e in pcs:
+        nomes.append(e.nome)
+        if db.query(Sessao).filter(Sessao.estacao_id == e.id).first():
+            e.ativa = False
+            e.grupo_id = None
+        else:
+            db.delete(e)
+        logs_estacoes.apagar(e.id)
+    g.ativo = False
+    db.commit()
+    registrar(db, quem, "excluir_zona", detalhe=f"{g.nome}" + (f" ({len(nomes)} estações)" if nomes else ""))
+    for nome in nomes:
+        await _soltar_conexao(nome, 4004, "Estação excluída no painel")
+    return {"ok": True, "estacoes": len(nomes)}
+
+
+class LoteBody(BaseModel):
+    prefixo: str = Field(min_length=1, max_length=15)
+    inicio: int = Field(ge=0, le=9999)
+    quantidade: int = Field(ge=1, le=60)
+    digitos: int = Field(ge=1, le=4)
+    grupo_id: Optional[int] = None
+
+
 # ── Estações ──────────────────────────────────────────────────────────────────
 @router.get("/")
 def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),
@@ -160,6 +267,27 @@ def criar(nome: str, grupo_id: Optional[int] = None,
         db.add(e)
     db.commit(); db.refresh(e)
     return serial_estacao(e)
+
+@router.post("/lote")
+def criar_varias(data: LoteBody, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """Varias estacoes de uma vez: prefixo + numeros (AD- 1 a 10, 2 digitos ->
+    AD-01 ... AD-10). Se algum nome ja existe, nao cria nenhuma."""
+    nomes = [f"{data.prefixo}{str(n).zfill(data.digitos)}"
+             for n in range(data.inicio, data.inicio + data.quantidade)]
+    if any(len(n) > 20 for n in nomes):
+        raise HTTPException(400, "Nome muito comprido (até 20 letras)")
+    ja = {e.nome: e for e in db.query(Estacao).filter(Estacao.nome.in_(nomes))}
+    repetidos = [n for n in nomes if n in ja and ja[n].ativa]
+    if repetidos:
+        raise HTTPException(400, f"Já existem: {', '.join(repetidos)}")
+    for n in nomes:
+        if n in ja:  # excluida com historico: volta, mantendo o historico
+            ja[n].ativa, ja[n].aprovada, ja[n].grupo_id = True, True, data.grupo_id
+        else:
+            db.add(Estacao(nome=n, grupo_id=data.grupo_id))
+    db.commit()
+    registrar(db, quem, "criar_estacoes", detalhe=f"{nomes[0]} a {nomes[-1]}" if len(nomes) > 1 else nomes[0])
+    return {"criadas": nomes}
 
 # ── Novas estacoes (cadastro automatico pelo instalador; app/estacoes_novas.py) ──
 class AprovarBody(BaseModel):

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -87,14 +87,22 @@ def _periodo_utc(de: Optional[str], ate: Optional[str]):
     return (utc(de) if de else None), (utc(ate, mais_um=True) if ate else None)
 
 
-def _filtrar(q, de, ate, db):
+def _filtrar(q, de, ate, db, abertas=False):
+    """abertas=True inclui as sessoes em andamento (o historico mostra quem
+    esta logado agora; o tempo delas so entra quando acabam)."""
     inicio, fim = _periodo_utc(de, ate)
-    q = so_visiveis(q.filter(Sessao.encerrada_em != None), db)
+    if not abertas:
+        q = q.filter(Sessao.encerrada_em != None)
+    q = so_visiveis(q, db)
     if inicio:
         q = q.filter(Sessao.iniciada_em >= inicio)
     if fim:
         q = q.filter(Sessao.iniciada_em < fim)
     return q
+
+
+# 1 quando o grupo tem uma sessao em andamento
+_ABERTA = func.max(case((Sessao.encerrada_em.is_(None), 1), else_=0))
 
 
 def _iso(d):
@@ -111,18 +119,22 @@ def historico_do_cliente(cliente_id: int, de: Optional[str] = None, ate: Optiona
     tempo = func.coalesce(func.sum(Sessao.tempo_consumido_segundos), 0)
     linhas = _filtrar(
         db.query(Estacao.nome, func.count(Sessao.id), tempo,
-                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em))
+                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em), _ABERTA)
           .join(Estacao, Estacao.id == Sessao.estacao_id)
-          .filter(Sessao.cliente_id == cliente_id), de, ate, db
+          .filter(Sessao.cliente_id == cliente_id), de, ate, db, abertas=True
     ).group_by(Estacao.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
     return {
-        "cliente": {"id": cliente.id, "login": cliente.login, "nome": cliente.nome},
+        "cliente": {"id": cliente.id, "login": cliente.login, "nome": cliente.nome,
+                    "tem_foto": cliente.foto_em is not None,
+                    "foto_em": cliente.foto_em.isoformat() if cliente.foto_em else None},
+        # estacao onde o cliente esta logado agora (None se nao esta)
+        "em_uso": next((l[0] for l in linhas if l[5]), None),
         "sessoes": sum(l[1] for l in linhas),
         "tempo_segundos": int(sum(l[2] for l in linhas)),
         "primeira_vez": _iso(min((l[3] for l in linhas), default=None)),
         "ultima_vez": _iso(max((l[4] for l in linhas), default=None)),
         "itens": [{"estacao": nome, "sessoes": n, "tempo_segundos": int(t), "primeira_vez": _iso(p),
-                   "ultima_vez": _iso(u)} for nome, n, t, p, u in linhas],
+                   "ultima_vez": _iso(u), "em_uso": bool(a)} for nome, n, t, p, u, a in linhas],
     }
 
 
@@ -136,9 +148,9 @@ def historico_da_estacao(nome: str, de: Optional[str] = None, ate: Optional[str]
     tempo = func.coalesce(func.sum(Sessao.tempo_consumido_segundos), 0)
     linhas = _filtrar(
         db.query(Usuario.id, Usuario.login, Usuario.nome, func.count(Sessao.id), tempo,
-                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em))
+                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em), _ABERTA)
           .join(Usuario, Usuario.id == Sessao.cliente_id)
-          .filter(Sessao.estacao_id == estacao.id), de, ate, db
+          .filter(Sessao.estacao_id == estacao.id), de, ate, db, abertas=True
     ).group_by(Usuario.id, Usuario.login, Usuario.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
     return {
         "estacao": {"id": estacao.id, "nome": estacao.nome, "grupo": estacao.grupo.nome if estacao.grupo else None},
@@ -148,7 +160,7 @@ def historico_da_estacao(nome: str, de: Optional[str] = None, ate: Optional[str]
         "primeira_vez": _iso(min((l[5] for l in linhas), default=None)),
         "ultima_vez": _iso(max((l[6] for l in linhas), default=None)),
         "itens": [{"cliente_id": i, "login": lg, "nome": nm, "sessoes": n, "tempo_segundos": int(t),
-                   "primeira_vez": _iso(p), "ultima_vez": _iso(u)} for i, lg, nm, n, t, p, u in linhas],
+                   "primeira_vez": _iso(p), "ultima_vez": _iso(u), "em_uso": bool(a)} for i, lg, nm, n, t, p, u, a in linhas],
     }
 
 
