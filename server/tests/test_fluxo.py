@@ -2631,3 +2631,17 @@ def test_enviar_um_backup_de_fora(c, admin, tmp_path, monkeypatch):
                files={"arquivo": ("planilha.db", b"nao e banco", "application/octet-stream")})
     assert r.status_code == 400
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith("enviado-")] == [enviado]
+
+
+def test_instalador_descobre_o_piso_atual_do_pc(c, admin):
+    """Reinstalar escolhendo outro piso: o instalador pergunta ao servidor qual
+    estação aquele ID é hoje ("piso_id;nome"); com o piso diferente, gera um ID
+    novo e o PC entra no piso escolhido."""
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    adulto = pisos["Adulto"]["id"]
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-reinst-{nome}&piso={adulto}") as ws:
+        _estado_114(ws)
+    r = c.get("/api/agente/estacao", params={"id": f"uuid-reinst-{nome}"})
+    assert r.status_code == 200 and r.text.strip() == f"{adulto};{nome}"
+    assert c.get("/api/agente/estacao", params={"id": "nao-existe"}).text.strip() == ""
+    assert c.get("/api/agente/estacao").status_code == 422

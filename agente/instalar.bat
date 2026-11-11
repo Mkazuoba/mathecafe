@@ -195,6 +195,10 @@ set ID_PC=
 if exist "%DESTINO%\agente.cfg" (
     for /f "tokens=1,* delims==" %%a in ('findstr /b /c:"ID=" "%DESTINO%\agente.cfg"') do set ID_PC=%%b
 )
+:: Reinstalacao escolhendo OUTRO piso: o ID antigo prenderia o PC a estacao do
+:: piso anterior (o servidor reconhece pelo ID antes de olhar o piso). Pergunta
+:: ao servidor que estacao este ID e hoje; com o piso diferente, sem o ID.
+if defined ID_PC if defined PISO if defined SERVIDOR_OK call :conferir_piso_do_id
 (
     echo # MatheCafe - configuracao da estacao ^(gerado automaticamente^)
     echo SERVIDOR=ws://!SERVIDOR!
@@ -258,6 +262,21 @@ exit /b 0
 :: ============================================================
 :: Sub-rotinas (call :nome)
 :: ============================================================
+
+:conferir_piso_do_id
+:: O servidor responde "piso_id;nome" (ou nada, se nao conhece este ID)
+set PISO_ATUAL=
+set NOME_ATUAL=
+for /f "usebackq tokens=1,* delims=;" %%a in (`curl -s -f -m 5 --noproxy "*" "http://!SERVIDOR!/api/agente/estacao?id=!ID_PC!"`) do (
+    set PISO_ATUAL=%%a
+    set NOME_ATUAL=%%b
+)
+if not defined PISO_ATUAL exit /b 0
+if "!PISO_ATUAL!"=="!PISO!" exit /b 0
+echo       Este PC era a estacao !NOME_ATUAL! de outro piso: entra no piso escolhido
+echo       como computador novo. A !NOME_ATUAL! antiga fica no mapa ^(exclua no painel^).
+set ID_PC=
+exit /b 0
 
 :escolher_piso
 :: Os pisos vem do servidor, uma linha "id;nome" cada (sem login)

@@ -77,6 +77,18 @@ def pisos_para_o_instalador(db: Session = Depends(get_db)):
     return "".join(f"{p.id};{p.nome}\r\n" for p in pisos)  # CRLF: o cmd le direito
 
 
+@router.get("/estacao", response_class=PlainTextResponse)
+def estacao_do_id(id: str, db: Session = Depends(get_db)):
+    """Que estacao este PC (o ID do agente.cfg) e hoje: "piso_id;nome", ou vazio
+    se o servidor nao o conhece. O instalar.bat usa na reinstalacao: escolhido
+    outro piso, ele gera um ID novo e o PC entra no piso escolhido (o ID antigo o
+    prenderia a estacao do piso anterior)."""
+    from app.models import Estacao
+    from app.nomes_estacao import piso_id_de
+    e = db.query(Estacao).filter(Estacao.identificador == id.strip()[:64], Estacao.ativa == True).first()
+    return f"{piso_id_de(e)};{e.nome}\r\n" if e else ""
+
+
 @router.get("/download")
 def download():
     """Baixa o agente.py atual. Sem autenticacao — o agente ainda nao tem token."""

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11 — Corrigido: reinstalar em outro piso
+
+- Reinstalado escolhendo o Infantil, o PC continuava no Adulto: o instalador mantém o ID do PC e o servidor reconhece pelo ID antes de olhar o piso.
+- Agora o instalador pergunta ao servidor que estação aquele ID é (`GET /api/agente/estacao?id=`). Se o piso escolhido for outro, descarta o ID antigo: o PC entra no piso escolhido como computador novo. Mesmo piso: mantém o ID (continua a mesma estação). A estação antiga fica no mapa do outro piso para excluir.
+
 ## 2026-11-11 — Corrigido: Ctrl+Alt+Del liberado numa máquina nova
 
 - Numa instalação nova o passo [6/6] falhava (o perfil do `cliente` ainda não existia) e o Ctrl+Alt+Del deixava **alterar a senha** e abrir o **Gerenciador de Tarefas**.

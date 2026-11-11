@@ -988,3 +988,14 @@ def test_politicas_do_ctrl_alt_del_valem_mesmo_se_a_instalacao_falhar():
     assert seis.index("registrar_politicas.ps1") < seis.index("politicas_cliente.ps1")
     desinstalar = open(os.path.join(pasta, "desinstalar.bat"), "rb").read().decode("ascii")
     assert 'schtasks /delete /tn "MatheCafe-Politicas"' in desinstalar
+
+
+def test_reinstalar_em_outro_piso_troca_o_id():
+    # 11/11: reinstalado escolhendo o Infantil, o PC continuou no Adulto (o ID
+    # antigo, mantido na reinstalacao, achava a estacao antes do piso)
+    texto = open(os.path.join(os.path.dirname(AGENTE), "instalar.bat"), "rb").read().decode("ascii")
+    assert "call :conferir_piso_do_id" in texto and "/api/agente/estacao?id=!ID_PC!" in texto
+    passo4 = texto[texto.index("[4/6]"):texto.index("[5/6]")]
+    assert passo4.index("call :conferir_piso_do_id") < passo4.index("echo ID=!ID_PC!")
+    rotina = texto[texto.index("\r\n:conferir_piso_do_id"):texto.index("\r\n:escolher_piso")]
+    assert 'if "!PISO_ATUAL!"=="!PISO!" exit /b 0' in rotina and "set ID_PC=" in rotina
