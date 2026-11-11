@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-11 — Área do Cliente, terceira versão (9.13)
+## 2026-11-11 — Área do Cliente, terceira versão (9.13; agente 1.23.0)
 
 - **Visual da imagem enviada pelo Matheus**, no agente (Tkinter):
   - **Menu mais limpo**: só a marca, Início, Meus Apps (com a quantidade) e **Configurações** no rodapé, que abre preferências da sessão (tema e tamanho do texto dos apps). O cliente saiu do menu.

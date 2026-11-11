@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.22.0"
+VERSAO = "1.23.0"
 
 import asyncio
 import json
@@ -452,6 +452,11 @@ ZINC_950, ZINC_900 = "#09090b", "#18181b"
 AZUL, AZUL_CLARO = "#2563eb", "#3b82f6"  # blue-600 / blue-500: Abrir, banner, contador
 ROSA, ROSA_CLARO, ROSA_TEXTO = "#e11d48", "#f43f5e", "#fb7185"  # Encerrar sessão
 TEXTO_CLARO = "#f4f4f5"  # zinc-100, no lugar do branco puro
+EMERALD, EMERALD_TEXTO = "#10b981", "#34d399"  # Online, app aberto, tempo no dock
+# fonte da interface: a Inter quando estiver instalada no PC (AgenteApp.__init__), senão a Segoe UI
+FONTE = "Segoe UI"
+# botão de tema do dock: o sol leva ao claro, a lua ao escuro
+ICONE_TEMA = {"escuro": "\uE706", "claro": "\uE708"}
 
 CORES_DOS_WIDGETS = ("background", "foreground", "activebackground", "activeforeground",
                      "highlightbackground", "highlightcolor", "insertbackground",
@@ -628,7 +633,7 @@ class BarraSessao:
     """
     CHAVE = "#010203"  # cor que vira transparente
     ALTURA = 48  # sem a barra do Windows para copiar
-    ICONE = 32  # px
+    ICONE = 18  # px: ícone dentro da aba do app
     ESPACO = 8
     CORES_APPS = ("#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6")
 
@@ -656,7 +661,7 @@ class BarraSessao:
         self.balao.withdraw()
         self.balao.overrideredirect(True)
         self.balao.attributes("-topmost", True)
-        self.lbl_balao = tk.Label(self.balao, font=("Segoe UI", 9, "bold"), fg="white", bg="#111827", padx=8, pady=3)
+        self.lbl_balao = tk.Label(self.balao, font=(FONTE, 9, "bold"), fg="white", bg="#111827", padx=8, pady=3)
         self.lbl_balao.pack()
 
         self._itens = []  # [{"chave", "nome", "letra", "cor", "acao", "imagem_url"}]
@@ -668,6 +673,8 @@ class BarraSessao:
         self._foco = None
         self._janela_bloco = None  # item do canvas com o bloco (criado uma vez só)
         self._img_pasta = None  # ícone de pasta (Meus arquivos), guardado para o Tk não perdê-lo
+        self._contornos = {}  # índice -> cor da borda da aba (o mouse em cima troca)
+        self._fonte_aba = tkfont.Font(family=FONTE, size=8)
 
         # bloco da direita: sininho, relógio + tempo juntos, tema e Encerrar, em pílulas
         # (9.12: bg-zinc-900 com borda zinc-800; Encerrar em rosa suave)
@@ -681,23 +688,34 @@ class BarraSessao:
                                  bd=0, cursor="hand2")
         self.sininho.pack(side="left", padx=(0, 6))
         self.sininho.bind("<Button-1>", lambda _e: self._sininho())
-        self.lbl_relogio = Pilula(self.bloco, "", tkfont.Font(family="Consolas", size=9), neutro, fundo_bloco,
-                                  altura=30)
+        self.lbl_relogio = tk.Canvas(self.bloco, width=150, height=30, bg=p["fundo"], highlightthickness=0, bd=0)
         self.lbl_relogio.pack(side="left", padx=3)
         self._mostrar_relogio()
-        self.btn_tema = Pilula(self.bloco, ROTULO_TEMA[app.tema], tkfont.Font(family="Segoe UI", size=8, weight="bold"),
-                               neutro, fundo_bloco, comando=app.alternar_tema, altura=30)
+        self.btn_tema = Pilula(self.bloco, ICONE_TEMA[app.tema], tkfont.Font(family="Segoe MDL2 Assets", size=10),
+                               neutro, fundo_bloco, comando=app.alternar_tema, altura=30, padx=9)
         self.btn_tema.pack(side="left", padx=3)
         rosa = lambda sobre: ((ROSA, ROSA, TEXTO_CLARO) if sobre else
                               (misturar(ROSA, self.app.paleta["fundo"], 0.15),
                                misturar(ROSA_CLARO, self.app.paleta["fundo"], 0.3), ROSA_TEXTO))
-        self.btn_encerrar = Pilula(self.bloco, "Encerrar sessão", tkfont.Font(family="Segoe UI", size=8, weight="bold"),
+        self.btn_encerrar = Pilula(self.bloco, "Encerrar sessão", tkfont.Font(family=FONTE, size=8, weight="bold"),
                                    rosa, fundo_bloco, comando=app._encerrar_sessao_cliente, altura=30)
         self.btn_encerrar.pack(side="left", padx=(3, 0))
 
     def _mostrar_relogio(self):
-        """Hora e tempo restante no mesmo bloco (font-mono); o tempo fica rosa nos 5 minutos finais."""
-        self.lbl_relogio.config(text=f"{self._hora}  \u00b7  {self._tempo}", fg=ROSA_TEXTO if self._alerta else "")
+        """Hora e tempo restante no mesmo bloco (font-mono): ícone, hora | tempo em verde (rosa nos 5 minutos finais)."""
+        p, c = self.app.paleta, self.lbl_relogio
+        fonte = tkfont.Font(family="Consolas", size=8, weight="bold")
+        w = 34 + fonte.measure(self._hora) + 21 + fonte.measure(self._tempo) + 12
+        c.delete("all")
+        c.config(width=w, bg=p["fundo"])
+        self._retangulo(c, 0, 0, w - 1, 29, 10, fill=p["borda"], outline="")
+        self._retangulo(c, 1, 1, w - 2, 28, 9, fill=p["superficie"], outline="")
+        c.create_text(16, 15, text="\uE823", font=("Segoe MDL2 Assets", 8), fill=p["texto2"])
+        h = c.create_text(30, 15, anchor="w", text=self._hora, font=fonte, fill=p["texto"])
+        xs = (c.bbox(h) or (0, 0, 70, 0))[2] + 10
+        c.create_line(xs, 8, xs, 22, fill=p["borda"])
+        c.create_text(xs + 10, 15, anchor="w", text=self._tempo, font=fonte,
+                      fill=ROSA_TEXTO if self._alerta else EMERALD_TEXTO)
 
     def definir_hora(self, hora):
         if hora != self._hora:
@@ -785,6 +803,9 @@ class BarraSessao:
             self._janelas, self._foco = abertas, foco
             self._montar_itens()
             self.desenhar()
+            telas = getattr(self.app, "_tela_apps", None)
+            if telas:
+                telas.marcar_abertos(abertas)  # "Pronto" / "Aberto" nos cards
 
     def _icone_do_item(self, item):
         """O ícone pronto da capa do app, ou None (ainda baixando, sem capa ou
@@ -854,16 +875,27 @@ class BarraSessao:
         return contar() if contar else 0
 
     # ── mouse ──
+    def _caixas(self):
+        """(x0, x1) de cada item, da esquerda para a direita: o botão M (Início),
+        Meus arquivos e uma aba por app aberto (h-8, rounded-xl), cada uma com a sua largura."""
+        x, caixas = 16, []
+        for item in self._itens:
+            if item["chave"] == "inicio":
+                largura = 32
+            else:
+                largura = self._fonte_aba.measure(item["nome"]) + self.ICONE + 30
+                if item["chave"] == self._foco:
+                    largura += 12  # a bolinha de foco
+            caixas.append((x, x + largura))
+            x += largura + self.ESPACO
+        return caixas
+
     def _centros(self):
-        largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
-        n = len(self._itens)
-        passo = self.ICONE + self.ESPACO
-        x = (largura - (n * passo - self.ESPACO)) / 2 + self.ICONE / 2
-        return [x + k * passo for k in range(n)]
+        return [(x0 + x1) / 2 for x0, x1 in self._caixas()]
 
     def _item_em(self, x):
-        for k, centro in enumerate(self._centros()):
-            if abs(x - centro) <= (self.ICONE + self.ESPACO) / 2:
+        for k, (x0, x1) in enumerate(self._caixas()):
+            if x0 <= x <= x1:
                 return k
         return None
 
@@ -894,9 +926,9 @@ class BarraSessao:
         return 0 <= y <= self.altura and self._item_em(x) == k
 
     def _marcar_sobre(self):
-        cor = self.app.paleta["texto"]
+        cor = self.app.paleta["texto2"]
         for k in range(len(self._itens)):
-            self.canvas.itemconfig(f"icone{k}", outline=cor if k == self._sobre else "")
+            self.canvas.itemconfig(f"icone{k}", outline=cor if k == self._sobre else self._contornos.get(k, ""))
 
     def _mostrar_balao(self, k):
         if k is None:
@@ -936,34 +968,44 @@ class BarraSessao:
         c.create_rectangle(0, 0, largura, h, fill=p["fundo"], outline="", tags="desenho")
         c.create_line(0, 0, largura, 0, fill=p["borda"], tags="desenho")
         c.tag_lower("desenho")
-        if self._itens:
-            centros = self._centros()
-            for k, (item, x) in enumerate(zip(self._itens, centros)):
-                topo = meio - t / 2 - 2
-                if item["chave"] == "arquivos" and PIL_AVAILABLE:
-                    self._icone_pasta()
-                    c.create_image(x, topo + t / 2, image=self._img_pasta, tags="desenho")
-                    continue
+        self._contornos = {}
+        for k, (item, (x0, x1)) in enumerate(zip(self._itens, self._caixas())):
+            y0, y1 = meio - 16, meio + 16
+            if item["chave"] == "inicio":  # o botão MatheCafé
+                self._retangulo(c, x0, y0, x1, y1, 10, fill=AZUL, outline="", width=1, tags=("desenho", f"icone{k}"))
+                c.create_text((x0 + x1) / 2, meio, text="M", fill=TEXTO_CLARO, font=(FONTE, 10, "bold"), tags="desenho")
+                continue
+            foco = item["chave"] == self._foco
+            contorno = misturar(AZUL, p["fundo"], 0.6) if foco else p["borda"]
+            self._contornos[k] = contorno
+            self._retangulo(c, x0, y0, x1, y1, 12, fill=misturar(AZUL, p["fundo"], 0.14) if foco else p["superficie"],
+                            outline=contorno, width=1, tags=("desenho", f"icone{k}"))
+            x = x0 + 12 + t / 2
+            topo = meio - t / 2
+            if item["chave"] == "arquivos" and PIL_AVAILABLE:
+                self._icone_pasta()
+                c.create_image(x, topo + t / 2, image=self._img_pasta, tags="desenho")
+            else:
                 capa = self._icone_do_item(item)
                 if capa:
                     # a capa do app cadastrada no painel (Apps permitidos)
                     c.create_image(x, topo + t / 2, image=capa, tags="desenho")
-                    # contorno vazio por cima: é ele que _marcar_sobre acende (imagem não tem contorno)
-                    self._retangulo(c, x - t / 2 - 1, topo - 1, x + t / 2 + 1, topo + t + 1, 10, fill="",
-                                    outline=p["texto"] if k == self._sobre else "", width=2,
-                                    tags=("desenho", f"icone{k}"))
                 else:
-                    self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 9, fill=item["cor"] or p["destaque"],
-                                    outline=p["texto"] if k == self._sobre else "", width=2,
-                                    tags=("desenho", f"icone{k}"))
-                    c.create_text(x, topo + t / 2, text=item["letra"], fill="white",
-                                  font=("Segoe UI", int(t * 0.4), "bold"), tags="desenho")
-                if item["chave"] == self._foco:
-                    c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="", tags="desenho")
+                    self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 5, fill=item["cor"] or p["destaque"],
+                                    outline="", tags="desenho")
+                    c.create_text(x, topo + t / 2, text=item["letra"], fill=TEXTO_CLARO,
+                                  font=(FONTE, 8, "bold"), tags="desenho")
+            xt = x + t / 2 + 8
+            id_txt = c.create_text(xt, meio, anchor="w", text=item["nome"], font=self._fonte_aba,
+                                   fill=p["texto"] if foco else p["texto2"], tags="desenho")
+            if foco:
+                xf = (c.bbox(id_txt) or (0, 0, xt + 40, 0))[2] + 8
+                c.create_oval(xf, meio - 3, xf + 6, meio + 3, fill=AZUL_CLARO, outline="", tags="desenho")
         # bloco à direita: sininho, relógio + tempo, tema e Encerrar (pílulas)
         self.atualizar_sininho()
         self.bloco.config(bg=p["fundo"])
-        for pil in (self.lbl_relogio, self.btn_tema, self.btn_encerrar):
+        self._mostrar_relogio()
+        for pil in (self.btn_tema, self.btn_encerrar):
             pil.desenhar()
         if self._janela_bloco is None:
             self._janela_bloco = c.create_window(largura - 16, meio, window=self.bloco, anchor="e")
@@ -972,7 +1014,7 @@ class BarraSessao:
 
     def _icone_pasta(self):
         if self._img_pasta is None:
-            self._img_pasta = ImageTk.PhotoImage(icone_pasta(self.ICONE + 4))
+            self._img_pasta = ImageTk.PhotoImage(icone_pasta(self.ICONE + 2))
         return self._img_pasta
 
     def atualizar_sininho(self):
@@ -987,7 +1029,7 @@ class BarraSessao:
         s.create_text(15, 16, text="\uEA8F", font=("Segoe MDL2 Assets", 10), fill=p["texto" if n else "texto2"])
         if n:
             s.create_oval(21, 0, 33, 12, fill=AZUL, outline=p["fundo"])
-            s.create_text(27, 6, text=str(n) if n < 10 else "9+", fill=TEXTO_CLARO, font=("Segoe UI", 6, "bold"))
+            s.create_text(27, 6, text=str(n) if n < 10 else "9+", fill=TEXTO_CLARO, font=(FONTE, 6, "bold"))
 
 
 class Notificacoes:
@@ -1245,22 +1287,22 @@ class Notificacoes:
         # cabeçalho: título, "N novas" e Limpar tudo, numa pílula
         hy = topo - self.CABECALHO
         ret(c, 0, hy + 4, L, hy + self.CABECALHO - 6, 14, fill=p["superficie"], outline=p["superficie3"])
-        c.create_text(14, hy + 19, text="Notificações", anchor="w", fill=p["texto"], font=("Segoe UI", 10, "bold"))
+        c.create_text(14, hy + 19, text="Notificações", anchor="w", fill=p["texto"], font=(FONTE, 10, "bold"))
         novas = self.nao_lidas()
         rotulo = f"{novas} {'nova' if novas == 1 else 'novas'}" if novas else f"{len(self.itens)} no total"
-        etiqueta = c.create_text(126, hy + 19, text=rotulo, anchor="w", fill="white", font=("Segoe UI", 8, "bold"))
+        etiqueta = c.create_text(126, hy + 19, text=rotulo, anchor="w", fill="white", font=(FONTE, 8, "bold"))
         ex1, ey1, ex2, ey2 = c.bbox(etiqueta)
         fundo = ret(c, ex1 - 8, ey1 - 3, ex2 + 8, ey2 + 3, 10, fill=p["destaque"], outline="")
         c.tag_raise(etiqueta, fundo)
         if self.itens:
             lim = c.create_text(L - 14, hy + 19, text="Limpar tudo", anchor="e", fill=p["texto2"],
-                                font=("Segoe UI", 9))
+                                font=(FONTE, 9))
             x1, y1, x2, y2 = c.bbox(lim)
             self._alvos.append((x1 - 4, y1 - 4, x2 + 4, y2 + 4, self._limpar_tudo))
         self._caixa = (0, hy, L, self.altura)
         if not n:
             ret(c, 0, topo, L, topo + H, 16, fill=p["superficie"], outline=p["superficie3"], dash=(4, 3))
-            c.create_text(L / 2, topo + H / 2, text="🔕  Tudo em dia", fill=p["texto2"], font=("Segoe UI", 10))
+            c.create_text(L / 2, topo + H / 2, text="🔕  Tudo em dia", fill=p["texto2"], font=(FONTE, 10))
             return
         # de trás para a frente: o mais novo fica por cima
         for pos in range(n - 1, -1, -1):
@@ -1288,23 +1330,23 @@ class Notificacoes:
         ret(c, ix, iy, ix + 40, iy + 22, 11, fill=cima, outline="")  # brilho de cima
         ret(c, ix, iy + 14, ix + 40, iy + 40, 11, fill=baixo, outline="")
         c.create_text(ix + 20, iy + 20, text=self.SIMBOLOS.get(item["tipo"], "•"), fill="white",
-                      font=("Segoe UI", 14))
+                      font=(FONTE, 14))
         tx = ix + 52
         c.create_text(tx, y1 + 22, text=item["origem"].upper(), anchor="w", fill=p["texto2"],
-                      font=("Segoe UI", 8, "bold"))
+                      font=(FONTE, 8, "bold"))
         c.create_text(x2 - 34, y1 + 22, text=self._quando(item["quando"]), anchor="e", fill=p["texto2"],
-                      font=("Segoe UI", 8))
+                      font=(FONTE, 8))
         if not item["lida"]:
             c.create_oval(x2 - 28, y1 + 18, x2 - 20, y1 + 26, fill="#3b82f6", outline="")
         largura_texto = x2 - tx - 16
         c.create_text(tx, y1 + 42, text=self._caber(item["titulo"], largura_texto, 10), anchor="w", fill=p["texto"],
-                      font=("Segoe UI", 10, "bold"))
+                      font=(FONTE, 10, "bold"))
         c.create_text(tx, y1 + 62, text=self._caber(item["mensagem"], largura_texto, 9), anchor="w",
-                      fill=p["texto2"], font=("Segoe UI", 9))
+                      fill=p["texto2"], font=(FONTE, 9))
         # o cartao mostra uma linha so: clicar nele abre a mensagem inteira
         self._alvos.append((x1, y1, x2, y1 + H, lambda i=item: self.app._exibir_mensagem_operador(
             i["mensagem"], titulo=i["titulo"], modal=False)))
-        fechar = c.create_text(x2 - 10, y1 + 22, text="✕", fill=p["texto2"], font=("Segoe UI", 8))
+        fechar = c.create_text(x2 - 10, y1 + 22, text="✕", fill=p["texto2"], font=(FONTE, 8))
         bx1, by1, bx2, by2 = c.bbox(fechar)
         self._alvos.append((bx1 - 5, by1 - 5, bx2 + 5, by2 + 5, lambda i=item["id"]: self._dispensar(i)))
 
@@ -1378,7 +1420,7 @@ def categorias_da_tela(apps):
 
 def filtrar_apps(apps, chave, busca):
     """Os apps da categoria escolhida (chave de categorias_da_tela) cujo nome
-    contém a busca (sem diferenciar acento nem maiúscula)."""
+    ou categoria contém a busca (sem diferenciar acento nem maiúscula)."""
     termo = normalizar_busca(busca)
     saida = []
     for a in apps:
@@ -1387,7 +1429,7 @@ def filtrar_apps(apps, chave, busca):
             continue
         if chave.startswith("cat:") and cat != chave[4:]:
             continue
-        if termo and termo not in normalizar_busca(a.get("nome")):
+        if termo and termo not in normalizar_busca(a.get("nome")) and termo not in normalizar_busca(cat):
             continue
         saida.append(a)
     return saida
@@ -1451,13 +1493,25 @@ def montar_banner(cartaz, largura, altura, fundo):
     fundo_img.paste((0, 0, 0), (0, 0), sombra)
     fundo_img.paste(_cantos(peca, 8, "#000000"), (x, y),
                     _cantos(Image.new("RGB", peca.size, (255, 255, 255)), 8, "#000000").convert("L"))
-    return _cantos(fundo_img, 16, fundo), largo + margem * 3
+    return _cantos(fundo_img, 24, fundo), largo + margem * 3  # rounded-3xl
 
 
 def _paleta_categorias():
     """Cores das categorias quando o servidor não manda (antigo): violeta, azul,
     esmeralda, âmbar, rosa... As mesmas do servidor (routers/categorias.py)."""
     return ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
+
+
+def icone_da_categoria(nome):
+    """Ícone do card pelo nome da categoria (Segoe MDL2 Assets); None = a inicial do app."""
+    nome = normalizar_busca(nome)
+    for palavras, icone in ((("naveg", "internet", "web"), "\uE774"), (("estudo", "leitura", "livro"), "\uE82D"),
+                            (("desenv", "program", "codigo"), "\uE943"), (("utilit", "ferrament"), "\uE90F"),
+                            (("midia", "audio", "musica", "video"), "\uE8D6"), (("jogo", "game"), "\uE7FC"),
+                            (("escrit", "office", "texto", "document"), "\uE8A5")):
+        if any(p in nome for p in palavras):
+            return icone
+    return None
 
 
 def cor_do_app(app, destaque):
@@ -1575,7 +1629,8 @@ class Programacao:
 
     @staticmethod
     def altura_para(tela):
-        return 250  # h-[250px] do prompt
+        # h-[340px] do prompt; em tela baixa (768) encolhe para a grade ainda aparecer
+        return max(250, min(340, int(tela * 0.36)))
 
     def recarregar(self):
         if not PIL_AVAILABLE:
@@ -1593,7 +1648,7 @@ class Programacao:
             for item in dados.get("itens", []):
                 with abrir_url(f"{base}/api/programacao/{item['id']}/imagem?v={item.get('versao', 0)}", timeout=10) as r:
                     imagens.append((item.get("titulo", ""), Image.open(BytesIO(r.read())).convert("RGB"),
-                                    item.get("link") or None))
+                                    item.get("link") or None, item.get("descricao") or "", item.get("creditos") or ""))
         except Exception as ex:
             self.app.incoming.put({"evento": "_info", "dados": {"msg": f"Programacao: nao carregou ({ex})"}})
             return
@@ -1691,39 +1746,75 @@ class Programacao:
         if not self.itens:
             return
         i %= len(self.itens)
-        h = img.height
-        x = max(28, h // 7)
-        livre = max(120, img.width - largura_cartaz - x - 24)
-        c.create_text(x, h * 0.26, anchor="w", text="PROGRAMAÇÃO DA BIBLIOTECA", fill="#a1a1aa",
-                      font=("Segoe UI", 8, "bold"))
-        item = {"titulo": self.itens[i][0] or "", "link": self.itens[i][2] if len(self.itens[i]) > 2 else None}
-        titulo = item["titulo"]
-        tamanho = 26 if len(titulo) < 40 else 20
-        id_titulo = c.create_text(x, h * 0.26 + 16, anchor="nw", text=titulo, fill=TEXTO_CLARO, width=livre,
-                                  font=("Segoe UI", tamanho, "bold"))
+        h, w = img.height, img.width
+        x = max(32, h // 8)
+        livre = max(160, w - largura_cartaz - x - 32)
+        dados = self.itens[i]
+        item = {"titulo": dados[0] or "", "link": dados[2] if len(dados) > 2 else None,
+                "descricao": dados[3] if len(dados) > 3 else "", "creditos": dados[4] if len(dados) > 4 else ""}
+        # selo em pílula
+        fonte_selo = tkfont.Font(family=FONTE, size=7, weight="bold")
+        texto_selo = "\u2726  PROGRAMAÇÃO DA BIBLIOTECA"
+        y = max(24, h * 0.1)
+        ls = fonte_selo.measure(texto_selo) + 22
+        violeta = "#8b5cf6"
+        BarraSessao._retangulo(c, x, y, x + ls, y + 22, 11, fill=misturar(violeta, ZINC_950, 0.45), outline="")
+        BarraSessao._retangulo(c, x + 1, y + 1, x + ls - 1, y + 21, 10, fill=misturar(violeta, ZINC_950, 0.16), outline="")
+        c.create_text(x + ls / 2, y + 11, text=texto_selo, fill="#c4b5fd", font=fonte_selo)
+        y += 34
+        # título (text-2xl font-extrabold), descrição e créditos
+        tamanho = 20 if len(item["titulo"]) < 48 else 16
+        t = c.create_text(x, y, anchor="nw", text=item["titulo"], fill=TEXTO_CLARO, width=livre,
+                          font=(FONTE, tamanho, "bold"))
+        y = (c.bbox(t) or (0, 0, 0, y + 30))[3] + 10
+        if item["descricao"]:
+            fonte_desc = tkfont.Font(family=FONTE, size=9)
+            t = c.create_text(x, y, anchor="nw", text=cortar_linhas(item["descricao"], fonte_desc, livre, 3),
+                              fill="#d4d4d8", font=fonte_desc)
+            y = (c.bbox(t) or (0, 0, 0, y + 20))[3] + 6
+        if item["creditos"]:
+            t = c.create_text(x, y, anchor="nw", text=item["creditos"], fill="#a1a1aa", width=livre,
+                              font=(FONTE, 8, "italic"))
+            y = (c.bbox(t) or (0, 0, 0, y + 14))[3]
         link = item.get("link")
-        if link:  # botão do cartaz: abre a página (inscrição, notícia) no navegador
-            # pílula azul com sombra (bg-blue-600 hover:bg-blue-500 shadow-md)
-            fonte = tkfont.Font(family="Segoe UI", size=9, weight="bold")
-            texto = "Ver no navegador / Inscrição  \u2197"
-            y0 = (c.bbox(id_titulo) or (0, 0, 0, h * 0.5))[3] + 16
-            x1, alto = x + fonte.measure(texto) + 36, 34
-            BarraSessao._retangulo(c, x + 2, y0 + 4, x1 + 2, y0 + alto + 4, alto / 2, fill="#0b1636", outline="")
-            BarraSessao._retangulo(c, x, y0, x1, y0 + alto, alto / 2, fill=AZUL, outline="", tags=("link", "link_fundo"))
-            c.create_text((x + x1) / 2, y0 + alto / 2, text=texto, fill=TEXTO_CLARO, font=fonte, tags="link")
+        y_botao = max(y + 18, h - x - 38)
+        if link:  # bg-blue-600 rounded-xl shadow-lg shadow-blue-600/30
+            fonte = tkfont.Font(family=FONTE, size=9, weight="bold")
+            texto = "\u2197  Abrir Inscrição / Programação"
+            x1, alto = x + fonte.measure(texto) + 40, 38
+            BarraSessao._retangulo(c, x - 2, y_botao + 3, x1 + 2, y_botao + alto + 6, 14,
+                                   fill=misturar(AZUL, ZINC_950, 0.3), outline="")
+            BarraSessao._retangulo(c, x, y_botao, x1, y_botao + alto, 12, fill=AZUL, outline="",
+                                   tags=("link", "link_fundo"))
+            c.create_text((x + x1) / 2, y_botao + alto / 2, text=texto, fill=TEXTO_CLARO, font=fonte, tags="link")
             c.tag_bind("link", "<Button-1>", lambda e, u=link: self._abrir_link(u))
             c.tag_bind("link", "<Enter>", lambda e: (c.config(cursor="hand2"), c.itemconfig("link_fundo", fill=AZUL_CLARO)))
             c.tag_bind("link", "<Leave>", lambda e: (c.config(cursor="arrow"), c.itemconfig("link_fundo", fill=AZUL)))
-        # bolinhas: qual cartaz está na tela (clicar troca)
-        if len(self.itens) > 1:
-            for k in range(len(self.itens)):
-                cx, cy = x + k * 18 + 5, h - x * 0.7
-                atual = k == i
-                bol = c.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, outline="",
-                                    fill=TEXTO_CLARO if atual else "#52525b")
+        # navegação: ‹ bolinhas ›, embaixo à direita do texto
+        n = len(self.itens)
+        if n > 1:
+            meio_y = y_botao + 19
+            x_dir = w - largura_cartaz - 8
+            larg_bolas = sum(18 if k == i else 6 for k in range(n)) + 6 * (n - 1)
+            x_seta2 = x_dir - 30
+            x_bolas = x_seta2 - 10 - larg_bolas
+            x_seta1 = x_bolas - 10 - 30
+            for xs, glifo, alvo in ((x_seta1, "\uE76B", (i - 1) % n), (x_seta2, "\uE76C", (i + 1) % n)):
+                tag = f"seta{alvo}_{xs}"
+                BarraSessao._retangulo(c, xs, meio_y - 15, xs + 30, meio_y + 15, 10, fill="#3f3f46", outline="", tags=tag)
+                BarraSessao._retangulo(c, xs + 1, meio_y - 14, xs + 29, meio_y + 14, 9,
+                                       fill=misturar("#18181b", ZINC_950, 0.7), outline="", tags=tag)
+                c.create_text(xs + 15, meio_y, text=glifo, font=("Segoe MDL2 Assets", 8), fill="#d4d4d8", tags=tag)
+                c.tag_bind(tag, "<Button-1>", lambda e, k=alvo: self.ir_para(k))
+                c.tag_bind(tag, "<Enter>", lambda e: c.config(cursor="hand2"))
+                c.tag_bind(tag, "<Leave>", lambda e: c.config(cursor="arrow"))
+            xb = x_bolas
+            for k in range(n):
+                lb = 18 if k == i else 6
+                bol = BarraSessao._retangulo(c, xb, meio_y - 3, xb + lb, meio_y + 3, 3,
+                                             fill=AZUL if k == i else "#52525b", outline="")
                 c.tag_bind(bol, "<Button-1>", lambda e, k=k: self.ir_para(k))
-                c.tag_bind(bol, "<Enter>", lambda e: c.config(cursor="hand2"))
-                c.tag_bind(bol, "<Leave>", lambda e: c.config(cursor="arrow"))
+                xb += lb + 6
 
     def _abrir_link(self, link):
         """Abre no navegador padrão (se ele não estiver liberado na estação, o
@@ -1775,6 +1866,8 @@ class TelaApps:
         self._capas = {}  # url -> bytes (None = falhou; ... = baixando)
         self._colunas = 0
         self._pilulas = []  # [(chave, rótulo, quantidade, cor, canvas)]
+        self.escala = 0  # Configurações → tamanho do texto (0 normal, 2 grande); volta a 0 no fim da sessão
+        self.abertos = set()  # processos abertos agora (o dock avisa)
         self._montar()
 
     # ── estrutura (uma vez) ──
@@ -1782,33 +1875,36 @@ class TelaApps:
         p = self.app.paleta
         f = self.frame
         topo = tk.Frame(f, bg=p["fundo"])
-        topo.pack(fill="x", padx=(24, 24), pady=(18, 0))
+        topo.pack(fill="x", padx=(24, 24), pady=(20, 0))
+        self.lbl_titulo = tk.Label(topo, text="Aplicativos da Estação", font=(FONTE, 11, "bold"), fg=p["texto"],
+                                   bg=p["fundo"])
+        self.lbl_titulo.pack(side="left")
+        self.lbl_qtd = tk.Canvas(topo, width=90, height=22, bg=p["fundo"], highlightthickness=0)  # "6 liberados"
+        self.lbl_qtd.pack(side="left", padx=10)
+        self._texto_qtd = ""
 
-        # pesquisa
-        caixa = tk.Frame(topo, bg=p["superficie"], highlightthickness=1, highlightbackground=p["borda"],
-                         highlightcolor=p["destaque"], width=320, height=40)
-        caixa.pack(side="left")
-        caixa.pack_propagate(False)
-        tk.Label(caixa, text="", font=("Segoe MDL2 Assets", 11), fg=p["fraco"],
-                 bg=p["superficie"]).pack(side="left", padx=(12, 6))
+        # pesquisa (rounded-xl): um Canvas com o Entry por cima
+        self.caixa_busca = tk.Canvas(topo, width=270, height=36, bg=p["fundo"], highlightthickness=0)
+        self.caixa_busca.pack(side="right")
+        self._foco_busca = False
         self.var_busca = tk.StringVar()
-        self.entry_busca = tk.Entry(caixa, textvariable=self.var_busca, font=("Segoe UI", 11), bg=p["superficie"],
+        self.entry_busca = tk.Entry(self.caixa_busca, textvariable=self.var_busca, font=(FONTE, 9), bg=p["superficie"],
                                     fg=p["texto"], insertbackground=p["texto"], relief="flat", highlightthickness=0)
-        self.entry_busca.pack(side="left", fill="x", expand=True)
-        self.lbl_dica = tk.Label(caixa, text="Pesquisar apps", font=("Segoe UI", 11), fg=p["fraco"],
-                                 bg=p["superficie"], cursor="xterm")
-        self.lbl_dica.place(x=38, rely=0.5, anchor="w")
+        self.caixa_busca.create_window(36, 18, window=self.entry_busca, anchor="w", width=204)
+        self.lbl_dica = tk.Label(self.caixa_busca, text="Buscar por nome ou categoria...", font=(FONTE, 9),
+                                 fg=p["fraco"], bg=p["superficie"], cursor="xterm")
+        self._janela_dica = self.caixa_busca.create_window(36, 18, window=self.lbl_dica, anchor="w")
         self.lbl_dica.bind("<Button-1>", lambda e: self.entry_busca.focus_set())
-        self.btn_limpar = tk.Label(caixa, text="✕", font=("Segoe UI", 11), fg=p["texto2"], bg=p["superficie"],
+        self.btn_limpar = tk.Label(self.caixa_busca, text="✕", font=(FONTE, 9), fg=p["texto2"], bg=p["superficie"],
                                    cursor="hand2")
+        self._janela_limpar = self.caixa_busca.create_window(256, 18, window=self.btn_limpar, anchor="e",
+                                                             state="hidden")
         self.btn_limpar.bind("<Button-1>", lambda e: self.var_busca.set(""))
         self.var_busca.trace_add("write", lambda *a: self._ao_digitar())
         self.entry_busca.bind("<Escape>", lambda e: self.var_busca.set(""))
-
-        self.lbl_qtd = tk.Label(topo, text="", font=("Segoe UI", 10), fg=p["fraco"], bg=p["fundo"])
-        self.lbl_qtd.pack(side="right")
-        self.lbl_titulo = tk.Label(topo, text="", font=("Segoe UI", 13, "bold"), fg=p["texto"], bg=p["fundo"])
-        self.lbl_titulo.pack(side="right", padx=10)
+        self.entry_busca.bind("<FocusIn>", lambda e: self._desenhar_busca(True))
+        self.entry_busca.bind("<FocusOut>", lambda e: self._desenhar_busca(False))
+        self._desenhar_busca(False)
 
         # pílulas das categorias
         # quebram em mais linhas quando não cabem (_arrumar_pilulas)
@@ -1833,8 +1929,44 @@ class TelaApps:
         self.grade.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>", self._ao_mudar_largura)
         self.canvas.bind_all("<MouseWheel>", self._rolar)
-        self.lbl_vazio = tk.Label(self.grade, text="", font=("Segoe UI", 11), fg=p["texto2"], bg=p["fundo"],
+        self.lbl_vazio = tk.Label(self.grade, text="", font=(FONTE, 11), fg=p["texto2"], bg=p["fundo"],
                                   justify="left")
+
+    def _desenhar_busca(self, foco=None):
+        if foco is not None:
+            self._foco_busca = foco
+        p, c = self.app.paleta, self.caixa_busca
+        c.delete("fundo")
+        c.config(bg=p["fundo"])
+        borda = misturar(AZUL, p["fundo"], 0.7) if self._foco_busca else p["borda"]
+        BarraSessao._retangulo(c, 0, 0, 269, 35, 12, fill=borda, outline="", tags="fundo")
+        BarraSessao._retangulo(c, 1, 1, 268, 34, 11, fill=p["superficie"], outline="", tags="fundo")
+        c.create_text(18, 18, text="\uE721", font=("Segoe MDL2 Assets", 9), fill=p["fraco"], tags="fundo")
+        c.tag_lower("fundo")
+
+    def _desenhar_qtd(self, texto):
+        """O chip ao lado do título: "6 liberados" (ou "2 de 6" filtrando)."""
+        self._texto_qtd = texto
+        p, c = self.app.paleta, self.lbl_qtd
+        fonte = tkfont.Font(family="Consolas", size=8)
+        w = fonte.measure(texto) + 18
+        c.delete("all")
+        c.config(width=w + 2, bg=p["fundo"])
+        BarraSessao._retangulo(c, 0, 0, w, 21, 7, fill=p["borda"], outline="")
+        BarraSessao._retangulo(c, 1, 1, w - 1, 20, 6, fill=p["superficie"], outline="")
+        c.create_text(w / 2, 11, text=texto, font=fonte, fill=p["texto2"])
+
+    def marcar_abertos(self, processos):
+        """O dock avisa quais apps estão abertos: o card troca "Pronto" por "Aberto"."""
+        processos = set(processos)
+        if processos == self.abertos:
+            return
+        self.abertos = processos
+        for c in self.cartoes.values():
+            aberto = (c["app"].get("processo") or "").strip().lower() in processos
+            rotulo = "Aberto" if aberto else "Pronto"
+            c["canvas"].itemconfig("status", text=("● " if aberto else "") + rotulo,
+                                   fill=EMERALD_TEXTO if aberto else self.app.paleta["fraco"])
 
     def _mover_trilho(self, primeiro, ultimo):
         self._rolagem = (float(primeiro), float(ultimo))
@@ -1887,6 +2019,9 @@ class TelaApps:
         self._filtrar()
         self.canvas.yview_moveto(0)
         self.canvas.bind_all("<MouseWheel>", self._rolar)  # o _voltar_login tira de tudo
+        menu = getattr(self.app, "_menu", None)
+        if menu:
+            menu.definir_quantidade(len(self.apps))
 
     def _baixar_capa(self, url):
         dados = baixar_imagem(url)  # thread: nada de Tkinter aqui
@@ -1926,10 +2061,10 @@ class TelaApps:
         letra = nome[:1].upper() or "?"
         if not dados:  # sem capa: a inicial grande no meio da capa
             cv.create_text(M + W / 2, M + CH / 2 - 4, text=letra, fill=misturar(cor, TEXTO_CLARO, 0.35),
-                           font=("Segoe UI", 36, "bold"))
+                           font=(FONTE, 36, "bold"))
         # selo da categoria no canto de cima, à esquerda (fundo translúcido e borda na cor)
         categoria = (a.get("categoria") or "").strip() or "Outros"
-        fonte_selo = tkfont.Font(family="Segoe UI", size=7, weight="bold")
+        fonte_selo = tkfont.Font(family=FONTE, size=7, weight="bold")
         texto_selo, limite = categoria.upper(), W - 24
         while fonte_selo.measure(texto_selo) + 16 > limite and len(texto_selo) > 2:
             texto_selo = texto_selo[:-2].rstrip() + "…"  # não quebra em duas linhas
@@ -1946,16 +2081,22 @@ class TelaApps:
                                outline="")
         BarraSessao._retangulo(cv, M + 13, y_ic + 1, M + 47, y_ic + 35, 10, fill=misturar(cor, ZINC_900, 0.3),
                                outline="")
-        cv.create_text(M + 30, y_ic + 18, text=letra, fill=misturar(cor, TEXTO_CLARO, 0.55),
-                       font=("Segoe UI", 13, "bold"))
+        glifo = icone_da_categoria(categoria)
+        cv.create_text(M + 30, y_ic + 18, text=glifo or letra, fill=misturar(cor, TEXTO_CLARO, 0.55),
+                       font=("Segoe MDL2 Assets", 12) if glifo else (FONTE, 13, "bold"))
         # rodapé: título, descrição curta (2 linhas) e o Abrir à direita
-        fonte_desc = tkfont.Font(family="Segoe UI", size=8)
+        e = self.escala  # Configurações → tamanho do texto
+        fonte_desc = tkfont.Font(family=FONTE, size=8 + e)
         descricao = (a.get("descricao") or "").strip() or (categoria if categoria != "Outros" else "Aplicativo")
         cv.create_text(M + 14, M + CH + 26, anchor="nw", text=nome, fill=p["texto"], width=W - 28,
-                       font=("Segoe UI", 10, "bold"))
-        cv.create_text(M + 14, M + CH + 46, anchor="nw", text=cortar_linhas(descricao, fonte_desc, W - 28),
+                       font=(FONTE, 10 + e, "bold"))
+        cv.create_text(M + 14, M + CH + 46 + e * 2, anchor="nw", text=cortar_linhas(descricao, fonte_desc, W - 28),
                        fill=p["texto2"], font=fonte_desc)
-        fonte_btn = tkfont.Font(family="Segoe UI", size=9, weight="bold")
+        aberto = (a.get("processo") or "").strip().lower() in self.abertos
+        rotulo = "Aberto" if aberto else "Pronto"
+        cv.create_text(M + 14, M + H - 26, anchor="w", text=("● " if aberto else "") + rotulo,
+                       fill=EMERALD_TEXTO if aberto else p["fraco"], font=(FONTE, 8), tags="status")
+        fonte_btn = tkfont.Font(family=FONTE, size=9, weight="bold")
         bx1, by1 = M + W - 12, M + H - 12
         bx0, by0 = bx1 - fonte_btn.measure("Abrir") - 28, by1 - 28
         BarraSessao._retangulo(cv, bx0 + 1, by0 + 3, bx1 + 1, by1 + 3, 10, fill=misturar(AZUL, p["superficie"], 0.25),
@@ -1992,18 +2133,33 @@ class TelaApps:
             w.destroy()
         self._pilulas = []
         p = self.app.paleta
-        fonte = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+        fonte = tkfont.Font(family=FONTE, size=9, weight="bold")
         for chave, rotulo, n in categorias_da_tela(self.apps):
-            texto = f"{rotulo}  {n}"
-            largura = fonte.measure(texto) + (40 if chave != "todos" else 28)
+            largura = fonte.measure(rotulo) + 30
             cv = tk.Canvas(self.barra_pilulas, width=largura, height=34, bg=p["fundo"], highlightthickness=0,
                            cursor="hand2")
             cv.bind("<Button-1>", lambda e, k=chave: self.escolher(k))
             cv.bind("<Enter>", lambda e, k=chave: self._pintar_pilulas(sobre=k))
             cv.bind("<Leave>", lambda e: self._pintar_pilulas())
-            self._pilulas.append((chave, texto, self._cor_da_chave(chave), cv, fonte))
+            self._pilulas.append((chave, rotulo, self._cor_da_chave(chave), cv, fonte))
         self._pintar_pilulas()
         self._arrumar_pilulas()
+
+    def _pintar_pilulas(self, sobre=None):
+        p = self.app.paleta
+        for chave, texto, cor, cv, fonte in self._pilulas:
+            cv.delete("all")
+            cv.config(bg=p["fundo"])
+            w, h = int(cv.cget("width")), int(cv.cget("height"))
+            if chave == self.chave:
+                BarraSessao._retangulo(cv, 0, 0, w - 1, h - 1, 12, fill=AZUL, outline="")
+                cor_texto = TEXTO_CLARO
+            else:
+                BarraSessao._retangulo(cv, 0, 0, w - 1, h - 1, 12, fill=p["borda"], outline="")
+                BarraSessao._retangulo(cv, 1, 1, w - 2, h - 2, 11,
+                                       fill=p["superficie2"] if chave == sobre else p["superficie"], outline="")
+                cor_texto = p["texto"] if chave == sobre else p["texto2"]
+            cv.create_text(w / 2, h / 2, text=texto, fill=cor_texto, font=fonte)
 
     def _arrumar_pilulas(self):
         """Uma ao lado da outra; a que não cabe desce para a linha de baixo."""
@@ -2019,27 +2175,6 @@ class TelaApps:
         if int(self.barra_pilulas.cget("height")) != altura:
             self.barra_pilulas.config(height=altura)
 
-    def _pintar_pilulas(self, sobre=None):
-        p = self.app.paleta
-        for chave, texto, cor, cv, fonte in self._pilulas:
-            cv.delete("all")
-            cv.config(bg=p["fundo"])
-            w, h = int(cv.cget("width")), int(cv.cget("height"))
-            escolhida = chave == self.chave
-            if escolhida:
-                BarraSessao._retangulo(cv, 1, 1, w - 1, h - 1, 16, fill=cor, outline="")
-                cor_texto = TEXTO_CLARO
-            else:
-                fundo = p["superficie2"] if chave == sobre else p["superficie"]
-                BarraSessao._retangulo(cv, 1, 1, w - 1, h - 1, 16, fill=p["borda"], outline="")
-                BarraSessao._retangulo(cv, 2, 2, w - 2, h - 2, 15, fill=fundo, outline="")
-                cor_texto = p["texto"] if chave == sobre else p["texto2"]
-            x = 14
-            if chave != "todos":  # bolinha na cor da categoria
-                cv.create_oval(x, h / 2 - 4, x + 8, h / 2 + 4, fill=TEXTO_CLARO if escolhida else cor, outline="")
-                x += 14
-            cv.create_text(x, h / 2, anchor="w", text=texto, fill=cor_texto, font=fonte)
-
     def escolher(self, chave):
         self.chave = chave
         self._pintar_pilulas()
@@ -2049,14 +2184,14 @@ class TelaApps:
     def _ao_digitar(self):
         texto = self.var_busca.get()
         if texto:
-            self.lbl_dica.place_forget()
-            self.btn_limpar.pack(side="right", padx=10)
+            self.caixa_busca.itemconfig(self._janela_dica, state="hidden")
+            self.caixa_busca.itemconfig(self._janela_limpar, state="normal")
             if self.chave != "todos":  # a pesquisa procura em todos os apps
                 self.chave = "todos"
                 self._pintar_pilulas()
         else:
-            self.lbl_dica.place(x=38, rely=0.5, anchor="w")
-            self.btn_limpar.pack_forget()
+            self.caixa_busca.itemconfig(self._janela_dica, state="normal")
+            self.caixa_busca.itemconfig(self._janela_limpar, state="hidden")
         self._filtrar()
         self.canvas.yview_moveto(0)
 
@@ -2070,11 +2205,8 @@ class TelaApps:
         busca = self.var_busca.get().strip()
         visiveis = filtrar_apps(self.apps, self.chave, busca)
         ids = {id(a) for a in visiveis}
-        if busca:
-            self.lbl_titulo.config(text=f'Resultados para "{busca}"')
-        else:
-            self.lbl_titulo.config(text="Todos os apps" if self.chave == "todos" else self._rotulo(self.chave))
-        self.lbl_qtd.config(text=f"{len(visiveis)} app" + ("" if len(visiveis) == 1 else "s"))
+        total = len(self.apps)
+        self._desenhar_qtd(f"{total} liberados" if len(visiveis) == total else f"{len(visiveis)} de {total}")
         for c in self.cartoes.values():
             c["canvas"].grid_forget()
         self.lbl_vazio.grid_forget()
@@ -2107,8 +2239,12 @@ class TelaApps:
             self._desenhar_cartao(i)
         self._montar_pilulas()
         self._desenhar_trilho()
+        self._desenhar_busca()
+        self._desenhar_qtd(self._texto_qtd or "0 liberados")
 
     def limpar(self):
+        self.escala = 0  # a preferência é só da sessão
+        self.abertos = set()
         self.mostrar([])
 
 
@@ -2196,9 +2332,9 @@ class TelaLogin:
             c.create_text(0, 0, anchor="s", tags="frase", justify="center")
             c.create_text(0, 0, anchor="s", tags="assinatura")
         c.coords("frase", w / 2, h - 78)
-        c.itemconfig("frase", width=max(200, w - 120), fill=p["texto"], font=("Segoe UI", 18, "bold"))
+        c.itemconfig("frase", width=max(200, w - 120), fill=p["texto"], font=(FONTE, 18, "bold"))
         c.coords("assinatura", w / 2, h - 44)
-        c.itemconfig("assinatura", text="— " + assinatura, fill=p["texto2"], font=("Segoe UI", 10))
+        c.itemconfig("assinatura", text="— " + assinatura, fill=p["texto2"], font=(FONTE, 10))
         if reiniciar_texto and self._atual is not None and self._atual.size == novo.size:
             self._animar(self._atual, novo, 1)
         else:
@@ -2249,202 +2385,247 @@ class TelaLogin:
         self._mostrar(reiniciar_texto=False)
 
 
+def avatar_degrade(lado, raio, fundo):
+    """Quadrado arredondado em degradê azul -> índigo (bg-gradient-to-tr from-blue-600 to-indigo-600)."""
+    a = Image.new("RGB", (lado, lado), _cor_rgb(AZUL))
+    b = Image.new("RGB", (lado, lado), _cor_rgb("#4f46e5"))
+    mascara = Image.linear_gradient("L").rotate(45, expand=True).resize((lado, lado))
+    img = Image.composite(b, a, mascara)
+    return _cantos(img, raio, fundo)
+
+
+def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None):
+    """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido."""
+    p = paleta
+    cv.delete("all")
+    cv.config(width=largura, bg=p["fundo"])
+    if escolhido:
+        BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=misturar(AZUL, p["fundo"], 0.45), outline="")
+        BarraSessao._retangulo(cv, 1, 1, largura - 2, altura - 2, 11, fill=misturar(AZUL, p["fundo"], 0.14), outline="")
+    elif sobre:
+        BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=p["superficie"], outline="")
+    cor_icone = AZUL_CLARO if escolhido else p["texto2"]
+    cor_texto = p["texto"] if (escolhido or sobre) else p["texto2"]
+    x_icone = 22 if aberto else largura / 2
+    cv.create_text(x_icone, altura / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
+    if aberto:
+        cv.create_text(44, altura / 2, anchor="w", text=rotulo, font=(FONTE, 9, "bold" if escolhido else "normal"),
+                       fill=cor_texto)
+        if contagem is not None:
+            texto = str(contagem)
+            larg = tkfont.Font(family="Consolas", size=7).measure(texto) + 12
+            BarraSessao._retangulo(cv, largura - 12 - larg, altura / 2 - 9, largura - 12, altura / 2 + 9, 6,
+                                   fill=p["borda"], outline="")
+            BarraSessao._retangulo(cv, largura - 11 - larg, altura / 2 - 8, largura - 13, altura / 2 + 8, 5,
+                                   fill=p["superficie"], outline="")
+            cv.create_text(largura - 12 - larg / 2, altura / 2, text=texto, font=("Consolas", 7), fill=p["texto2"])
+
+
 class MenuLateral:
-    """Menu da esquerda da Área do Cliente (9.11): Início (banner + apps) e Meus
-    Apps (só a grade). Recolhe de 240 para 70 px (botão no topo e no rodapé).
-    No rodapé, o cartão do cliente: avatar, nome, estação e se está online."""
-    LARGURA_ABERTO, LARGURA_FECHADO = 240, 70
-    ITENS = [("inicio", "Início", ""), ("apps", "Meus Apps", "")]
-    ICONES = "Segoe MDL2 Assets"
+    """Menu da esquerda da Área do Cliente (9.13): só a marca no topo, os links
+    (Início e Meus Apps) e Configurações no rodapé. Recolhe de 240 para 64 px.
+    O cliente aparece no card da sessão, à direita (sem repetir aqui)."""
+    LARGURA_ABERTO, LARGURA_FECHADO = 240, 64
+    ITENS = [("inicio", "Início", ""), ("apps", "Meus Apps", "")]
+    RODAPE = ("config", "Configurações", "")
+    ALTURA_LINHA = 38
 
     def __init__(self, app, frame):
         self.app = app
         self.frame = frame
         self.aberto = True
-        self.online = False
-        self.nome = ""
-        self._linhas = {}  # chave -> (linha, ícone, texto)
+        self.quantidade = 0
+        self._linhas = {}  # chave -> (canvas, rótulo, ícone)
         self._montar()
 
     def _montar(self):
         p = self.app.paleta
         f = self.frame
-        f.config(width=self.LARGURA_ABERTO, bg=p["superficie"], highlightthickness=1, highlightbackground=p["borda"])
+        f.config(width=self.LARGURA_ABERTO, bg=p["fundo"], highlightthickness=1, highlightbackground=p["borda"])
         f.pack_propagate(False)
-
-        topo = tk.Frame(f, bg=p["superficie"])
-        topo.pack(fill="x", pady=(14, 18))
-        self.btn_topo = tk.Label(topo, text="", font=(self.ICONES, 13), fg=p["texto2"], bg=p["superficie"],
-                                 cursor="hand2", width=3)
-        self.btn_topo.pack(side="left", padx=(14, 4))
-        self.btn_topo.bind("<Button-1>", lambda e: self.alternar())
-        self.lbl_marca = tk.Label(topo, text="MatheCafé", font=("Segoe UI", 13, "bold"), fg=p["texto"],
-                                  bg=p["superficie"])
-        self.lbl_marca.pack(side="left")
-
-        self.lbl_menu = tk.Label(f, text="MENU", font=("Segoe UI", 8, "bold"), fg=p["texto2"], bg=p["superficie"])
-        self.lbl_menu.pack(anchor="w", padx=22, pady=(0, 6))
+        # marca: quadrado azul com o M, nome e o botão de recolher
+        self.topo = tk.Canvas(f, height=60, bg=p["fundo"], highlightthickness=0)
+        self.topo.pack(fill="x")
+        self.topo.bind("<Configure>", lambda e: self._desenhar_topo())
+        self.topo.tag_bind("recolher", "<Button-1>", lambda e: self.alternar())
+        self.lbl_menu = tk.Label(f, text="NAVEGAÇÃO", font=(FONTE, 7, "bold"), fg=p["fraco"], bg=p["fundo"])
+        self.lbl_menu.pack(anchor="w", padx=20, pady=(18, 8))
         for chave, rotulo, icone in self.ITENS:
-            linha = tk.Frame(f, bg=p["superficie"], cursor="hand2")
-            linha.pack(fill="x", padx=10, pady=2)
-            ic = tk.Label(linha, text=icone, font=(self.ICONES, 14), bg=p["superficie"], fg=p["texto2"], width=3)
-            ic.pack(side="left", padx=(6, 2), pady=9)
-            tx = tk.Label(linha, text=rotulo, font=("Segoe UI", 11), anchor="w", bg=p["superficie"], fg=p["texto2"])
-            tx.pack(side="left", fill="x", expand=True)
-            for w in (linha, ic, tx):
-                w.bind("<Button-1>", lambda e, k=chave: self.app._mostrar_pagina(k))
-                w.bind("<Enter>", lambda e, k=chave: self.pintar(sobre=k))
-                w.bind("<Leave>", lambda e: self.pintar())
-            self._linhas[chave] = (linha, ic, tx)
-
-        # rodapé: recolher e o cartão do cliente
-        rodape = tk.Frame(f, bg=p["superficie"])
+            self._linha(chave, rotulo, icone).pack(fill="x", padx=10, pady=2)
+        chave, rotulo, icone = self.RODAPE
+        rodape = tk.Frame(f, bg=p["fundo"])
         rodape.pack(side="bottom", fill="x", pady=(0, 12))
-        self.cartao = tk.Frame(rodape, bg=p["superficie2"], highlightthickness=1, highlightbackground=p["borda"])
-        self.cartao.pack(fill="x", padx=10)
-        self.avatar = tk.Canvas(self.cartao, width=36, height=36, bg=p["superficie2"], highlightthickness=0)
-        self.avatar.pack(side="left", padx=8, pady=8)
-        self.dados = tk.Frame(self.cartao, bg=p["superficie2"])
-        self.dados.pack(side="left", fill="x", expand=True)
-        self.lbl_nome = tk.Label(self.dados, text="", font=("Segoe UI", 10, "bold"), fg=p["texto"],
-                                 bg=p["superficie2"], anchor="w")
-        self.lbl_nome.pack(fill="x")
-        self.lbl_estacao = tk.Label(self.dados, text="", font=("Segoe UI", 9), fg=p["texto2"], bg=p["superficie2"],
-                                    anchor="w")
-        self.lbl_estacao.pack(fill="x")
-        self.lbl_status = tk.Label(self.dados, text="", font=("Segoe UI", 8, "bold"), bg=p["superficie2"], anchor="w")
-        self.lbl_status.pack(fill="x", pady=(0, 2))
-        self.btn_rodape = tk.Label(rodape, text="  Recolher", font=("Segoe UI", 9), fg=p["fraco"],
-                                   bg=p["superficie"], cursor="hand2", anchor="w")
-        self.btn_rodape.pack(fill="x", padx=16, pady=(10, 0))
-        self.btn_rodape.bind("<Button-1>", lambda e: self.alternar())
+        self._linha(chave, rotulo, icone, rodape).pack(fill="x", padx=10)
         self.pintar()
-        self._desenhar_cartao()
 
-    def definir_cliente(self, nome):
-        self.nome = nome or ""
-        self._desenhar_cartao()
+    def _linha(self, chave, rotulo, icone, pai=None):
+        cv = tk.Canvas(pai or self.frame, height=self.ALTURA_LINHA, highlightthickness=0, cursor="hand2")
+        cv.bind("<Button-1>", lambda e, k=chave: self.app._mostrar_pagina(k))
+        cv.bind("<Enter>", lambda e, k=chave: self.pintar(sobre=k))
+        cv.bind("<Leave>", lambda e: self.pintar())
+        cv.bind("<Configure>", lambda e: self.pintar())
+        self._linhas[chave] = (cv, rotulo, icone)
+        return cv
 
-    def definir_status(self, online):
-        self.online = online
-        self._desenhar_cartao()
-
-    def _desenhar_cartao(self):
+    def _desenhar_topo(self):
         p = self.app.paleta
-        a = self.avatar
-        a.delete("all")
-        a.config(bg=p["superficie2"])
-        a.create_oval(1, 1, 35, 35, fill=p["destaque"], outline="")
-        a.create_text(18, 18, text=(self.nome[:1] or "?").upper(), fill=TEXTO_CLARO, font=("Segoe UI", 13, "bold"))
-        a.create_oval(26, 26, 35, 35, fill=COR_ONLINE if self.online else COR_OFFLINE, outline=p["superficie2"],
-                      width=2)
-        primeiro = self.nome.split()[0] if self.nome.split() else ""
-        self.lbl_nome.config(text=primeiro if len(self.nome) > 20 else self.nome)
-        self.lbl_estacao.config(text=self.app.estacao)
-        self.lbl_status.config(text="● Online" if self.online else "● Offline",
-                               fg=COR_ONLINE if self.online else COR_OFFLINE)
+        c = self.topo
+        c.delete("all")
+        c.config(bg=p["fundo"])
+        w = c.winfo_width() or self.LARGURA_ABERTO
+        c.create_line(0, 59, w, 59, fill=p["borda"])
+        x = 16 if self.aberto else (w - 30) / 2
+        BarraSessao._retangulo(c, x, 15, x + 30, 45, 9, fill=AZUL, outline="", tags="recolher" if not self.aberto else "")
+        c.create_text(x + 15, 30, text="M", fill=TEXTO_CLARO, font=(FONTE, 11, "bold"),
+                      tags="recolher" if not self.aberto else "")
+        if self.aberto:
+            c.create_text(x + 42, 23, anchor="w", text="MatheCafé", fill=p["texto"], font=(FONTE, 9, "bold"))
+            c.create_text(x + 42, 38, anchor="w", text="Sistema de Estações", fill=p["texto2"], font=(FONTE, 7))
+            c.create_text(w - 22, 30, text="", font=("Segoe MDL2 Assets", 9), fill=p["texto2"], tags="recolher")
+            c.tag_bind("recolher", "<Enter>", lambda e: c.config(cursor="hand2"))
+            c.tag_bind("recolher", "<Leave>", lambda e: c.config(cursor=""))
+
+    def definir_quantidade(self, n):
+        self.quantidade = n
+        self.pintar()
 
     def pintar(self, sobre=None):
         p = self.app.paleta
-        for chave, (linha, ic, tx) in self._linhas.items():
-            escolhido = chave == getattr(self.app, "_pagina", "inicio")
-            fundo = p["superficie2"] if (escolhido or chave == sobre) else p["superficie"]
-            linha.config(bg=fundo)
-            ic.config(bg=fundo, fg=p["destaque"] if escolhido else p["texto2"])
-            tx.config(bg=fundo, fg=p["texto"] if escolhido or chave == sobre else p["texto2"],
-                      font=("Segoe UI", 11, "bold" if escolhido else "normal"))
+        pagina = getattr(self.app, "_pagina", "inicio")
+        for chave, (cv, rotulo, icone) in self._linhas.items():
+            largura = max(40, cv.winfo_width())
+            _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == pagina, chave == sobre, p,
+                        contagem=self.quantidade if chave == "apps" else None)
 
     def alternar(self):
-        """Recolhe (só os ícones e o avatar) ou abre de novo."""
+        """Recolhe (só os ícones) ou abre de novo."""
         self.aberto = not self.aberto
+        self.frame.config(width=self.LARGURA_ABERTO if self.aberto else self.LARGURA_FECHADO)
         if self.aberto:
-            self.frame.config(width=self.LARGURA_ABERTO)
-            self.lbl_marca.pack(side="left")
-            self.lbl_menu.pack(anchor="w", padx=22, pady=(0, 6), before=self._linhas["inicio"][0])
-            for _, _, tx in self._linhas.values():
-                tx.pack(side="left", fill="x", expand=True)
-            self.dados.pack(side="left", fill="x", expand=True)
-            self.btn_rodape.config(text="  Recolher")
+            self.lbl_menu.config(text="NAVEGAÇÃO")
         else:
-            self.frame.config(width=self.LARGURA_FECHADO)
-            self.lbl_marca.pack_forget()
-            self.lbl_menu.pack_forget()
-            for _, _, tx in self._linhas.values():
-                tx.pack_forget()
-            self.dados.pack_forget()
-            self.btn_rodape.config(text="")
-        self.btn_rodape.config(font=(self.ICONES if not self.aberto else "Segoe UI", 9))
+            self.lbl_menu.config(text="")
+        self.app.root.after(10, lambda: (self._desenhar_topo(), self.pintar()))
 
     def redesenhar(self):
+        self.frame.config(bg=self.app.paleta["fundo"], highlightbackground=self.app.paleta["borda"])
+        self._desenhar_topo()
         self.pintar()
-        self._desenhar_cartao()
 
 
 class PainelDireito:
-    """Coluna da direita da Área do Cliente (9.11): o widget da sessão (tempo
-    restante e a barra do quanto já usou) e os Avisos da biblioteca, que o
-    admin cadastra no painel (Programação e avisos → Avisos)."""
+    """Coluna da direita (9.13): o card da sessão com o cliente no topo (avatar,
+    nome, estação, login e Online), o tempo restante e a barra; embaixo, os Avisos
+    da biblioteca, cada um num card com o chip do tipo e o horário."""
     LARGURA = 300
+    CARD_W = 268
+    # o chip e o ícone de cada tipo de aviso (o admin escolhe no painel)
+    TIPOS = {
+        "alerta": ("#f59e0b", ""),  # âmbar, triângulo
+        "evento": ("#8b5cf6", ""),  # violeta, calendário
+        "info": ("#3b82f6", ""),  # azul, i
+    }
+    CARD_H = 196
 
     def __init__(self, app, frame):
         self.app = app
         self.frame = frame
         self.avisos = []
         self._geracao = 0
-        self._usado = 0.0
+        self._restante = 0.0
+        self.nome, self.login, self.online = "", "", False
+        self._avatar = None
         self._montar()
-
-    def _card(self, titulo, **pack):
-        p = self.app.paleta
-        card = tk.Frame(self.frame, bg=p["superficie"], highlightthickness=1, highlightbackground=p["borda"])
-        card.pack(fill="x", padx=(0, 24), **pack)
-        tk.Label(card, text=titulo, font=("Segoe UI", 8, "bold"), fg=p["texto2"], bg=p["superficie"]).pack(
-            anchor="w", padx=16, pady=(14, 4))
-        return card
 
     def _montar(self):
         p = self.app.paleta
         self.frame.config(width=self.LARGURA, bg=p["fundo"])
         self.frame.pack_propagate(False)
-
-        sessao = self._card("SESSÃO ATIVA", pady=(18, 12))
-        tk.Label(sessao, text="Tempo restante", font=("Segoe UI", 9), fg=p["texto2"], bg=p["superficie"]).pack(
-            anchor="w", padx=16)
-        self.lbl_tempo = tk.Label(sessao, text="00:00:00", font=("Consolas", 24, "bold"), fg=p["texto"],
-                                  bg=p["superficie"])
-        self.lbl_tempo.pack(anchor="w", padx=14)
-        self.barra = tk.Canvas(sessao, height=8, bg=p["superficie"], highlightthickness=0)
-        self.barra.pack(fill="x", padx=16, pady=(8, 6))
-        self.barra.bind("<Configure>", lambda e: self._desenhar_barra())
-        self.lbl_uso = tk.Label(sessao, text="", font=("Segoe UI", 9), fg=p["fraco"], bg=p["superficie"])
-        self.lbl_uso.pack(anchor="w", padx=16, pady=(0, 14))
-
-        self.card_avisos = self._card("AVISOS DA BIBLIOTECA", pady=(0, 18), expand=True)
-        self.card_avisos.pack_configure(fill="both")
-        self.lista = tk.Frame(self.card_avisos, bg=p["superficie"])
-        self.lista.pack(fill="both", expand=True, padx=16, pady=(4, 14))
+        self.card = tk.Canvas(self.frame, width=self.CARD_W, height=self.CARD_H, bg=p["fundo"], highlightthickness=0)
+        self.card.pack(anchor="n", pady=(20, 18))
+        cab = tk.Frame(self.frame, bg=p["fundo"])
+        cab.pack(fill="x", padx=(16, 16))
+        tk.Label(cab, text="AVISOS DA BIBLIOTECA", font=(FONTE, 7, "bold"), fg=p["fraco"], bg=p["fundo"]).pack(side="left")
+        self.lista = tk.Frame(self.frame, bg=p["fundo"])
+        self.lista.pack(fill="both", expand=True, pady=(8, 16))
+        self._desenhar_card()
         self._mostrar_avisos(self._geracao, [])
 
-    # ── sessão ──
-    def atualizar_tempo(self, restante, total):
-        p = self.app.paleta
-        self.lbl_tempo.config(text=self.app._fmt(restante), fg=COR_OFFLINE if restante < 300 else p["texto"])
-        usado = max(0, total - restante)
-        self._usado = (usado / total) if total else 0.0
-        self.lbl_uso.config(text=f"Usado {self.app._fmt(usado)} de {self.app._fmt(total)}" if total else "")
-        self._desenhar_barra()
+    # ── card da sessão ──
+    def definir_cliente(self, nome, login):
+        self.nome, self.login = nome or "", login or ""
+        self._avatar = None
+        self._desenhar_card()
 
-    def _desenhar_barra(self):
+    def definir_status(self, online):
+        self.online = online
+        self._desenhar_card()
+
+    def _desenhar_card(self):
         p = self.app.paleta
-        c = self.barra
+        c, W, H = self.card, self.CARD_W, self.CARD_H
         c.delete("all")
-        c.config(bg=p["superficie"])
-        w = max(10, c.winfo_width())
-        c.create_line(4, 4, w - 4, 4, width=8, capstyle="round", fill=p["superficie3"])
-        fim = 4 + (w - 8) * min(1.0, self._usado)
-        if self._usado > 0:
-            c.create_line(4, 4, max(5, fim), 4, width=8, capstyle="round",
-                          fill=COR_OFFLINE if self._usado > 0.9 else p["destaque"])
+        c.config(bg=p["fundo"])
+        BarraSessao._retangulo(c, 0, 0, W - 1, H - 1, 16, fill=p["borda"], outline="")
+        BarraSessao._retangulo(c, 1, 1, W - 2, H - 2, 15, fill=p["superficie"], outline="")
+        # cliente: avatar em degradê, nome, estação, login e Online
+        if PIL_AVAILABLE:
+            if self._avatar is None:
+                self._avatar = ImageTk.PhotoImage(avatar_degrade(40, 12, p["superficie"]))
+            c.create_image(18, 18, anchor="nw", image=self._avatar)
+        else:
+            BarraSessao._retangulo(c, 18, 18, 58, 58, 12, fill=AZUL, outline="")
+        c.create_text(38, 38, text=(self.nome[:1] or "?").upper(), fill=TEXTO_CLARO, font=(FONTE, 12, "bold"))
+        c.create_oval(50, 50, 62, 62, fill=EMERALD if self.online else COR_OFFLINE, outline=p["superficie"], width=2)
+        # nome inteiro se couber ao lado da estação e do Online; senão, o primeiro nome
+        fonte_nome = tkfont.Font(family=FONTE, size=10, weight="bold")
+        livre = W - 70 - 16 - 62 - tkfont.Font(family="Consolas", size=7).measure(self.app.estacao) - 18
+        nome = self.nome if fonte_nome.measure(self.nome) <= livre or not self.nome.split() else self.nome.split()[0]
+        id_nome = c.create_text(70, 30, anchor="w", text=nome, fill=p["texto"], font=fonte_nome)
+        x = (c.bbox(id_nome) or (0, 0, 120, 0))[2] + 8
+        fonte_mono = tkfont.Font(family="Consolas", size=7)
+        estacao = self.app.estacao
+        larg = fonte_mono.measure(estacao) + 10
+        BarraSessao._retangulo(c, x, 22, x + larg, 38, 5, fill=misturar(AZUL, p["superficie"], 0.4), outline="")
+        BarraSessao._retangulo(c, x + 1, 23, x + larg - 1, 37, 4, fill=misturar(AZUL, p["superficie"], 0.14),
+                               outline="")
+        c.create_text(x + larg / 2, 30, text=estacao, fill=AZUL_CLARO, font=fonte_mono)
+        c.create_text(70, 47, anchor="w", text=f"Login: {self.login}" if self.login else "", fill=p["texto2"],
+                      font=("Consolas", 7))
+        cor = EMERALD if self.online else COR_OFFLINE
+        rotulo = "Online" if self.online else "Offline"
+        fonte_chip = tkfont.Font(family=FONTE, size=7, weight="bold")
+        larg = fonte_chip.measure(rotulo) + 16
+        BarraSessao._retangulo(c, W - 16 - larg, 28, W - 16, 48, 10, fill=misturar(cor, p["superficie"], 0.45),
+                               outline="")
+        BarraSessao._retangulo(c, W - 15 - larg, 29, W - 17, 47, 9, fill=misturar(cor, p["superficie"], 0.14),
+                               outline="")
+        c.create_text(W - 16 - larg / 2, 38, text=rotulo, fill=misturar(cor, TEXTO_CLARO, 0.75), font=fonte_chip)
+        c.create_line(18, 76, W - 18, 76, fill=p["borda"])
+        # tempo restante, início e limite, barra
+        c.create_text(18, 96, anchor="w", text="TEMPO RESTANTE DE USO", fill=p["fraco"], font=(FONTE, 7, "bold"))
+        c.create_text(18, 126, anchor="w", text="00:00:00", fill=p["texto"], font=("Consolas", 22, "bold"), tags="tempo")
+        c.create_text(18, 152, anchor="w", text="", fill=p["fraco"], font=(FONTE, 7), tags="inicio")
+        c.create_line(18, 174, W - 18, 174, width=6, capstyle="round", fill=p["superficie3"])
+        c.create_line(18, 174, 19, 174, width=6, capstyle="round", fill=AZUL, tags="barra")
+        self._atualizar_textos()
+
+    def atualizar_tempo(self, restante, total):
+        self._restante = (restante / total) if total else 0.0
+        self._texto_tempo = (self.app._fmt(restante), restante < 300, total)
+        self._atualizar_textos()
+
+    def _atualizar_textos(self):
+        c, p = self.card, self.app.paleta
+        texto, alerta, total = getattr(self, "_texto_tempo", ("00:00:00", False, 0))
+        c.itemconfig("tempo", text=texto, fill=ROSA_TEXTO if alerta else p["texto"])
+        inicio = getattr(self.app, "inicio_sessao", None)
+        if total and inicio:
+            c.itemconfig("inicio", text=f"Sessão iniciada às {time.strftime('%H:%M', time.localtime(inicio))}  |  "
+                                        f"Limite: {self.app._fmt(total)}")
+        fim = 18 + (self.CARD_W - 36) * max(0.0, min(1.0, self._restante))
+        c.coords("barra", 18, 174, max(19, fim), 174)
+        c.itemconfig("barra", fill=ROSA if alerta else AZUL)
 
     # ── avisos ──
     def recarregar_avisos(self):
@@ -2473,25 +2654,86 @@ class PainelDireito:
         for w in self.lista.winfo_children():
             w.destroy()
         if not self.avisos:
-            tk.Label(self.lista, text="Nenhum aviso no momento.", font=("Segoe UI", 10), fg=p["fraco"],
-                     bg=p["superficie"]).pack(anchor="w")
+            tk.Label(self.lista, text="Nenhum aviso no momento.", font=(FONTE, 9), fg=p["fraco"],
+                     bg=p["fundo"]).pack(anchor="w", padx=16)
             return
-        for n, aviso in enumerate(self.avisos):
-            item = tk.Frame(self.lista, bg=p["superficie"])
-            item.pack(fill="x", pady=(0 if n == 0 else 12, 0))
-            tk.Frame(item, bg=p["destaque"], width=3).pack(side="left", fill="y", padx=(0, 10))
-            corpo = tk.Frame(item, bg=p["superficie"])
-            corpo.pack(side="left", fill="x", expand=True)
-            if aviso.get("titulo"):
-                tk.Label(corpo, text=aviso["titulo"], font=("Segoe UI", 10, "bold"), fg=p["texto"],
-                         bg=p["superficie"], anchor="w", justify="left", wraplength=225).pack(fill="x")
+        W = self.CARD_W
+        for aviso in self.avisos:
+            cor, icone = self.TIPOS.get(aviso.get("tipo") or "info", self.TIPOS["info"])
+            c = tk.Canvas(self.lista, width=W, height=60, bg=p["fundo"], highlightthickness=0)
+            c.pack(anchor="n", pady=(0, 10))
+            c.create_text(18, 20, text=icone, font=("Segoe MDL2 Assets", 9), fill=cor)
+            c.create_text(32, 20, anchor="w", text=aviso.get("titulo") or "", fill=misturar(cor, p["texto"], 0.8),
+                          font=(FONTE, 9, "bold"), width=W - 92)
+            if aviso.get("horario"):
+                c.create_text(W - 14, 20, anchor="e", text=aviso.get("horario"), fill=p["fraco"], font=("Consolas", 7))
+            y = 36
             if aviso.get("texto"):
-                tk.Label(corpo, text=aviso["texto"], font=("Segoe UI", 9), fg=p["texto2"], bg=p["superficie"],
-                         anchor="w", justify="left", wraplength=225).pack(fill="x", pady=(2, 0))
+                t = c.create_text(16, y, anchor="nw", text=aviso["texto"], fill=p["texto2"], font=(FONTE, 8),
+                                  width=W - 32)
+                y = (c.bbox(t) or (0, 0, 0, y + 14))[3]
+            h = y + 14
+            c.config(height=h)
+            fundo = BarraSessao._retangulo(c, 0, 0, W - 1, h - 1, 12, fill=p["borda"], outline="")
+            dentro = BarraSessao._retangulo(c, 1, 1, W - 2, h - 2, 11, fill=p["superficie"], outline="")
+            c.tag_lower(dentro)
+            c.tag_lower(fundo)
 
     def redesenhar(self):
-        self._desenhar_barra()
+        self._avatar = None
+        self._desenhar_card()
         self._desenhar_avisos()
+
+
+class PaginaPreferencias:
+    """Configurações do menu (9.13): tema e tamanho do texto dos cards, só para
+    esta sessão do cliente (o tamanho volta ao normal no fim da sessão)."""
+
+    def __init__(self, app, frame):
+        self.app = app
+        self.frame = frame
+        p = app.paleta
+        tk.Label(frame, text="Configurações", font=(FONTE, 14, "bold"), fg=p["texto"], bg=p["fundo"]).pack(
+            anchor="w", padx=24, pady=(24, 2))
+        tk.Label(frame, text="Valem só para você, nesta sessão.", font=(FONTE, 9), fg=p["texto2"],
+                 bg=p["fundo"]).pack(anchor="w", padx=24, pady=(0, 18))
+        self.opcoes = []  # [(canvas, rótulo, ativo(), ação)]
+        self._grupo("TEMA", [("Escuro", lambda: self.app.tema == "escuro", lambda: self._tema("escuro")),
+                             ("Claro", lambda: self.app.tema == "claro", lambda: self._tema("claro"))])
+        self._grupo("TAMANHO DO TEXTO DOS APPS", [
+            ("Normal", lambda: self.app._tela_apps.escala == 0, lambda: self._escala(0)),
+            ("Grande", lambda: self.app._tela_apps.escala == 2, lambda: self._escala(2))])
+
+    def _grupo(self, titulo, botoes):
+        p = self.app.paleta
+        tk.Label(self.frame, text=titulo, font=(FONTE, 7, "bold"), fg=p["fraco"], bg=p["fundo"]).pack(
+            anchor="w", padx=24, pady=(6, 6))
+        linha = tk.Frame(self.frame, bg=p["fundo"])
+        linha.pack(anchor="w", padx=24, pady=(0, 14))
+        for rotulo, ativo, acao in botoes:
+            cv = tk.Canvas(linha, width=110, height=36, highlightthickness=0, cursor="hand2")
+            cv.pack(side="left", padx=(0, 8))
+            cv.bind("<Button-1>", lambda e, a=acao: (a(), self.redesenhar()))
+            self.opcoes.append((cv, rotulo, ativo))
+        self.redesenhar()
+
+    def _tema(self, tema):
+        if self.app.tema != tema:
+            self.app.alternar_tema()
+
+    def _escala(self, escala):
+        self.app._tela_apps.escala = escala
+        self.app._tela_apps.redesenhar()
+
+    def redesenhar(self):
+        p = self.app.paleta
+        for cv, rotulo, ativo in self.opcoes:
+            cv.delete("all")
+            cv.config(bg=p["fundo"])
+            sim = ativo()
+            BarraSessao._retangulo(cv, 0, 0, 109, 35, 12, fill=AZUL if sim else p["borda"], outline="")
+            BarraSessao._retangulo(cv, 1, 1, 108, 34, 11, fill=AZUL if sim else p["superficie"], outline="")
+            cv.create_text(55, 18, text=rotulo, fill=TEXTO_CLARO if sim else p["texto2"], font=(FONTE, 9, "bold"))
 
 
 class AgenteApp:
@@ -2558,6 +2800,9 @@ class AgenteApp:
         # Impede fechar a janela durante a sessão
         self.root.protocol("WM_DELETE_WINDOW", self._tentar_fechar)
 
+        global FONTE
+        if "Inter" in tkfont.families(root):
+            FONTE = "Inter"  # 9.13: a do prompt; sem ela fica a Segoe UI
         self._build_ui()
         self.barra = BarraSessao(self)
         self.notificacoes = Notificacoes(self)
@@ -2629,6 +2874,7 @@ class AgenteApp:
         self._tela_login.redesenhar()
         self._menu.redesenhar()
         self._painel_direito.redesenhar()
+        self._preferencias.redesenhar()
 
     def alternar_tema(self):
         """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
@@ -2637,14 +2883,15 @@ class AgenteApp:
         trocar_cores(self.root, {antiga[k].lower(): nova[k] for k in antiga})
         self.tema, self.paleta = novo, nova
         self._definir_cores()
-        for botao in (self.btn_tema, self.barra.btn_tema):
-            botao.config(text=ROTULO_TEMA[novo])
+        self.btn_tema.config(text=ROTULO_TEMA[novo])
+        self.barra.btn_tema.config(text=ICONE_TEMA[novo])
         self.barra.desenhar()
         self._tela_apps.redesenhar()
         self._programacao.redesenhar()
         self._tela_login.redesenhar()
         self._menu.redesenhar()
         self._painel_direito.redesenhar()
+        self._preferencias.redesenhar()
         salvar_tema(novo)
 
     def _ao_redimensionar(self, event):
@@ -2684,14 +2931,14 @@ class AgenteApp:
         bg, bg2, bg3 = self.c_bg, self.c_bg2, self.c_bg3
         text, text2, accent = self.c_text, self.c_text2, self.c_accent
 
-        title_font = tkfont.Font(family="Segoe UI", size=16, weight="bold")
-        normal_font = tkfont.Font(family="Segoe UI", size=11)
+        title_font = tkfont.Font(family=FONTE, size=16, weight="bold")
+        normal_font = tkfont.Font(family=FONTE, size=11)
         big_font = tkfont.Font(family="Consolas", size=36, weight="bold")
         small_font = tkfont.Font(family="Consolas", size=9)
         self.f_normal = normal_font
         self.f_small = small_font
-        self.f_app = tkfont.Font(family="Segoe UI", size=10, weight="bold")
-        self.f_icon = tkfont.Font(family="Segoe UI", size=22, weight="bold")
+        self.f_app = tkfont.Font(family=FONTE, size=10, weight="bold")
+        self.f_icon = tkfont.Font(family=FONTE, size=22, weight="bold")
 
         # ── Frame de login ──
         # duas metades: formulário à esquerda, cartazes da programação à direita
@@ -2712,19 +2959,19 @@ class AgenteApp:
         self._icone_pc = tk.Canvas(_form, width=120, height=100, bg=bg, highlightthickness=0)
         self._icone_pc.pack()
         self._desenhar_icone_pc(COR_CONECTANDO)
-        self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family="Segoe UI", size=40, weight="bold"),
+        self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family=FONTE, size=40, weight="bold"),
                                     fg=text, bg=bg, wraplength=520)
         self.lbl_estacao.pack(pady=(2, 0))
-        self.lbl_status = tk.Label(_form, text="conectando...", font=tkfont.Font(family="Segoe UI", size=11, weight="bold"),
+        self.lbl_status = tk.Label(_form, text="conectando...", font=tkfont.Font(family=FONTE, size=11, weight="bold"),
                                    fg=COR_CONECTANDO, bg=bg)
         self.lbl_status.pack(pady=(0, 30))
 
-        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family="Segoe UI", size=18, weight="bold"),
+        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family=FONTE, size=18, weight="bold"),
                  fg=text, bg=bg).pack()
         tk.Label(_form, text="Use o login e a senha do seu cadastro na biblioteca",
-                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack(pady=(4, 22))
+                 font=tkfont.Font(family=FONTE, size=10), fg=text2, bg=bg).pack(pady=(4, 22))
 
-        f_rotulo = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+        f_rotulo = tkfont.Font(family=FONTE, size=10, weight="bold")
         campo = dict(font=normal_font, bg=bg3, fg=text, insertbackground=text, relief="flat",
                      highlightthickness=1, highlightbackground=p["superficie3"], highlightcolor=accent)
         tk.Label(_form, text="Login", font=f_rotulo, fg=text, bg=bg).pack(anchor="w")
@@ -2744,7 +2991,7 @@ class AgenteApp:
         self.lbl_olho.pack(side="right", fill="y")
         self.lbl_olho.bind("<Button-1>", self._alternar_senha)
 
-        self.btn_login = tk.Button(_form, text="Entrar", font=tkfont.Font(family="Segoe UI", size=11, weight="bold"),
+        self.btn_login = tk.Button(_form, text="Entrar", font=tkfont.Font(family=FONTE, size=11, weight="bold"),
                                    bg=accent, fg="white", relief="flat", activebackground=p["destaque_forte"],
                                    activeforeground="white", cursor="hand2",
                                    command=self._fazer_login, state="disabled")
@@ -2755,7 +3002,7 @@ class AgenteApp:
 
         tk.Frame(_form, bg=p["superficie3"], height=1).pack(fill="x", pady=(6, 14))
         tk.Label(_form, text="Não tem cadastro? Fale com um funcionário da biblioteca.",
-                 font=tkfont.Font(family="Segoe UI", size=10), fg=text2, bg=bg).pack()
+                 font=tkfont.Font(family=FONTE, size=10), fg=text2, bg=bg).pack()
 
         # canto de baixo: tema e versão (ficavam na barra de cima)
         rodape = tk.Frame(esquerda, bg=bg)
@@ -2764,7 +3011,7 @@ class AgenteApp:
                                   activebackground=p["superficie3"], relief="flat", padx=10, cursor="hand2",
                                   command=self.alternar_tema)
         self.btn_tema.pack(side="left")
-        tk.Label(rodape, text=f"MatheCafé v{VERSAO}", font=tkfont.Font(family="Segoe UI", size=9),
+        tk.Label(rodape, text=f"MatheCafé v{VERSAO}", font=tkfont.Font(family=FONTE, size=9),
                  fg=p["fraco"], bg=bg).pack(side="left", padx=10)
 
         # ── Frame de sessão (launcher) ──
@@ -2790,13 +3037,16 @@ class AgenteApp:
         # banner da programação no topo (só em Início): aparece quando há cartaz
         self.frame_programacao = tk.Frame(self.frame_centro, bg=bg)
         self._programacao = Programacao(self, self.frame_programacao)
+        # Configurações (menu): tema e tamanho do texto, no lugar da grade
+        self.frame_config = tk.Frame(self.frame_centro, bg=bg)
+        self._preferencias = PaginaPreferencias(self, self.frame_config)
 
         self.frame_login.pack(fill="both", expand=True)
 
         # ── Frame de encerramento ──
         self.frame_encerramento = tk.Frame(self.root, bg=bg)
         tk.Label(self.frame_encerramento, text="SESSAO ENCERRADA",
-                 font=tkfont.Font(family="Segoe UI", size=24, weight="bold"),
+                 font=tkfont.Font(family=FONTE, size=24, weight="bold"),
                  fg="#ef4444", bg=bg).pack(expand=False, pady=(80, 12))
         tk.Label(self.frame_encerramento, text="Aguarde a liberacao do sistema...",
                  font=normal_font, fg=text2, bg=bg).pack()
@@ -2938,7 +3188,7 @@ class AgenteApp:
         if evento == "_conectado":
             self.lbl_status.config(text="online", fg=COR_ONLINE)
             self._desenhar_icone_pc(COR_ONLINE)
-            self._menu.definir_status(True)
+            self._painel_direito.definir_status(True)
             self.btn_login.config(state="normal")
             self._enviar_logs_offline()
             self._log("Conectado ao servidor")
@@ -2955,7 +3205,7 @@ class AgenteApp:
         elif evento == "_desconectado":
             self.lbl_status.config(text="offline", fg=COR_OFFLINE)
             self._desenhar_icone_pc(COR_OFFLINE)
-            self._menu.definir_status(False)
+            self._painel_direito.definir_status(False)
             self.btn_login.config(state="disabled")
             self._log("Desconectado - tentando reconectar em 3s...")
             if self.sessao_ativa:
@@ -3218,9 +3468,9 @@ class AgenteApp:
             self._overlay_pausa.configure(bg=self.c_bg)
             self._overlay_pausa.attributes("-topmost", True)
             tk.Label(self._overlay_pausa, text="SESSAO PAUSADA",
-                     font=("Segoe UI", 22, "bold"), bg=self.c_bg, fg="#f59e0b").pack(expand=True)
+                     font=(FONTE, 22, "bold"), bg=self.c_bg, fg="#f59e0b").pack(expand=True)
             tk.Label(self._overlay_pausa, text="Aguarde o operador retomar",
-                     font=("Segoe UI", 12), bg=self.c_bg, fg=self.c_text2).pack()
+                     font=(FONTE, 12), bg=self.c_bg, fg=self.c_text2).pack()
         except Exception as ex:
             self._log(f"Erro ao exibir overlay: {ex}")
 
@@ -3307,9 +3557,8 @@ class AgenteApp:
         self.whitelist_procs = {a["processo"].strip().lower() for a in whitelist_apps if a.get("processo")}
         self.reiniciar_ao_encerrar = dados.get("reiniciar_ao_encerrar", False)
 
-        self._menu.definir_cliente(self.cliente_nome)
-        self._pagina = "inicio"
-        self._menu.pintar()
+        self._painel_direito.definir_cliente(self.cliente_nome, dados.get("cliente_login"))
+        self._mostrar_pagina("inicio")
         self._painel_direito.atualizar_tempo(self.tempo_total, self.tempo_total)
         self.entry_login.delete(0, "end")
         self.entry_senha.delete(0, "end")
@@ -3347,6 +3596,15 @@ class AgenteApp:
         """Menu da esquerda: Início (banner + apps) ou Meus Apps (só a grade)."""
         self._pagina = pagina
         self._menu.pintar()
+        if pagina == "config":
+            self.frame_programacao.pack_forget()
+            self.frame_launcher.pack_forget()
+            self._preferencias.redesenhar()
+            self.frame_config.pack(fill="both", expand=True)
+            return
+        self.frame_config.pack_forget()
+        if not self.frame_launcher.winfo_manager():
+            self.frame_launcher.pack(side="bottom", expand=True, fill="both")
         self._programacao.ajustar_pagina()
 
     def _abrir_app(self, app):
@@ -3528,15 +3786,15 @@ class AgenteApp:
         prompt.geometry(f"+{pos_x}+{pos_y}")
 
         tk.Label(prompt, text="Login do operador:", bg="#1A1B26", fg="white",
-                 font=("Segoe UI", 10)).pack(pady=(16, 2))
-        login_entry = tk.Entry(prompt, font=("Segoe UI", 11),
+                 font=(FONTE, 10)).pack(pady=(16, 2))
+        login_entry = tk.Entry(prompt, font=(FONTE, 11),
                                bg="#2A2B3D", fg="white", insertbackground="white")
         login_entry.pack(padx=24, fill="x")
         login_entry.focus()
 
         tk.Label(prompt, text="Senha:", bg="#1A1B26", fg="white",
-                 font=("Segoe UI", 10)).pack(pady=(8, 2))
-        senha_entry = tk.Entry(prompt, show="*", font=("Segoe UI", 11),
+                 font=(FONTE, 10)).pack(pady=(8, 2))
+        senha_entry = tk.Entry(prompt, show="*", font=(FONTE, 11),
                                bg="#2A2B3D", fg="white", insertbackground="white")
         senha_entry.pack(padx=24, fill="x")
 
@@ -3565,14 +3823,14 @@ class AgenteApp:
                         btn.config(state="normal", text="Entrar")
                         return
                 lbl = tk.Label(prompt, text="Sem conexao com o servidor",
-                               fg="#ef4444", bg="#1A1B26", font=("Segoe UI", 9))
+                               fg="#ef4444", bg="#1A1B26", font=(FONTE, 9))
                 lbl._is_erro = True
                 lbl.pack(pady=(2, 0))
                 btn.config(state="normal", text="Entrar")
 
         btn = tk.Button(prompt, text="Entrar", command=validar,
                         bg="#4f46e5", fg="white", relief="flat",
-                        font=("Segoe UI", 10))
+                        font=(FONTE, 10))
         btn.pack(pady=12, padx=24, fill="x", ipady=6)
 
         senha_entry.bind("<Return>", validar)
@@ -3600,8 +3858,8 @@ class AgenteApp:
 
         def campo(rotulo, valor):
             tk.Label(janela, text=rotulo, bg="#1A1B26", fg="white",
-                     font=("Segoe UI", 10)).pack(anchor="w", padx=24, pady=(14, 2))
-            e = tk.Entry(janela, font=("Segoe UI", 11), bg="#2A2B3D", fg="white", insertbackground="white")
+                     font=(FONTE, 10)).pack(anchor="w", padx=24, pady=(14, 2))
+            e = tk.Entry(janela, font=(FONTE, 11), bg="#2A2B3D", fg="white", insertbackground="white")
             e.insert(0, valor)
             e.pack(padx=24, fill="x")
             return e
@@ -3611,13 +3869,13 @@ class AgenteApp:
         # Piso (6.18): a lista vem do servidor; mudar de piso faz este PC entrar
         # no outro piso como computador novo (igual a reinstalar escolhendo outro)
         tk.Label(janela, text="Piso:", bg="#1A1B26", fg="white",
-                 font=("Segoe UI", 10)).pack(anchor="w", padx=24, pady=(14, 2))
+                 font=(FONTE, 10)).pack(anchor="w", padx=24, pady=(14, 2))
         pisos = {"lista": [], "estacao": ""}  # [(id, nome)] e "piso_id;nome" deste PC
         v_piso = tk.StringVar(value="(carregando...)")
         m_piso = tk.OptionMenu(janela, v_piso, "(carregando...)")
-        m_piso.config(font=("Segoe UI", 10), bg="#2A2B3D", fg="white", activebackground="#3A3B4D",
+        m_piso.config(font=(FONTE, 10), bg="#2A2B3D", fg="white", activebackground="#3A3B4D",
                       activeforeground="white", relief="flat", highlightthickness=0, anchor="w")
-        m_piso["menu"].config(font=("Segoe UI", 10), bg="#2A2B3D", fg="white")
+        m_piso["menu"].config(font=(FONTE, 10), bg="#2A2B3D", fg="white")
         m_piso.pack(padx=24, fill="x")
 
         def mostrar_pisos(lista, estacao):
@@ -3650,7 +3908,7 @@ class AgenteApp:
             self.root.after(0, lambda: mostrar_pisos(lista, estacao))
         threading.Thread(target=baixar_pisos, daemon=True).start()
         e_servidor.focus()
-        lbl = tk.Label(janela, text="", bg="#1A1B26", fg="#94a3b8", font=("Segoe UI", 9),
+        lbl = tk.Label(janela, text="", bg="#1A1B26", fg="#94a3b8", font=(FONTE, 9),
                        wraplength=w - 48, justify="left")
         lbl.pack(anchor="w", padx=24, pady=(10, 0))
         botoes = tk.Frame(janela, bg="#1A1B26")
@@ -3707,7 +3965,7 @@ class AgenteApp:
         for texto, cor, cmd in (("Salvar e reiniciar", "#4f46e5", salvar), ("Testar", "#2A2B3D", testar),
                                 ("Cancelar", "#2A2B3D", janela.destroy)):
             tk.Button(botoes, text=texto, command=cmd, bg=cor, fg="white", relief="flat",
-                      font=("Segoe UI", 10), padx=12, pady=4).pack(side="right", padx=(6, 0))
+                      font=(FONTE, 10), padx=12, pady=4).pack(side="right", padx=(6, 0))
 
     def _exibir_mensagem_operador(self, texto, titulo="Mensagem do operador", modal=True):
         """Mostra a mensagem do operador inteira. A janela cresce com o texto (era
@@ -3719,9 +3977,9 @@ class AgenteApp:
         popup.resizable(False, False)
         popup.attributes("-topmost", True)
 
-        tk.Label(popup, text=titulo, font=("Segoe UI", 11, "bold"),
+        tk.Label(popup, text=titulo, font=(FONTE, 11, "bold"),
                  fg="#f59e0b", bg="#1A1B26").pack(pady=(16, 6))
-        botao = tk.Button(popup, text="OK", font=("Segoe UI", 10, "bold"),
+        botao = tk.Button(popup, text="OK", font=(FONTE, 10, "bold"),
                           bg="#3b82f6", fg="white", relief="flat", padx=20, pady=6,
                           command=popup.destroy)
         botao.pack(side="bottom", pady=(8, 16))
@@ -3729,7 +3987,7 @@ class AgenteApp:
         largura = 460
         util = largura - 60  # margens e a barra de rolagem
         altura_max = int(popup.winfo_screenheight() * 0.6)
-        fonte = tkfont.Font(family="Segoe UI", size=11)
+        fonte = tkfont.Font(family=FONTE, size=11)
         # altura conforme as linhas que o texto ocupa nessa largura
         altura_texto = linhas_do_texto(texto, fonte.measure, util) * fonte.metrics("linespace") + 8
         quadro = tk.Frame(popup, bg="#1A1B26")
