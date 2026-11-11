@@ -137,6 +137,8 @@ export interface CategoriaApp {
   id: number
   nome: string
   ordem: number
+  /** #rrggbb: selo, fundo da logo e brilho dos apps dela no agente */
+  cor: string
   /** quantos apps estão nela */
   apps: number
 }

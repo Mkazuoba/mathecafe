@@ -709,6 +709,11 @@ function ModalCategorias({
     })
   }
 
+  function mudarCor(c: CategoriaApp, cor: string) {
+    if (cor.toLowerCase() === c.cor.toLowerCase()) return
+    executar(() => Api.put(`/api/categorias/${c.id}`, { cor }))
+  }
+
   function renomear(c: CategoriaApp, nome: string) {
     if (!nome.trim() || nome.trim() === c.nome) return
     executar(() => Api.put(`/api/categorias/${c.id}`, { nome: nome.trim() }))
@@ -734,12 +739,21 @@ function ModalCategorias({
   return (
     <Modal titulo="Categorias dos apps" aberto={aberto} aoFechar={aoFechar} className="max-w-md">
       <p className="mb-3 text-sm text-texto-fraco">
-        Aparecem à esquerda na tela de apps das estações, nesta ordem, depois de Todos. App sem categoria fica em
-        Outros.
+        Aparecem no alto da tela de apps das estações, nesta ordem, depois de Todos. App sem categoria fica em
+        Outros. A cor pinta o selo, o fundo da logo e o brilho dos apps dela.
       </p>
       <ul className="mb-4 flex flex-col gap-1.5">
         {categorias.map((c, i) => (
           <li key={c.id} className="flex items-center gap-1.5">
+            <input
+              type="color"
+              key={c.cor}
+              aria-label={`Cor da categoria ${c.nome}`}
+              title="Cor da categoria"
+              defaultValue={c.cor}
+              onBlur={(e) => mudarCor(c, e.target.value)}
+              className="h-8 w-9 shrink-0 cursor-pointer rounded border border-borda bg-transparent p-0.5"
+            />
             <Input
               key={c.nome}
               aria-label={`Nome da categoria ${c.nome}`}

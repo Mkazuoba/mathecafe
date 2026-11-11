@@ -2421,3 +2421,66 @@ def test_pc_novo_com_nome_dos_dois_pisos_vai_para_aprovacao(c, admin):
         assert info["aprovada"] is False
         p = _pendente(c, admin, f"uuid-ambiguo-{nome}")
         assert p["id"] not in (est["Adulto"]["id"], est["Infantil"]["id"])
+
+
+# ── Area do cliente (9.11): cor da categoria, avisos e link no cartaz ────────
+
+def test_categoria_tem_cor(c, admin, cenario):
+    n = next(_contador)
+    cat = c.post("/api/categorias/", headers=admin, json={"nome": f"Midia {n}"}).json()
+    assert cat["cor"].startswith("#") and len(cat["cor"]) == 7  # nasce com uma cor da paleta
+    r = c.put(f"/api/categorias/{cat['id']}", headers=admin, json={"cor": "#E11D48"})
+    assert r.status_code == 200 and r.json()["cor"] == "#e11d48"
+    assert c.put(f"/api/categorias/{cat['id']}", headers=admin, json={"cor": "vermelho"}).status_code == 422
+    proc = f"midia{n}.exe"
+    aid = c.post("/api/apps/", headers=admin, json={"nome": "Player", "processo": proc, "caminho": f"C:\{proc}"}).json()["id"]
+    c.put(f"/api/apps/{aid}", headers=admin, json={"categoria_id": cat["id"]})
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        item = next(a for a in dados["whitelist"] if a["processo"] == proc)
+        assert item["categoria_cor"] == "#e11d48"
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+
+
+def test_avisos_da_biblioteca(c, admin, operador, cenario):
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as pc:
+        pc.send_json({"evento": "ping"})
+        assert pc.receive_json()["evento"] == "pong"
+        assert c.post("/api/avisos/", headers=operador, json={"titulo": "x", "texto": "y"}).status_code == 403
+        r = c.post("/api/avisos/", headers=admin, json={"titulo": "Silêncio", "texto": "Fale baixo no espaço."})
+        assert r.status_code == 200, r.text
+        assert pc.receive_json()["evento"] == "avisos_atualizados"  # o agente recarrega
+        a1 = r.json()
+        a2 = c.post("/api/avisos/", headers=admin, json={"titulo": "Hoje", "texto": "Contação às 15h"}).json()
+        assert a2["ordem"] > a1["ordem"]
+        pc.receive_json()
+        c.put(f"/api/avisos/{a1['id']}", headers=admin, json={"ativo": False})
+        pc.receive_json()
+    # o agente nao tem login: so os ativos
+    publicos = c.get("/api/avisos/agente").json()
+    titulos = [x["titulo"] for x in publicos]
+    assert "Hoje" in titulos and "Silêncio" not in titulos
+    todos = c.get("/api/avisos/", headers=operador).json()
+    assert {x["id"] for x in todos} >= {a1["id"], a2["id"]}
+    assert c.post("/api/avisos/", headers=admin, json={"titulo": "", "texto": ""}).status_code == 422
+    assert c.delete(f"/api/avisos/{a2['id']}", headers=admin).status_code == 200
+    assert c.delete(f"/api/avisos/{a2['id']}", headers=admin).status_code == 404
+
+
+def test_cartaz_com_link(c, admin):
+    import base64
+    url = "data:image/jpeg;base64," + base64.b64encode(_JPEG).decode()
+    r = c.post("/api/programacao/", headers=admin,
+               json={"titulo": "Curso de Python", "imagem": url, "link": "https://exemplo.org/inscricao"})
+    assert r.status_code == 200, r.text
+    item = r.json()
+    assert item["link"] == "https://exemplo.org/inscricao"
+    no_agente = next(i for i in c.get("/api/programacao/agente").json()["itens"] if i["id"] == item["id"])
+    assert no_agente["link"] == "https://exemplo.org/inscricao"
+    # so http(s): o agente abre no navegador
+    assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"link": "file:///C:/Windows"}).status_code == 422
+    assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"link": "exemplo.org"}).json()["link"] == "https://exemplo.org"
+    assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"link": ""}).json()["link"] is None
+    c.delete(f"/api/programacao/{item['id']}", headers=admin)
