@@ -4,7 +4,7 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Campo, Input, Interruptor, Textarea } from "@/components/ui/campos"
+import { Campo, Input, Interruptor, Select, Textarea } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
 
 interface Aviso {
@@ -13,7 +13,18 @@ interface Aviso {
   texto: string
   ativo: boolean
   ordem: number
+  /** chip no PC: alerta (âmbar), evento (violeta), info (azul) */
+  tipo: TipoAviso
+  /** livre, ex.: "16:00" (à direita do título no PC) */
+  horario: string | null
 }
+
+type TipoAviso = "alerta" | "evento" | "info"
+const TIPOS: { valor: TipoAviso; rotulo: string }[] = [
+  { valor: "info", rotulo: "Informativo" },
+  { valor: "alerta", rotulo: "Alerta" },
+  { valor: "evento", rotulo: "Evento" },
+]
 
 const CAMPO =
   "w-full rounded-md border border-borda bg-superficie px-2 py-1.5 text-sm outline-none focus:border-destaque"
@@ -24,6 +35,8 @@ export function SecaoAvisos() {
   const [itens, setItens] = useState<Aviso[] | null>(null)
   const [titulo, setTitulo] = useState("")
   const [texto, setTexto] = useState("")
+  const [tipo, setTipo] = useState<TipoAviso>("info")
+  const [horario, setHorario] = useState("")
 
   const carregar = useCallback(async () => {
     try {
@@ -51,13 +64,14 @@ export function SecaoAvisos() {
     ev.preventDefault()
     if (!titulo.trim() && !texto.trim()) return avisar("Escreva o título ou o texto do aviso", "erro")
     await executar(async () => {
-      await Api.post("/api/avisos/", { titulo: titulo.trim(), texto: texto.trim() })
+      await Api.post("/api/avisos/", { titulo: titulo.trim(), texto: texto.trim(), tipo, horario: horario.trim() })
       setTitulo("")
       setTexto("")
+      setHorario("")
     }, "Aviso publicado")
   }
 
-  function salvar(a: Aviso, dados: Partial<Pick<Aviso, "titulo" | "texto" | "ativo">>) {
+  function salvar(a: Aviso, dados: Partial<Pick<Aviso, "titulo" | "texto" | "ativo" | "tipo" | "horario">>) {
     executar(() => Api.put(`/api/avisos/${a.id}`, dados))
   }
 
@@ -93,6 +107,20 @@ export function SecaoAvisos() {
         <Campo rotulo="Texto" id="aviso-texto">
           <Textarea id="aviso-texto" maxLength={400} rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ex.: Use fones de ouvido para vídeos e músicas." />
         </Campo>
+        <div className="flex gap-3">
+          <Campo rotulo="Tipo" id="aviso-tipo">
+            <Select id="aviso-tipo" value={tipo} onChange={(e) => setTipo(e.target.value as TipoAviso)}>
+              {TIPOS.map((t) => (
+                <option key={t.valor} value={t.valor}>
+                  {t.rotulo}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+          <Campo rotulo="Horário (opcional)" id="aviso-horario">
+            <Input id="aviso-horario" maxLength={20} value={horario} onChange={(e) => setHorario(e.target.value)} placeholder="Ex.: 16:00" />
+          </Campo>
+        </div>
         <Button type="submit" className="gap-1.5 self-start">
           <IconPlus size={16} /> Publicar aviso
         </Button>
@@ -130,6 +158,30 @@ export function SecaoAvisos() {
                   onBlur={(e) => e.target.value.trim() !== a.texto && salvar(a, { texto: e.target.value })}
                   className={cn(CAMPO, "resize-y")}
                 />
+                <div className="flex gap-1.5">
+                  <select
+                    aria-label="Tipo do aviso"
+                    value={a.tipo}
+                    onChange={(e) => salvar(a, { tipo: e.target.value as TipoAviso })}
+                    className={cn(CAMPO, "w-36")}
+                  >
+                    {TIPOS.map((t) => (
+                      <option key={t.valor} value={t.valor}>
+                        {t.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    key={`h${a.horario ?? ""}`}
+                    defaultValue={a.horario ?? ""}
+                    maxLength={20}
+                    aria-label="Horário do aviso"
+                    placeholder="Horário (opcional)"
+                    onBlur={(e) => e.target.value.trim() !== (a.horario ?? "") && salvar(a, { horario: e.target.value })}
+                    className={cn(CAMPO, "w-40")}
+                  />
+                </div>
               </div>
               <Interruptor id={`aviso-ativo-${a.id}`} rotulo="Mostrar este aviso" ligado={a.ativo} aoMudar={(v) => salvar(a, { ativo: v })} />
               <div className="flex flex-col">

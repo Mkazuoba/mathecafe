@@ -828,6 +828,7 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, id: Optional[int] =
         "piso": cor_para_o_agente(e),
         "sessao_id": sessao.id,
         "cliente_nome": cliente.nome,
+        "cliente_login": cliente.login,
         "tempo_segundos": tempo,
         "reiniciar_ao_encerrar": reiniciar,
         "whitelist": whitelist_para_o_agente(apps),

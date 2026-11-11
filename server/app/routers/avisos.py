@@ -2,7 +2,7 @@
 no widget à direita da tela de apps do agente. Iguais em todas as estações.
 
 O agente não tem login: a lista dos ativos é aberta, como /api/programacao/agente."""
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -17,9 +17,14 @@ from app.websocket_manager import manager
 router = APIRouter(prefix="/avisos", tags=["avisos"])
 
 
+Tipo = Literal["alerta", "evento", "info"]
+
+
 class AvisoNovo(BaseModel):
     titulo: str = Field(default="", max_length=80)
     texto: str = Field(default="", max_length=400)
+    tipo: Tipo = "info"
+    horario: Optional[str] = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def _nao_vazio(self):
@@ -33,10 +38,13 @@ class AvisoAlterado(BaseModel):
     texto: Optional[str] = Field(default=None, max_length=400)
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
+    tipo: Optional[Tipo] = None
+    horario: Optional[str] = Field(default=None, max_length=20)  # "" apaga
 
 
 def _serial(a: AvisoBiblioteca) -> dict:
-    return {"id": a.id, "titulo": a.titulo or "", "texto": a.texto or "", "ativo": bool(a.ativo), "ordem": a.ordem}
+    return {"id": a.id, "titulo": a.titulo or "", "texto": a.texto or "", "ativo": bool(a.ativo), "ordem": a.ordem,
+            "tipo": a.tipo or "info", "horario": a.horario or None}
 
 
 def _ordenados(db: Session):
@@ -61,7 +69,8 @@ def para_o_agente(db: Session = Depends(get_db)):
 @router.post("/")
 async def criar(body: AvisoNovo, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     ultima = db.query(func.max(AvisoBiblioteca.ordem)).scalar()
-    a = AvisoBiblioteca(titulo=body.titulo.strip(), texto=body.texto.strip(), ordem=(ultima or 0) + 1)
+    a = AvisoBiblioteca(titulo=body.titulo.strip(), texto=body.texto.strip(), ordem=(ultima or 0) + 1,
+                        tipo=body.tipo, horario=(body.horario or "").strip() or None)
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -83,6 +92,10 @@ async def alterar(aviso_id: int, body: AvisoAlterado, db: Session = Depends(get_
         a.ativo = body.ativo
     if body.ordem is not None:
         a.ordem = body.ordem
+    if body.tipo is not None:
+        a.tipo = body.tipo
+    if body.horario is not None:
+        a.horario = body.horario.strip() or None
     db.commit()
     await _avisar_agentes()
     return _serial(a)

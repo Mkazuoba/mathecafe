@@ -16,6 +16,9 @@ interface Cartaz {
   versao: number
   /** botão "Ver no navegador / Inscrição" no banner do PC */
   link: string | null
+  /** texto curto e créditos no banner do PC, abaixo do título */
+  descricao: string | null
+  creditos: string | null
 }
 
 // Cartazes costumam ser verticais e com texto: reduz menos que a foto
@@ -63,7 +66,7 @@ export function SecaoProgramacao() {
     }
   }
 
-  async function salvar(id: number, dados: Partial<Pick<Cartaz, "titulo" | "ativo" | "link">>) {
+  async function salvar(id: number, dados: Partial<Pick<Cartaz, "titulo" | "ativo" | "link" | "descricao" | "creditos">>) {
     try {
       await Api.put(`/api/programacao/${id}`, dados)
       await carregar()
@@ -166,6 +169,26 @@ export function SecaoProgramacao() {
                   placeholder="Link de inscrição ou da página (opcional)"
                   onBlur={(e) => e.target.value.trim() !== (c.link ?? "") && salvar(c.id, { link: e.target.value.trim() })}
                   className="rounded-md border border-borda bg-superficie px-2 py-1.5 text-xs text-texto-suave outline-none focus:border-destaque"
+                />
+                <textarea
+                  key={`d${c.descricao ?? ""}`}
+                  defaultValue={c.descricao ?? ""}
+                  maxLength={300}
+                  rows={2}
+                  aria-label="Descrição do cartaz"
+                  placeholder="Descrição curta no banner (opcional)"
+                  onBlur={(e) => e.target.value.trim() !== (c.descricao ?? "") && salvar(c.id, { descricao: e.target.value.trim() })}
+                  className="resize-y rounded-md border border-borda bg-superficie px-2 py-1.5 text-xs text-texto-suave outline-none focus:border-destaque"
+                />
+                <input
+                  type="text"
+                  key={`c${c.creditos ?? ""}`}
+                  defaultValue={c.creditos ?? ""}
+                  maxLength={160}
+                  aria-label="Créditos do cartaz"
+                  placeholder="Créditos (opcional), ex.: Com Isabela Otsuki e Sofia Cantreva"
+                  onBlur={(e) => e.target.value.trim() !== (c.creditos ?? "") && salvar(c.id, { creditos: e.target.value.trim() })}
+                  className="rounded-md border border-borda bg-superficie px-2 py-1.5 text-xs text-texto-suave italic outline-none focus:border-destaque"
                 />
               </div>
               <Interruptor id={`prog-ativo-${c.id}`} rotulo="Mostrar este cartaz" ligado={c.ativo} aoMudar={(v) => salvar(c.id, { ativo: v })} />

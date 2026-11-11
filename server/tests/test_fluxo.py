@@ -2645,3 +2645,49 @@ def test_instalador_descobre_o_piso_atual_do_pc(c, admin):
     assert r.status_code == 200 and r.text.strip() == f"{adulto};{nome}"
     assert c.get("/api/agente/estacao", params={"id": "nao-existe"}).text.strip() == ""
     assert c.get("/api/agente/estacao").status_code == 422
+
+
+# ── Area do Cliente, terceira versao (9.13) ──────────────────────────────────
+
+def test_aviso_tem_tipo_e_horario(c, admin):
+    r = c.post("/api/avisos/", headers=admin, json={"titulo": "Manutenção de Rede", "texto": "Das 18h às 18h30.",
+                                                    "tipo": "alerta", "horario": "16:00"})
+    assert r.status_code == 200, r.text
+    a = r.json()
+    assert a["tipo"] == "alerta" and a["horario"] == "16:00"
+    # sem tipo: informativo; tipo desconhecido e recusado
+    b = c.post("/api/avisos/", headers=admin, json={"titulo": "Wi-Fi", "texto": "Senha no balcão."}).json()
+    assert b["tipo"] == "info" and b["horario"] is None
+    assert c.post("/api/avisos/", headers=admin, json={"titulo": "x", "tipo": "urgente"}).status_code == 422
+    assert c.put(f"/api/avisos/{a['id']}", headers=admin, json={"tipo": "evento", "horario": ""}).json()["horario"] is None
+    no_agente = {x["id"]: x for x in c.get("/api/avisos/agente").json()}
+    assert no_agente[a["id"]]["tipo"] == "evento"
+    for x in (a, b):
+        c.delete(f"/api/avisos/{x['id']}", headers=admin)
+
+
+def test_cartaz_com_descricao_e_creditos(c, admin):
+    import base64
+    url = "data:image/jpeg;base64," + base64.b64encode(_JPEG).decode()
+    r = c.post("/api/programacao/", headers=admin, json={"titulo": "Editoração de Audiolivros", "imagem": url,
+                                                         "descricao": "Aprenda sobre o mercado de audiolivros.",
+                                                         "creditos": "Com Isabela Otsuki"})
+    assert r.status_code == 200, r.text
+    item = r.json()
+    assert item["descricao"] == "Aprenda sobre o mercado de audiolivros." and item["creditos"] == "Com Isabela Otsuki"
+    no_agente = next(i for i in c.get("/api/programacao/agente").json()["itens"] if i["id"] == item["id"])
+    assert no_agente["descricao"].startswith("Aprenda") and no_agente["creditos"] == "Com Isabela Otsuki"
+    r = c.put(f"/api/programacao/{item['id']}", headers=admin, json={"descricao": "", "creditos": ""})
+    assert r.json()["descricao"] is None and r.json()["creditos"] is None
+    assert c.put(f"/api/programacao/{item['id']}", headers=admin, json={"descricao": "x" * 301}).status_code == 422
+    c.delete(f"/api/programacao/{item['id']}", headers=admin)
+
+
+def test_login_do_pc_leva_o_login_do_cliente(c, admin, cenario):
+    # o card da sessao no agente mostra "Login: ..."
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        assert dados["cliente_login"] == cenario["cliente"]["login"]
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)

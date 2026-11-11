@@ -435,6 +435,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, piso: O
                         "ok": True,
                         "sessao_id": sessao.id,
                         "cliente_nome": cliente.nome,
+                        "cliente_login": cliente.login,
                         "tempo_segundos": tempo,
                         "whitelist": whitelist,
                         "reiniciar_ao_encerrar": reiniciar,
