@@ -2575,3 +2575,59 @@ def test_paleta_das_categorias_do_prompt():
     # violet-500, blue-500, emerald-500, amber-500, rose-500 nessa ordem
     from app.routers.categorias import CORES
     assert CORES[:5] == ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e"]
+
+
+# ── 10.2 Restaurar um backup pelo painel ─────────────────────────────────────
+
+def test_restaurar_backup_pelo_painel(c, admin, operador, cenario, tmp_path, monkeypatch):
+    import json
+    from app.routers import config as rota
+    monkeypatch.setattr(rota, "PASTA_BACKUP", tmp_path)
+    pedido = tmp_path / "restaurar.pedido"
+    monkeypatch.setattr(rota, "PEDIDO_RESTAURACAO", pedido)
+    saidas = []
+    monkeypatch.setattr(rota, "_encerrar_processo", lambda: saidas.append(1))
+    nome = c.post("/api/config/backup", headers=admin).json()["nome"]
+
+    assert c.post(f"/api/config/backup/{nome}/restaurar", headers=operador, json={}).status_code == 403
+    assert c.post("/api/config/backup/nao-existe.db/restaurar", headers=admin, json={}).status_code == 404
+
+    # com cliente usando um PC: só com confirmação
+    sid = _sessao_aberta(cenario, inicio_min=5)
+    info = c.get("/api/config/backup", headers=admin).json()
+    assert info["sessoes_abertas"] >= 1
+    r = c.post(f"/api/config/backup/{nome}/restaurar", headers=admin, json={})
+    assert r.status_code == 409 and "em uso" in r.json()["detail"]
+    assert not pedido.exists()
+
+    r = c.post(f"/api/config/backup/{nome}/restaurar", headers=admin, json={"confirmar": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["conferido"]["clientes"] >= 1
+    dados = json.loads(pedido.read_text(encoding="utf-8"))
+    assert dados["arquivo"].endswith(nome) and dados["quem"]["nome"]
+    # aberto à mão (sem o .bat): não sai sozinho, só avisa que vale no próximo início
+    assert r.json()["reiniciando"] is False and not saidas
+    pedido.unlink()
+    db = SessionLocal()
+    db.get(Sessao, sid).encerrada_em = datetime.utcnow()
+    db.commit()
+    db.close()
+
+
+def test_enviar_um_backup_de_fora(c, admin, tmp_path, monkeypatch):
+    from app.routers import config as rota
+    monkeypatch.setattr(rota, "PASTA_BACKUP", tmp_path)
+    nome = c.post("/api/config/backup", headers=admin).json()["nome"]
+    conteudo = (tmp_path / nome).read_bytes()
+
+    r = c.post("/api/config/backup/enviar", headers=admin,
+               files={"arquivo": ("copia-do-pendrive.db", conteudo, "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    enviado = r.json()["nome"]
+    assert enviado.startswith("enviado-") and (tmp_path / enviado).read_bytes() == conteudo
+    assert enviado in [b["nome"] for b in c.get("/api/config/backup", headers=admin).json()["outros"]]
+
+    r = c.post("/api/config/backup/enviar", headers=admin,
+               files={"arquivo": ("planilha.db", b"nao e banco", "application/octet-stream")})
+    assert r.status_code == 400
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith("enviado-")] == [enviado]

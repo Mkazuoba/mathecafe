@@ -1,5 +1,6 @@
+import json
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional
@@ -7,9 +8,9 @@ from datetime import datetime
 from fastapi.responses import FileResponse
 from app import backup, horario
 from app.config import _ENV_FILE, descrever_banco, get_settings, gravar_no_env, normalizar_url_banco, pasta_de_backup
-from app.database import ARQUIVO_SQLITE, _db_url, get_db
+from app.database import ARQUIVO_SQLITE, PEDIDO_RESTAURACAO, _db_url, get_db
 from app.tempo_diario import FUSO, hoje_br
-from app.models import ConfiguracaoSistema
+from app.models import ConfiguracaoSistema, Sessao, Usuario
 from app.security import requer_perfil
 from app.registro import registrar
 from app.tempo_diario import zerar_tempo_de_hoje
@@ -152,9 +153,73 @@ def backup_diario_pendente() -> bool:
 
 
 @router.get("/backup")
-def ver_backups(_=Depends(requer_perfil("admin"))):
+def ver_backups(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     return {"ativo": ARQUIVO_SQLITE is not None, "pasta": str(PASTA_BACKUP), "dias": DIAS_BACKUP,
-            "backups": backup.listar_backups(PASTA_BACKUP)}
+            "backups": backup.listar_backups(PASTA_BACKUP),
+            # o banco de antes de cada restauracao (para desfazer) e os enviados
+            "outros": backup.listar_outros(PASTA_BACKUP),
+            "sessoes_abertas": _sessoes_abertas(db)}
+
+
+def _sessoes_abertas(db: Session) -> int:
+    return db.query(Sessao).filter(Sessao.encerrada_em == None).count()
+
+
+class Restaurar(BaseModel):
+    confirmar: bool = False  # com clientes usando os PCs
+
+
+@router.post("/backup/enviar")
+async def enviar_backup(arquivo: UploadFile = File(...), _=Depends(requer_perfil("admin"))):
+    """Um banco trazido de fora (a copia guardada em outro lugar): confere e guarda
+    na pasta dos backups como enviado-...db, para restaurar pela lista."""
+    if ARQUIVO_SQLITE is None:
+        raise HTTPException(400, "Restaurar é só para o SQLite")
+    PASTA_BACKUP.mkdir(parents=True, exist_ok=True)
+    agora = datetime.now(FUSO).replace(tzinfo=None)
+    destino = PASTA_BACKUP / f"enviado-{agora:%Y-%m-%d-%H%M%S}.db"
+    temporario = destino.with_name(destino.name + ".tmp")
+    try:
+        with open(temporario, "wb") as f:
+            while bloco := await arquivo.read(1024 * 1024):
+                f.write(bloco)
+        conferido = backup.conferir_banco(temporario)
+    except ValueError as e:
+        temporario.unlink(missing_ok=True)
+        raise HTTPException(400, str(e))
+    os.replace(temporario, destino)
+    item = next(b for b in backup.listar_outros(PASTA_BACKUP) if b["nome"] == destino.name)
+    return {**item, "conferido": conferido}
+
+
+@router.post("/backup/{nome}/restaurar")
+def restaurar_backup(nome: str, data: Restaurar, db: Session = Depends(get_db),
+                     quem=Depends(requer_perfil("admin"))):
+    """Confere o backup e pede a restauracao: o servidor reinicia e, ao subir,
+    guarda o banco atual (antes-da-restauracao-...db) e poe o backup no lugar."""
+    if ARQUIVO_SQLITE is None:
+        raise HTTPException(400, "Restaurar é só para o SQLite")
+    arquivo = backup.restauravel(PASTA_BACKUP, nome)
+    if arquivo is None:
+        raise HTTPException(404, "Backup não encontrado")
+    try:
+        conferido = backup.conferir_banco(arquivo)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    abertas = _sessoes_abertas(db)
+    if abertas and not data.confirmar:
+        raise HTTPException(409, f"{abertas} computador(es) em uso: as sessões voltam ao estado do backup. Confirme para restaurar")
+    operador = db.get(Usuario, int(quem["sub"])) if quem.get("sub") else None
+    PEDIDO_RESTAURACAO.write_text(json.dumps({
+        "arquivo": str(arquivo.resolve()),
+        "quem": {"sub": quem.get("sub"), "nome": operador.nome if operador else quem.get("nome")},
+    }), encoding="utf-8")
+    print(f"Restauracao pedida pelo painel: {nome}")
+    reiniciando = _supervisionado()
+    if reiniciando:
+        import threading
+        threading.Timer(1.0, _encerrar_processo).start()  # depois de responder
+    return {"ok": True, "reiniciando": reiniciando, "conferido": conferido}
 
 
 @router.post("/backup")
@@ -168,8 +233,8 @@ def fazer_backup_agora(_=Depends(requer_perfil("admin"))):
 @router.get("/backup/{nome}")
 def baixar_backup(nome: str, _=Depends(requer_perfil("admin"))):
     # So nomes no formato do backup: nada de caminho para fora da pasta
-    arquivo = PASTA_BACKUP / nome
-    if not backup.NOME_BACKUP.match(nome) or not arquivo.is_file():
+    arquivo = backup.restauravel(PASTA_BACKUP, nome)
+    if arquivo is None:
         raise HTTPException(404, "Backup nao encontrado")
     return FileResponse(arquivo, filename=nome, media_type="application/octet-stream")
 

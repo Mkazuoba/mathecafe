@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-11 — Restaurar um backup pelo painel (10.2)
+
+- Configurações → Servidor → Backup do banco: **Restaurar** em cada backup e **Restaurar de um arquivo...** (um banco guardado fora do servidor). O servidor confere o arquivo, reinicia e, ao subir, guarda o banco atual (`antes-da-restauracao-...db`) e põe o backup no lugar; o painel recarrega sozinho.
+- **Desfazer**: os bancos de antes de cada restauração (e os enviados) ficam numa lista própria, com Restaurar e Baixar; não são apagados sozinhos.
+- Com computadores em uso, o painel avisa e pede confirmação. Arquivo que não é banco do MatheCafé ou está corrompido é recusado. A restauração entra no registro de ações ("Restaurou um backup do banco").
+- Testado com uma cópia supervisionada do servidor (porta 8020): restaurar, desfazer e restaurar de um arquivo, cada um reiniciando em ~2 s.
+
 ## 2026-11-11 — Programação e avisos fora de Configurações
 
 - **Programação** e **Avisos** saíram de Configurações e viraram uma tela própria, **Programação e avisos**, no menu lateral logo abaixo do Mapa (com as duas abas; só admin).

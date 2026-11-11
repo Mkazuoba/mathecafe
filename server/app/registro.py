@@ -32,6 +32,7 @@ ROTULOS = {
     "horario": "Mudou o horário de funcionamento",
     "configuracao": "Mudou as configurações",
     "reiniciar_servidor": "Reiniciou o servidor",
+    "restaurar_backup": "Restaurou um backup do banco",
     "aprovar_estacao": "Aprovou estação nova",
     "recusar_estacao": "Recusou estação nova",
     "renomear_estacao": "Renomeou estação",

@@ -148,6 +148,35 @@ interface InfoBackup {
   pasta: string
   dias: number
   backups: Backup[]
+  /** o banco de antes de cada restauração (para desfazer) e os enviados */
+  outros?: Backup[]
+  sessoes_abertas?: number
+}
+
+/** "cybercafe-2026-11-11-0001.db" -> "11/11/2026 00:01" (o momento do backup) */
+function quando(nome: string) {
+  const m = nome.match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : nome
+}
+
+function rotuloOutro(nome: string) {
+  return nome.startsWith("antes-da-restauracao")
+    ? `Banco de antes da restauração de ${quando(nome)}`
+    : `Enviado em ${quando(nome)}`
+}
+
+/** Espera o servidor voltar depois de reiniciar (no_ar_desde muda). */
+async function esperarServidor(antes: string | null) {
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, 1000))
+    try {
+      const novo = await Api.get<{ no_ar_desde: string }>("/api/config/servidor")
+      if (novo.no_ar_desde !== antes) return true
+    } catch {
+      /* ainda subindo */
+    }
+  }
+  return false
 }
 
 function tamanho(bytes: number) {
@@ -245,6 +274,8 @@ function SecaoBackup() {
   const avisar = useAvisos()
   const [info, setInfo] = useState<InfoBackup | null>(null)
   const [fazendo, setFazendo] = useState(false)
+  const [restaurando, setRestaurando] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
 
   const carregar = useCallback(() => {
     Api.get<InfoBackup>("/api/config/backup")
@@ -264,6 +295,76 @@ function SecaoBackup() {
       avisar((e as Error).message, "erro")
     } finally {
       setFazendo(false)
+    }
+  }
+
+  /**
+   * Restaurar (10.2): o servidor confere o arquivo, reinicia e, ao subir, guarda o
+   * banco atual e põe o backup no lugar. Tudo depois do backup some.
+   */
+  async function restaurar(nome: string, rotulo: string) {
+    if (!info) return
+    const abertas = info.sessoes_abertas ?? 0
+    const ok = window.confirm(
+      `Restaurar ${rotulo}?\n\n` +
+        "O sistema volta a como estava nesse momento: o que foi feito depois (clientes, tempos, sessões, " +
+        "configurações) deixa de aparecer. O banco de agora fica guardado na lista, para desfazer.\n\n" +
+        (abertas
+          ? `ATENÇÃO: ${abertas} computador(es) em uso agora. As sessões voltam ao estado do backup e podem ser encerradas.\n\n`
+          : "") +
+        "O servidor reinicia: o painel e os computadores ficam sem conexão por alguns segundos.",
+    )
+    if (!ok) return
+    setRestaurando(nome)
+    try {
+      const antes = await Api.get<{ no_ar_desde: string }>("/api/config/servidor")
+        .then((r) => r.no_ar_desde)
+        .catch(() => null)
+      const r = await Api.post<{ reiniciando: boolean }>(`/api/config/backup/${encodeURIComponent(nome)}/restaurar`, {
+        confirmar: true,
+      })
+      if (!r.reiniciando) {
+        avisar("Restauração agendada: vale quando o servidor for iniciado de novo (ele foi aberto à mão)")
+        return
+      }
+      if (await esperarServidor(antes)) {
+        avisar("Backup restaurado")
+        // tudo mudou: recarrega o painel com os dados do backup
+        setTimeout(() => window.location.reload(), 800)
+      } else {
+        avisar("O servidor não voltou em 1 minuto. Veja server\\logs\\servidor.log no computador do servidor.", "erro")
+      }
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setRestaurando(null)
+    }
+  }
+
+  /** Um banco trazido de fora (a cópia guardada em outro lugar): sobe, confere e restaura. */
+  async function enviarArquivo(arquivo: File) {
+    setEnviando(true)
+    try {
+      const corpo = new FormData()
+      corpo.append("arquivo", arquivo)
+      const resp = await fetch("/api/config/backup/enviar", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${Api.token()}` },
+        body: corpo,
+      })
+      const dados = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(typeof dados.detail === "string" ? dados.detail : "Não foi possível enviar o arquivo")
+      carregar()
+      const c = dados.conferido as { clientes: number; estacoes: number; sessoes: number }
+      await restaurar(
+        dados.nome,
+        `o arquivo ${arquivo.name} (${c.clientes.toLocaleString("pt-BR")} clientes, ${c.estacoes} estações, ` +
+          `${c.sessoes.toLocaleString("pt-BR")} sessões)`,
+      )
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setEnviando(false)
     }
   }
 
@@ -291,9 +392,35 @@ function SecaoBackup() {
             feito). Guarda os últimos {info.dias} dias em <span className="font-mono break-all">{info.pasta}</span>.
             Baixe uma cópia de vez em quando para outro lugar: se o disco do servidor falhar, a pasta vai junto.
           </p>
-          <Button type="button" variant="outline" disabled={fazendo} onClick={fazerAgora} className="mb-4">
-            {fazendo ? "Fazendo..." : "Fazer backup agora"}
-          </Button>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={fazendo} onClick={fazerAgora}>
+              {fazendo ? "Fazendo..." : "Fazer backup agora"}
+            </Button>
+            {/* um backup guardado fora do servidor (pendrive, outro PC) */}
+            <label
+              className={cn(
+                "inline-flex h-10 cursor-pointer items-center rounded-lg border border-borda bg-superficie-3 px-4 text-sm font-semibold text-texto-suave hover:border-borda-forte hover:text-texto",
+                (enviando || restaurando) && "pointer-events-none opacity-50",
+              )}
+            >
+              {enviando ? "Enviando..." : "Restaurar de um arquivo..."}
+              <input
+                type="file"
+                accept=".db"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ""
+                  if (f) enviarArquivo(f)
+                }}
+              />
+            </label>
+          </div>
+          {restaurando && (
+            <p className="mb-4 rounded-lg border border-manutencao-borda bg-manutencao-fundo px-3 py-2 text-sm text-manutencao">
+              Restaurando... o servidor está reiniciando; o painel recarrega sozinho quando ele voltar.
+            </p>
+          )}
           {!info.backups.length ? (
             <p className="text-sm text-texto-fraco">Nenhum backup ainda.</p>
           ) : (
@@ -308,9 +435,49 @@ function SecaoBackup() {
                   <Button type="button" variant="ghost" size="sm" onClick={() => baixar(b.nome)}>
                     Baixar
                   </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!!restaurando || enviando}
+                    onClick={() => restaurar(b.nome, `o backup de ${quando(b.nome)}`)}
+                  >
+                    Restaurar
+                  </Button>
                 </li>
               ))}
             </ul>
+          )}
+          {!!info.outros?.length && (
+            <>
+              <h4 className="mt-6 mb-2 text-sm font-semibold">Para desfazer uma restauração</h4>
+              <p className="mb-2 text-xs text-texto-fraco">
+                O banco como estava antes de cada restauração, e os arquivos enviados. Não são apagados sozinhos.
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {info.outros.map((b) => (
+                  <li
+                    key={b.nome}
+                    className="flex items-center gap-3 rounded-lg border border-borda bg-superficie-2 px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{rotuloOutro(b.nome)}</span>
+                    <span className="text-texto-fraco">{tamanho(b.bytes)}</span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => baixar(b.nome)}>
+                      Baixar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!!restaurando || enviando}
+                      onClick={() => restaurar(b.nome, rotuloOutro(b.nome).toLowerCase())}
+                    >
+                      Restaurar
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </>
       )}

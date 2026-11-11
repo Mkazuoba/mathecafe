@@ -25,6 +25,25 @@ print(f"Database: {_db_url if _eh_sqlite else _db_url.split('@')[-1]}")
 # Arquivo do banco, para o backup diario (so no SQLite)
 ARQUIVO_SQLITE = Path(_db_url[len("sqlite:///"):]) if _db_url.startswith("sqlite:///") else None
 
+# Restaurar um backup (10.2): o painel deixa o pedido e reinicia; aqui, antes de
+# abrir o banco, o backup entra no lugar (o banco atual fica guardado na pasta)
+PEDIDO_RESTAURACAO = _base_server / "restaurar.pedido"
+RESTAURACAO = None
+if ARQUIVO_SQLITE is not None:
+    from datetime import datetime as _datetime
+    from app import backup as _backup
+    from app.config import pasta_de_backup as _pasta_de_backup
+    from app.tempo_diario import FUSO as _FUSO
+    RESTAURACAO = _backup.aplicar_restauracao_pendente(
+        ARQUIVO_SQLITE, PEDIDO_RESTAURACAO, _pasta_de_backup(settings.BACKUP_PASTA),
+        _datetime.now(_FUSO).replace(tzinfo=None))
+    if RESTAURACAO:
+        if RESTAURACAO.get("erro"):
+            print(f"Restauracao NAO feita: {RESTAURACAO['erro']}")
+        else:
+            print(f"Restauracao: {RESTAURACAO['arquivo']} no lugar do banco; "
+                  f"o de antes ficou em {RESTAURACAO['copia_antes']}")
+
 engine = create_engine(
     _db_url,
     connect_args={"check_same_thread": False} if _eh_sqlite else {}
@@ -133,10 +152,26 @@ def _tirar_nome_unico_postgres():
         conn.commit()
 
 
+def _registrar_restauracao():
+    """A restauracao feita ao subir entra no registro de acoes do banco restaurado."""
+    if not RESTAURACAO or RESTAURACAO.get("erro"):
+        return
+    from app.registro import registrar
+    db = SessionLocal()
+    try:
+        registrar(db, RESTAURACAO.get("quem") or {"nome": "?"}, "restaurar_backup",
+                  detalhe=f"{RESTAURACAO['arquivo']} (o banco de antes: {RESTAURACAO['copia_antes']})")
+    except Exception as e:
+        print(f"Restauracao: nao foi possivel registrar ({e})")
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrar_colunas_faltantes()
     _tirar_nome_unico_postgres()
+    _registrar_restauracao()
 
     db = SessionLocal()
     try:

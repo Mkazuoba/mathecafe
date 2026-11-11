@@ -64,7 +64,9 @@ O servidor faz sozinho um backup do `cybercafe.db` por dia, logo depois da meia-
 
 Guarde junto, uma vez, o `server\.secret_key` (ou a `SECRET_KEY` do `.env`): sem ele o banco restaurado funciona, mas todos precisam entrar no painel de novo.
 
-**Restaurar**: pare o servidor (`schtasks /end /tn MatheCafe-Servidor`), guarde o `cybercafe.db` atual com outro nome, copie o backup escolhido para `server\cybercafe.db` e suba de novo (`schtasks /run /tn MatheCafe-Servidor`).
+**Restaurar** (pelo painel): Configurações → Servidor → Backup do banco → **Restaurar** no backup escolhido, ou **Restaurar de um arquivo...** para um backup guardado fora do servidor (pendrive, outro PC). O servidor confere o arquivo (banco do MatheCafé, sem corrupção), reinicia e, ao subir, guarda o banco atual como `antes-da-restauracao-AAAA-MM-DD-HHMMSS.db` na pasta dos backups e põe o backup no lugar; o painel recarrega sozinho. Para **desfazer**, restaure esse "Banco de antes da restauração" (lista *Para desfazer uma restauração*). Com computadores em uso, o painel avisa: as sessões voltam ao estado do backup. A restauração entra no registro de ações. Sem a tarefa (servidor aberto à mão), ela vale no próximo início.
+
+À mão (se o painel não abrir): pare o servidor (`schtasks /end /tn MatheCafe-Servidor`), guarde o `cybercafe.db` atual com outro nome, copie o backup escolhido para `server\cybercafe.db` e suba de novo (`schtasks /run /tn MatheCafe-Servidor`).
 
 ## 2. Painel web (React)
 

@@ -47,3 +47,79 @@ def test_um_por_dia_e_apaga_os_antigos(tmp_path):
     fazer_backup(origem, pasta, datetime(2026, 10, 30, 0, 1), manter_dias=7)
     assert (pasta / "leia-me.txt").exists()
     assert all(b["nome"].startswith("cybercafe-") for b in listar_backups(pasta))
+
+
+# ── Restaurar um backup (10.2) ───────────────────────────────────────────────
+
+def _banco_do_sistema(caminho, clientes=2):
+    """Um banco com as tabelas que a restauracao exige."""
+    con = sqlite3.connect(caminho)
+    con.execute("CREATE TABLE usuarios (id INTEGER PRIMARY KEY, nome TEXT, perfil TEXT)")
+    con.execute("CREATE TABLE estacoes (id INTEGER PRIMARY KEY, nome TEXT)")
+    con.execute("CREATE TABLE sessoes (id INTEGER PRIMARY KEY, estacao_id INTEGER)")
+    con.executemany("INSERT INTO usuarios (nome, perfil) VALUES (?, 'cliente')", [(f"c{i}",) for i in range(clientes)])
+    con.commit()
+    return con
+
+
+def test_conferir_banco_aceita_so_um_banco_do_sistema(tmp_path):
+    import pytest
+    from app.backup import conferir_banco
+    bom = tmp_path / "bom.db"
+    _banco_do_sistema(bom, clientes=5).close()
+    assert conferir_banco(bom)["clientes"] == 5
+    lixo = tmp_path / "lixo.db"
+    lixo.write_bytes(b"isto nao e um banco")
+    with pytest.raises(ValueError):
+        conferir_banco(lixo)
+    outro = tmp_path / "outro.db"
+    _banco(outro).close()  # SQLite, mas sem as tabelas do MatheCafe
+    with pytest.raises(ValueError, match="MatheCafé"):
+        conferir_banco(outro)
+
+
+def test_restauracao_pendente_troca_o_banco_e_guarda_o_de_antes(tmp_path):
+    import json
+    from app.backup import aplicar_restauracao_pendente, listar_outros
+    banco = tmp_path / "cybercafe.db"
+    _banco_do_sistema(banco, clientes=10).close()
+    (tmp_path / "cybercafe.db-wal").write_bytes(b"")  # sobra do servidor anterior
+    pasta = tmp_path / "backups"
+    pasta.mkdir()
+    velho = pasta / "cybercafe-2026-11-01-0001.db"
+    _banco_do_sistema(velho, clientes=3).close()
+    pedido = tmp_path / "restaurar.pedido"
+    pedido.write_text(json.dumps({"arquivo": str(velho), "quem": {"sub": "1", "nome": "Admin"}}), encoding="utf-8")
+
+    feito = aplicar_restauracao_pendente(banco, pedido, pasta, datetime(2026, 11, 11, 16, 30, 5))
+
+    assert feito["arquivo"] == velho.name and feito["quem"]["nome"] == "Admin"
+    assert not pedido.exists() and not (tmp_path / "cybercafe.db-wal").exists()
+    con = sqlite3.connect(banco)
+    assert con.execute("SELECT count(*) FROM usuarios").fetchone()[0] == 3  # o do backup
+    con.close()
+    # o banco de antes fica guardado (para desfazer) e aparece na lista
+    antes = pasta / "antes-da-restauracao-2026-11-11-163005.db"
+    con = sqlite3.connect(antes)
+    assert con.execute("SELECT count(*) FROM usuarios").fetchone()[0] == 10
+    con.close()
+    assert feito["copia_antes"] == antes.name
+    assert [b["nome"] for b in listar_outros(pasta)] == [antes.name]
+
+
+def test_restauracao_com_arquivo_ruim_nao_mexe_no_banco(tmp_path):
+    import json
+    from app.backup import aplicar_restauracao_pendente
+    banco = tmp_path / "cybercafe.db"
+    _banco_do_sistema(banco, clientes=10).close()
+    ruim = tmp_path / "ruim.db"
+    ruim.write_bytes(b"x" * 100)
+    pedido = tmp_path / "restaurar.pedido"
+    pedido.write_text(json.dumps({"arquivo": str(ruim)}), encoding="utf-8")
+    feito = aplicar_restauracao_pendente(banco, pedido, tmp_path / "backups", datetime(2026, 11, 11))
+    assert feito["erro"] and not pedido.exists()
+    con = sqlite3.connect(banco)
+    assert con.execute("SELECT count(*) FROM usuarios").fetchone()[0] == 10
+    con.close()
+    # sem pedido: nada a fazer
+    assert aplicar_restauracao_pendente(banco, pedido, tmp_path / "backups", datetime(2026, 11, 11)) is None

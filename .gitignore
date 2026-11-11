@@ -20,3 +20,4 @@ Arquivos VSCyber/
 capturas/
 # pedido do reiniciar_servidor.bat (o servidor apaga ao atender)
 server/reiniciar.pedido
+server/restaurar.pedido
