@@ -140,11 +140,21 @@ def historico_do_cliente(cliente_id: int, de: Optional[str] = None, ate: Optiona
 
 @router.get("/estacao/{nome}")
 def historico_da_estacao(nome: str, de: Optional[str] = None, ate: Optional[str] = None,
+                         piso_id: Optional[int] = None, id: Optional[int] = None,
                          db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
-    """Quais clientes ja passaram pela estacao, quantas vezes e por quanto tempo."""
-    estacao = db.query(Estacao).filter(Estacao.nome == nome).first()
-    if not estacao:
+    """Quais clientes ja passaram pela estacao, quantas vezes e por quanto tempo.
+    O nome pode estar nos dois pisos (6.18): o painel manda o piso (ou o id)."""
+    from app.nomes_estacao import com_o_nome
+    if id is not None:
+        candidatas = db.query(Estacao).filter(Estacao.id == id).all()
+    else:
+        # a ativa com o nome; senao uma excluida (o historico continua valendo)
+        candidatas = com_o_nome(db, nome, piso_id) or com_o_nome(db, nome, piso_id, ativas=False)[-1:]
+    if not candidatas:
         raise HTTPException(404, "Estação não encontrada")
+    if len(candidatas) > 1:
+        raise HTTPException(409, f"Há {len(candidatas)} estações {nome} (uma em cada piso): escolha o piso")
+    estacao = candidatas[0]
     tempo = func.coalesce(func.sum(Sessao.tempo_consumido_segundos), 0)
     linhas = _filtrar(
         db.query(Usuario.id, Usuario.login, Usuario.nome, func.count(Sessao.id), tempo,

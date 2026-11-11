@@ -96,6 +96,7 @@ export interface Sessao {
   cliente_login: string
   cliente_nome: string
   estacao_nome: string
+  estacao_id: number
   iniciada_em: string
   encerrada_em: string | null
   tempo_total_segundos: number

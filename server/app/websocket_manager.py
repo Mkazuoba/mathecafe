@@ -5,7 +5,7 @@ import json
 class ConnectionManager:
     def __init__(self):
         self.paineis: list[WebSocket] = []
-        self.estacoes: Dict[str, WebSocket] = {}
+        self.estacoes: Dict[int, WebSocket] = {}
 
     # ── Painéis ──────────────────────────────────────────────────────────────
     async def conectar_painel(self, ws: WebSocket):
@@ -27,26 +27,23 @@ class ConnectionManager:
             self.desconectar_painel(ws)
 
     # ── Estações ──────────────────────────────────────────────────────────────
-    async def conectar_estacao(self, nome: str, ws: WebSocket):
+    # Pelo id da estacao (6.18): o nome se repete entre os pisos (AD-01 no Adulto
+    # e no Infantil) e muda quando o admin renomeia.
+    async def conectar_estacao(self, estacao_id: int, ws: WebSocket):
         await ws.accept()
-        self.estacoes[nome] = ws
+        self.estacoes[estacao_id] = ws
 
-    def desconectar_estacao(self, nome: str, ws: WebSocket = None):
+    def desconectar_estacao(self, estacao_id: int, ws: WebSocket = None):
         # Com ws informado, só remove se ainda for a mesma conexão: se o agente
         # já reconectou, a conexão antiga não pode derrubar a nova.
-        if ws is None or self.estacoes.get(nome) is ws:
-            self.estacoes.pop(nome, None)
+        if ws is None or self.estacoes.get(estacao_id) is ws:
+            self.estacoes.pop(estacao_id, None)
 
-    def renomear_estacao(self, antigo: str, novo: str):
-        """A estacao foi renomeada no painel: a mesma conexao, pelo nome novo."""
-        if antigo in self.estacoes and antigo != novo:
-            self.estacoes[novo] = self.estacoes.pop(antigo)
+    def estacao_conectada(self, estacao_id: int) -> bool:
+        return estacao_id in self.estacoes
 
-    def estacao_conectada(self, nome: str) -> bool:
-        return nome in self.estacoes
-
-    async def enviar_estacao(self, nome: str, evento: str, dados: dict):
-        ws = self.estacoes.get(nome)
+    async def enviar_estacao(self, estacao_id: int, evento: str, dados: dict):
+        ws = self.estacoes.get(estacao_id)
         if ws:
             try:
                 await ws.send_text(json.dumps({"evento": evento, "dados": dados}))
@@ -58,15 +55,15 @@ class ConnectionManager:
     async def broadcast_estacoes(self, evento: str, dados: dict):
         msg = json.dumps({"evento": evento, "dados": dados})
         mortos = []
-        for nome, ws in self.estacoes.items():
+        for estacao_id, ws in self.estacoes.items():
             try:
                 await ws.send_text(msg)
             except Exception:
-                mortos.append(nome)
-        for nome in mortos:
-            self.desconectar_estacao(nome)
+                mortos.append(estacao_id)
+        for estacao_id in mortos:
+            self.desconectar_estacao(estacao_id)
 
-    def estacoes_online(self) -> list[str]:
+    def estacoes_online(self) -> list[int]:
         return list(self.estacoes.keys())
 
 manager = ConnectionManager()

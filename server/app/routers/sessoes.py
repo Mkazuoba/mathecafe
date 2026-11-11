@@ -19,6 +19,7 @@ def serial_sessao(s: Sessao):
         "cliente_login": s.cliente.login,
         "cliente_nome": s.cliente.nome,
         "estacao_nome": s.estacao.nome,
+        "estacao_id": s.estacao_id,
         "iniciada_em": s.iniciada_em.isoformat(),
         "encerrada_em": s.encerrada_em.isoformat() if s.encerrada_em else None,
         "tempo_total_segundos": s.tempo_total_segundos,
@@ -37,15 +38,18 @@ def sessoes_ativas(db: Session = Depends(get_db), _=Depends(requer_perfil("admin
 
 @router.get("/historico")
 def historico(cliente_id: Optional[int] = None, estacao_nome: Optional[str] = None,
+              estacao_id: Optional[int] = None,
               limit: int = 100, db: Session = Depends(get_db),
               _=Depends(requer_perfil("admin", "operador"))):
     q = so_visiveis(db.query(Sessao).filter(Sessao.encerrada_em != None), db)
     if cliente_id:
         q = q.filter(Sessao.cliente_id == cliente_id)
-    if estacao_nome:
-        estacao = db.query(Estacao).filter(Estacao.nome == estacao_nome).first()
-        if estacao:
-            q = q.filter(Sessao.estacao_id == estacao.id)
+    if estacao_id is not None:
+        q = q.filter(Sessao.estacao_id == estacao_id)
+    elif estacao_nome:
+        # so pelo nome: todas as estacoes com ele (o painel manda o id; 6.18)
+        ids = [e.id for e in db.query(Estacao).filter(Estacao.nome == estacao_nome)]
+        q = q.filter(Sessao.estacao_id.in_(ids))
     return [serial_sessao(s) for s in q.order_by(Sessao.iniciada_em.desc()).limit(limit).all()]
 
 @router.post("/encerrar/{sessao_id}")
@@ -79,7 +83,7 @@ async def encerrar_pelo_operador(db: Session, sessao: Sessao, avisar_agente: boo
 
     # Avisa o agente para bloquear a tela
     if avisar_agente:
-        await manager.enviar_estacao(estacao_nome, "encerrar_sessao",
+        await manager.enviar_estacao(sessao.estacao_id, "encerrar_sessao",
                                       {"motivo": "operador", "saldo_restante": restante})
 
     # Avisa painéis que a sessão encerrou
@@ -91,8 +95,8 @@ async def encerrar_pelo_operador(db: Session, sessao: Sessao, avisar_agente: boo
     })
 
     # Garante que o painel veja a estação como online/livre
-    if estacao_nome in manager.estacoes_online():
-        await manager.broadcast_paineis("estacao_online", {"nome": estacao_nome})
+    if manager.estacao_conectada(sessao.estacao_id):
+        await manager.broadcast_paineis("estacao_online", {"nome": estacao_nome, "estacao_id": sessao.estacao_id})
     return restante
 
 
@@ -109,7 +113,7 @@ async def pausar_sessao(sessao_id: int, db: Session = Depends(get_db),
     estacao_nome = s.estacao.nome
     db.commit()
     registrar(db, quem, "pausar_sessao", cliente=s.cliente, estacao=estacao_nome)
-    await manager.enviar_estacao(estacao_nome, "pausar_sessao", {})
+    await manager.enviar_estacao(s.estacao_id, "pausar_sessao", {})
     await manager.broadcast_paineis("sessao_pausada", {"estacao": estacao_nome, "sessao_id": sessao_id})
     return {"ok": True}
 
@@ -132,7 +136,7 @@ async def retomar_sessao(sessao_id: int, db: Session = Depends(get_db),
     estacao_nome = s.estacao.nome
     db.commit()
     registrar(db, quem, "retomar_sessao", cliente=s.cliente, estacao=estacao_nome)
-    await manager.enviar_estacao(estacao_nome, "retomar_sessao",
+    await manager.enviar_estacao(s.estacao_id, "retomar_sessao",
                                   {"tempo_total_segundos": s.tempo_total_segundos})
     await manager.broadcast_paineis("sessao_retomada", {"estacao": estacao_nome, "sessao_id": sessao_id})
     return {"ok": True}
@@ -151,7 +155,7 @@ async def renovar_sessao(sessao_id: int, minutos: int, db: Session = Depends(get
     estacao_nome = s.estacao.nome
     db.commit()
     registrar(db, quem, "mais_tempo_sessao", cliente=s.cliente, estacao=estacao_nome, detalhe=f"+{minutos} min")
-    await manager.enviar_estacao(estacao_nome, "renovar_sessao",
+    await manager.enviar_estacao(s.estacao_id, "renovar_sessao",
                                   {"tempo_total_segundos": s.tempo_total_segundos})
     await manager.broadcast_paineis("sessao_renovada", {
         "estacao": estacao_nome,

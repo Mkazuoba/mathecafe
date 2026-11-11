@@ -69,6 +69,15 @@ def cenario(c, admin):
     return {"estacao": estacao, "cliente": cliente, "cliente_id": r.json()["id"]}
 
 
+def _id_da_estacao(nome):
+    from app.models import Estacao
+    db = SessionLocal()
+    try:
+        return db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).one().id
+    finally:
+        db.close()
+
+
 def _logar_no_pc(ws, cliente):
     ws.send_json({"evento": "login_cliente", "login": cliente["login"], "senha": cliente["senha"]})
     return ws.receive_json()["dados"]
@@ -206,7 +215,7 @@ def test_conexao_antiga_nao_derruba_a_nova(c, cenario):
     nova = c.websocket_connect(f"/ws/estacao/{nome}").__enter__()
     antiga.__exit__(None, None, None)
     try:
-        assert nome in manager.estacoes_online(), "a queda da conexão antiga removeu a nova"
+        assert manager.estacao_conectada(_id_da_estacao(nome)), "a queda da conexão antiga removeu a nova"
         nova.send_json({"evento": "ping"})
         assert nova.receive_json()["evento"] == "pong"
     finally:
@@ -834,7 +843,8 @@ def test_captura_e_tela_ao_vivo_chegam_ao_painel(c, admin, cenario):
         assert pc.receive_json()["evento"] == "capturar_tela"
         pc.send_json({"evento": "captura_tela_resultado", "dados": {"imagem": "QUJD"}})
         msg = _receber_no_painel(painel, "captura_tela")
-        assert msg["dados"] == {"estacao": cenario["estacao"], "imagem": "QUJD"}
+        assert msg["dados"] == {"estacao": cenario["estacao"], "imagem": "QUJD",
+                                "estacao_id": _id_da_estacao(cenario["estacao"])}
 
         assert c.post(f"/api/estacoes/{cenario['estacao']}/iniciar_streaming", headers=admin).status_code == 200
         assert pc.receive_json()["evento"] == "iniciar_streaming"
@@ -1430,7 +1440,7 @@ def test_no_fechamento_encerra_e_devolve_o_tempo(c, admin, cenario):
     db = SessionLocal()
     encerradas = encerrar_sessoes_do_fechamento(db)
     db.close()
-    assert cenario["estacao"] in [e for e, _ in encerradas]
+    assert _sessao(sid).estacao_id in [e for e, _ in encerradas]  # pelo id (6.18)
     s = _sessao(sid)
     assert s.motivo_encerramento == "horario"
     assert abs(s.tempo_consumido_segundos - 1800) <= 3
@@ -1874,8 +1884,7 @@ def test_renomear_estacao_online_troca_a_conexao(c, admin):
         r = c.put(f"/api/estacoes/{p['id']}", headers=admin, json={"nome": "PC-NOVO-NOME"})
         assert r.status_code == 200, r.text
         assert ws.receive_json() == {"evento": "estacao_info", "dados": {"nome": "PC-NOVO-NOME", "aprovada": True}}
-        assert manager.estacao_conectada("PC-NOVO-NOME")
-        assert not manager.estacao_conectada("PC-RENOMEAR")
+        assert manager.estacao_conectada(p["id"])  # a conexao e pelo id: renomear nao mexe nela
         # as acoes do painel chegam pelo nome novo
         assert c.post("/api/estacoes/PC-NOVO-NOME/mensagem", headers=admin, json={"texto": "oi"}).status_code == 200
         assert ws.receive_json()["evento"] == "mensagem_tela"
@@ -2127,7 +2136,7 @@ def test_nome_trocado_no_pc_pede_aprovacao(c, admin, cenario):
     # o tecnico troca o nome no PC: o agente volta com o nome novo e o mesmo id
     with c.websocket_connect(f"/ws/estacao/{novo}?id=uuid-pedido-1") as ws:
         assert _estado_114(ws) == {"nome": nome, "aprovada": True}  # segue com o nome atual
-        assert manager.estacao_conectada(nome)
+        assert manager.estacao_conectada(_id_da_estacao(nome))
         assert _pedidos_nome(c, admin)[nome] == novo
         est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == nome)
         r = c.post(f"/api/estacoes/{est['id']}/nome_pedido", headers=admin)
@@ -2287,3 +2296,128 @@ def test_excluir_ilha(c, admin):
     assert f"X{s}-1" not in nomes and f"X{s}-2" not in nomes
     acoes = [a["acao"] for a in c.get("/api/relatorios/acoes", headers=admin).json()]
     assert "excluir_zona" in acoes
+
+
+# ── 6.18 Mapas separados: o mesmo nome no Adulto e no Infantil ───────────────
+
+def _dois_pisos_com_o_mesmo_nome(c, admin):
+    """MN-x num grupo do Adulto e noutro do Infantil; devolve (nome, {piso: estacao})."""
+    s = next(_contador)
+    nome = f"MN-{s}"
+    pisos = _pisos(c, admin)
+    estacoes = {}
+    for chave in ("Adulto", "Infantil"):
+        g = c.post("/api/estacoes/grupos", headers=admin,
+                   params={"nome": f"Sala {chave} {s}", "piso_id": pisos[chave]["id"]}).json()
+        r = c.post("/api/estacoes/", headers=admin, params={"nome": nome, "grupo_id": g["id"]})
+        assert r.status_code == 200, r.text
+        estacoes[chave] = r.json()
+    return nome, estacoes, pisos
+
+
+def test_mesmo_nome_em_pisos_diferentes(c, admin):
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    assert est["Adulto"]["id"] != est["Infantil"]["id"]
+    assert est["Adulto"]["piso_id"] == pisos["Adulto"]["id"]
+    assert est["Infantil"]["piso_id"] == pisos["Infantil"]["id"]
+
+    # no mesmo piso continua proibido
+    g_adulto = est["Adulto"]["grupo_id"]
+    r = c.post("/api/estacoes/", headers=admin, params={"nome": nome, "grupo_id": g_adulto})
+    assert r.status_code == 400
+    r = c.post("/api/estacoes/lote", headers=admin,
+               json={"prefixo": nome, "inicio": 1, "quantidade": 1, "digitos": 1, "grupo_id": g_adulto})
+    assert r.status_code == 200  # MN-x1 é outro nome
+
+    # renomear para um nome que só existe no outro piso: pode
+    outro = c.post("/api/estacoes/", headers=admin, params={"nome": f"{nome}-B", "grupo_id": g_adulto}).json()
+    r = c.put(f"/api/estacoes/{outro['id']}", headers=admin, json={"nome": nome})
+    assert r.status_code == 400  # no mesmo piso não
+    c.delete(f"/api/estacoes/{outro['id']}", headers=admin)
+
+    # levar a estação do Infantil para o Adulto, onde o nome já existe: não pode
+    r = c.put(f"/api/estacoes/{est['Infantil']['id']}", headers=admin, json={"grupo_id": g_adulto})
+    assert r.status_code == 400
+
+
+def test_comandos_e_conexoes_pelo_id_com_nomes_iguais(c, admin):
+    from app.models import Estacao
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    db = SessionLocal()
+    for chave, uuid in (("Adulto", "uuid-mn-adulto"), ("Infantil", "uuid-mn-infantil")):
+        db.get(Estacao, est[chave]["id"]).identificador = f"{uuid}-{nome}"
+    db.commit()
+    db.close()
+
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-mn-adulto-{nome}") as adulto, \
+            c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-mn-infantil-{nome}") as infantil:
+        assert _estado_114(adulto)["aprovada"] is True
+        assert _estado_114(infantil)["aprovada"] is True
+        lista = {e["id"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+        assert lista[est["Adulto"]["id"]]["online"] and lista[est["Infantil"]["id"]]["online"]
+
+        # o comando vai só para a estação do id
+        r = c.post(f"/api/estacoes/{nome}/mensagem", headers=admin,
+                   params={"id": est["Infantil"]["id"]}, json={"texto": "oi infantil"})
+        assert r.status_code == 200, r.text
+        msg = infantil.receive_json()
+        assert msg["evento"] == "mensagem_tela" and msg["dados"]["texto"] == "oi infantil"
+
+        # só pelo nome, com dois iguais, não dá para saber qual
+        r = c.post(f"/api/estacoes/{nome}/mensagem", headers=admin, json={"texto": "?"})
+        assert r.status_code == 409
+
+    # histórico da estação: pelo piso (ou pelo id)
+    assert c.get(f"/api/relatorios/estacao/{nome}", headers=admin).status_code == 409
+    r = c.get(f"/api/relatorios/estacao/{nome}", headers=admin, params={"piso_id": pisos["Adulto"]["id"]})
+    assert r.status_code == 200 and r.json()["estacao"]["id"] == est["Adulto"]["id"]
+
+
+def test_banco_antigo_perde_o_nome_unico():
+    """O SQLite antigo tem UNIQUE (nome) em estacoes: a migração refaz a tabela
+    sem ele, com os mesmos dados e ids, e as sessões seguem apontando para ela."""
+    from sqlalchemy import create_engine, text
+    from app.database import _tirar_nome_unico_das_estacoes
+    motor = create_engine("sqlite://")
+    with motor.connect() as conn:
+        # o esquema da producao em 11/11/2026
+        conn.exec_driver_sql("""CREATE TABLE estacoes (
+	id INTEGER NOT NULL, 
+	nome VARCHAR(20) NOT NULL, 
+	grupo_id INTEGER, 
+	status VARCHAR(20), 
+	ativa BOOLEAN, 
+	ip VARCHAR(50), 
+	ultimo_ping DATETIME, pos_x INTEGER DEFAULT 0, identificador VARCHAR(64), 
+	PRIMARY KEY (id), 
+	UNIQUE (nome)
+)""")
+        conn.exec_driver_sql("CREATE INDEX ix_estacoes_id ON estacoes (id)")
+        conn.exec_driver_sql("CREATE TABLE sessoes (id INTEGER PRIMARY KEY, estacao_id INTEGER REFERENCES estacoes (id))")
+        conn.exec_driver_sql("INSERT INTO estacoes (id, nome, ativa) VALUES (7, 'AD-01', 1), (9, 'AD-02', 0)")
+        conn.exec_driver_sql("INSERT INTO sessoes VALUES (1, 9)")
+        conn.commit()
+
+        _tirar_nome_unico_das_estacoes(conn)
+
+        sql = conn.execute(text("SELECT sql FROM sqlite_master WHERE name='estacoes'")).scalar()
+        assert "UNIQUE (nome)" not in sql and "PRIMARY KEY (id)" in sql
+        assert conn.execute(text("SELECT id, nome, ativa FROM estacoes ORDER BY id")).all() == [(7, "AD-01", 1), (9, "AD-02", 0)]
+        sessoes = conn.execute(text("SELECT sql FROM sqlite_master WHERE name='sessoes'")).scalar()
+        assert "REFERENCES estacoes (id)" in sessoes
+        # agora o mesmo nome entra (no outro piso)
+        conn.exec_driver_sql("INSERT INTO estacoes (id, nome, ativa) VALUES (10, 'AD-01', 1)")
+        # rodar de novo nao faz nada
+        _tirar_nome_unico_das_estacoes(conn)
+        assert conn.execute(text("SELECT count(*) FROM estacoes")).scalar() == 3
+
+
+def test_pc_novo_com_nome_dos_dois_pisos_vai_para_aprovacao(c, admin):
+    """Agente 1.14 sem piso, com um nome que existe no Adulto e no Infantil: não
+    dá para saber qual é, então espera em Novas estações (Substitui a X)."""
+    nome, est, _ = _dois_pisos_com_o_mesmo_nome(c, admin)
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-ambiguo-{nome}") as ws:
+        info = _estado_114(ws)
+        assert info["aprovada"] is False
+        p = _pendente(c, admin, f"uuid-ambiguo-{nome}")
+        assert p["id"] not in (est["Adulto"]["id"], est["Infantil"]["id"])

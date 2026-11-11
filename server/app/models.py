@@ -64,8 +64,12 @@ class GrupoEstacao(Base):
 class Estacao(Base):
     __tablename__ = "estacoes"
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String(20), nullable=False, unique=True)
+    # unico so dentro do piso (6.18, app/nomes_estacao.py): AD-01 no Adulto e no Infantil
+    nome = Column(String(20), nullable=False, index=True)
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)
+    # piso da estacao sem grupo (PC pendente, ou excluida junto com a zona);
+    # com grupo, vale o piso do grupo
+    piso_id = Column(Integer, ForeignKey("pisos.id"), nullable=True)
     status = Column(String(20), default="desligada")
     ativa = Column(Boolean, default=True)
     ip = Column(String(50), nullable=True)
@@ -83,6 +87,7 @@ class Estacao(Base):
     pos_x = Column(Integer, default=0)
     pos_y = Column(Integer, default=0)
     grupo = relationship("GrupoEstacao", back_populates="estacoes")
+    piso = relationship("Piso")
     sessoes = relationship("Sessao", back_populates="estacao")
 
 

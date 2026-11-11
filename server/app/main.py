@@ -86,7 +86,7 @@ def encerrar_sessoes_vencidas(db: Session, agora: datetime) -> int:
                 if _tempo_acabou(s, agora)]
     for sessao in vencidas:
         _fechar_sessao_sem_conexao(sessao)
-        if not manager.estacao_conectada(sessao.estacao.nome) and sessao.estacao.status == "ocupada":
+        if not manager.estacao_conectada(sessao.estacao_id) and sessao.estacao.status == "ocupada":
             sessao.estacao.status = "desligada"
     db.commit()
     return len(vencidas)
@@ -114,11 +114,11 @@ async def _aplicar_horario(db: Session):
     if decisao["aviso"]:
         texto = horario.texto_do_aviso(config_horario, agora, decisao["aviso"])
         for sessao in db.query(Sessao).filter(Sessao.encerrada_em == None):
-            await manager.enviar_estacao(sessao.estacao.nome, "mensagem_tela", {"texto": texto, "origem": "horario"})
+            await manager.enviar_estacao(sessao.estacao_id, "mensagem_tela", {"texto": texto, "origem": "horario"})
     if decisao["encerrar"]:
         encerradas = horario.encerrar_sessoes_do_fechamento(db)
-        for nome, restante in encerradas:
-            await manager.enviar_estacao(nome, "encerrar_sessao", {"motivo": "horario", "saldo_restante": restante})
+        for estacao_id, restante in encerradas:
+            await manager.enviar_estacao(estacao_id, "encerrar_sessao", {"motivo": "horario", "saldo_restante": restante})
         if encerradas:
             print(f"Horario de funcionamento: {len(encerradas)} sessao(oes) encerrada(s)")
             await manager.broadcast_paineis("sessao_encerrada", {"motivo": "horario"})
@@ -224,12 +224,13 @@ async def _resolver_estado(db: Session, estacao: Estacao, sessao_id) -> dict:
         aberta.sem_conexao_desde = None
         estacao.status = "ocupada"
         db.commit()
-        await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome})
+        await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome, "estacao_id": estacao.id})
         return {"evento": "pong"}
     if aberta:
         restante = _fechar_sessao_sem_conexao(aberta)
         await manager.broadcast_paineis("sessao_encerrada", {
             "estacao": estacao.nome,
+            "estacao_id": estacao.id,
             "cliente": aberta.cliente.login,
             "motivo": "conexao_perdida",
             "saldo_restante": restante
@@ -237,7 +238,7 @@ async def _resolver_estado(db: Session, estacao: Estacao, sessao_id) -> dict:
     if estacao.status != "manutencao":
         estacao.status = "livre"
     db.commit()
-    await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome})
+    await manager.broadcast_paineis("estacao_online", {"nome": estacao.nome, "estacao_id": estacao.id})
     if sessao_id:
         sessao = db.get(Sessao, sessao_id)
         saldo = sessao.cliente.saldo_segundos if sessao and sessao.cliente else 0
@@ -269,7 +270,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
     estacao_id = estacao.id
     # o nome cadastrado vale (o painel pode ter renomeado; o agente e avisado)
     nome = estacao.nome
-    await manager.conectar_estacao(nome, ws)
+    await manager.conectar_estacao(estacao_id, ws)
     estacao.ultimo_ping = datetime.utcnow()
     # Com sessao aberta, segue ocupada ate o agente dizer em que estado esta
     # (evento "estado", a primeira mensagem do agente 1.8). Sem sessao, livre: um
@@ -278,10 +279,10 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
     tem_sessao = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
     estacao.status = "ocupada" if tem_sessao else "livre"
     db.commit()
-    await manager.broadcast_paineis("estacao_online", {"nome": nome})
+    await manager.broadcast_paineis("estacao_online", {"nome": nome, "estacao_id": estacao_id})
     if not estacao.aprovada or estacao.nome_pedido:
         # Novas estacoes: PC novo ou pedido de troca de nome
-        await manager.broadcast_paineis("estacao_pendente", {"nome": nome, "nova": nova})
+        await manager.broadcast_paineis("estacao_pendente", {"nome": nome, "estacao_id": estacao_id, "nova": nova})
     estado_recebido = False
 
     try:
@@ -440,6 +441,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
 
                 await manager.broadcast_paineis("sessao_iniciada", {
                     "estacao": nome,
+                    "estacao_id": estacao_id,
                     "cliente_login": login,
                     "cliente_nome": cliente.nome,
                     "tempo_segundos": tempo,
@@ -482,11 +484,12 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
 
                     await manager.broadcast_paineis("sessao_encerrada", {
                         "estacao": nome,
+                        "estacao_id": estacao_id,
                         "cliente": sessao.cliente.login,
                         "motivo": motivo,
                         "saldo_restante": restante if motivo == "cliente" else 0
                     })
-                    await manager.broadcast_paineis("estacao_online", {"nome": nome})
+                    await manager.broadcast_paineis("estacao_online", {"nome": nome, "estacao_id": estacao_id})
 
             elif evento == "status_estacao":
                 # O agente só alterna entre manutenção e livre
@@ -494,7 +497,7 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
                 if novo_status in ("manutencao", "livre"):
                     estacao.status = novo_status
                     db.commit()
-                    await manager.broadcast_paineis("estacao_online", {"nome": nome})
+                    await manager.broadcast_paineis("estacao_online", {"nome": nome, "estacao_id": estacao_id})
 
             elif evento == "validar_manutencao":
                 # Modo manutenção exige login de admin ou operador, conferido
@@ -511,17 +514,17 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
             # Lida do nivel de cima, chegava vazia ao painel.
             elif evento == "captura_tela_resultado":
                 imagem_b64 = (dados.get("dados") or {}).get("imagem", "")
-                await manager.broadcast_paineis("captura_tela", {"estacao": nome, "imagem": imagem_b64})
+                await manager.broadcast_paineis("captura_tela", {"estacao": nome, "estacao_id": estacao_id, "imagem": imagem_b64})
 
             elif evento == "tela_frame":
                 imagem_b64 = (dados.get("dados") or {}).get("imagem", "")
-                await manager.broadcast_paineis("tela_frame", {"estacao": nome, "imagem": imagem_b64})
+                await manager.broadcast_paineis("tela_frame", {"estacao": nome, "estacao_id": estacao_id, "imagem": imagem_b64})
 
             elif evento == "log_agente":
                 # o log de comunicacao do agente (nao aparece mais na tela do PC)
                 d = dados.get("dados") or {}
                 linha = logs_estacoes.registrar(estacao_id, d.get("msg"), d.get("ts"))
-                await manager.broadcast_paineis("log_agente", {"estacao": nome, **linha})
+                await manager.broadcast_paineis("log_agente", {"estacao": nome, "estacao_id": estacao_id, **linha})
 
     except WebSocketDisconnect:
         desconectou_em = datetime.utcnow()
@@ -530,10 +533,10 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
         if estacao is None:
             # apagada com o agente conectado (excluida, ou o PC pendente que
             # substituiu outra estacao): so solta a conexao
-            manager.desconectar_estacao(nome, ws)
+            manager.desconectar_estacao(estacao_id, ws)
             return
         nome = estacao.nome
-        manager.desconectar_estacao(nome, ws)
+        manager.desconectar_estacao(estacao_id, ws)
         # O cliente segue usando no PC: a sessao continua aberta, marcada sem
         # conexao desde agora (o agente retoma ao reconectar)
         db.expire_all()
@@ -549,13 +552,13 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Ses
         if estacao is None:
             return
         nome = estacao.nome
-        if not manager.estacao_conectada(nome):
+        if not manager.estacao_conectada(estacao_id):
             db.expire_all()
             aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao.id, Sessao.encerrada_em == None).first()
             if estacao.status != "manutencao" and not aberta:
                 estacao.status = "desligada"
             db.commit()
-            await manager.broadcast_paineis("estacao_offline", {"nome": nome})
+            await manager.broadcast_paineis("estacao_offline", {"nome": nome, "estacao_id": estacao_id})
 
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health")

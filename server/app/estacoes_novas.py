@@ -59,7 +59,7 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
             db.commit()
             return e, True
 
-    e = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).first()
+    e = _pelo_nome(db, nome, identificador)
     if e and not (identificador and e.identificador):
         if identificador:
             # estacao cadastrada do jeito antigo recebendo o agente 1.14: adota o id
@@ -74,6 +74,24 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
     db.commit()
     db.refresh(e)
     return e, True
+
+
+def _pelo_nome(db: Session, nome: str, identificador: Optional[str]) -> Optional[Estacao]:
+    """A estacao ativa com o nome, quando da para saber qual (6.18: o nome pode
+    estar nos dois pisos). Agente 1.14 (com id): so as que ainda nao tem PC; com
+    duas candidatas fica pendente (o admin escolhe em "Substitui a X"). Agente
+    antigo (sem id): a do piso padrao, senao a primeira."""
+    lista = db.query(Estacao).filter(Estacao.nome == nome, Estacao.ativa == True).order_by(Estacao.id).all()
+    if identificador:
+        livres = [e for e in lista if not e.identificador]
+        if len(livres) > 1:
+            return None
+        return livres[0] if livres else (lista[0] if lista else None)
+    if len(lista) > 1:
+        from app.pisos import piso_da_estacao, piso_padrao
+        padrao = piso_padrao(db)
+        return next((e for e in lista if padrao and piso_da_estacao(e) == padrao), lista[0])
+    return lista[0] if lista else None
 
 
 def _nome_vindo_do_pc(db: Session, e: Estacao, nome: str):

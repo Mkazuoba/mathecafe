@@ -97,7 +97,7 @@ def texto_do_aviso(horario: dict, agora: datetime, minutos: int) -> str:
 
 def encerrar_sessoes_do_fechamento(db: Session) -> list:
     """Encerra as sessoes abertas como "horario", devolvendo o tempo que sobrou.
-    Devolve [(nome da estacao, restante)] para avisar agentes e paineis."""
+    Devolve [(id da estacao, restante)] para avisar agentes e paineis."""
     agora = datetime.utcnow()
     encerradas = []
     for sessao in db.query(Sessao).filter(Sessao.encerrada_em == None).all():
@@ -108,6 +108,6 @@ def encerrar_sessoes_do_fechamento(db: Session) -> list:
         sessao.sem_conexao_desde = None
         if sessao.estacao.status == "ocupada":
             sessao.estacao.status = "livre"
-        encerradas.append((sessao.estacao.nome, restante))
+        encerradas.append((sessao.estacao_id, restante))
     db.commit()
     return encerradas

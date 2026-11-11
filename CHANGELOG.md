@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-11 — Mapas separados por piso, parte A: o mesmo nome no Adulto e no Infantil (6.18)
+
+- O nome da estação passou a ser único **só dentro do piso**: dá para ter AD-01 no Adulto e AD-01 no Infantil, cada uma com o seu histórico. No mesmo piso continua proibido (criar, várias de uma vez, renomear, aprovar, mudar de zona ou mudar a zona de piso).
+- As conexões dos agentes e os comandos do painel (mensagem, reiniciar, desligar, manutenção, liberar direto, captura, ao vivo, atualizar, ações em massa) passaram a usar o **id** da estação. Chamadas antigas só com o nome continuam valendo quando o nome é único; com dois iguais, respondem "informe qual".
+- Históricos → Por estação usa o piso escolhido no topo.
+- PC novo (agente 1.14+) com um nome que existe nos dois pisos espera em **Novas estações** (use "Substitui a X"). Se só um dos dois ainda não tem PC, ele assume esse.
+- **Banco**: ao subir, o servidor refaz a tabela de estações sem o nome único (mesmos dados e ids). Antes disso grava uma cópia do banco ao lado dele (`cybercafe.antes-6.18.db`). Conferido numa cópia do banco real: 116 estações e as 283 mil sessões ligadas a elas.
+- Os agentes atuais seguem funcionando. A parte B (agente 1.20 e instalador perguntando o piso) vem a seguir.
+
 ## 2026-11-11 — Histórico ao vivo; Mapa com seleção, duplicar e várias estações
 
 - **Históricos → Por cliente**: o cliente aparece assim que loga, não só depois de sair: "Usando agora · AD-10" no topo e "agora" na linha da estação (o tempo da sessão entra no total quando ela acaba). A tela atualiza sozinha quando uma sessão abre ou fecha, e mostra a foto do cliente. Por estação também conta a sessão em andamento.

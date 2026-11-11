@@ -178,13 +178,15 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
   const doPiso = useMemo(() => {
     const id = piso?.id
     const estacoesDoPiso = estacoes.filter((e) => e.piso_id === id)
+    const ids = new Set(estacoesDoPiso.map((e) => e.id))
     const nomes = new Set(estacoesDoPiso.map((e) => e.nome))
     return {
       estacoes: estacoesDoPiso,
       // mapa antigo sem piso conta como o padrão (e Configurações → Grupos avisa)
       grupos: grupos.filter((g) => g.piso_id === id || (g.piso_id == null && !!piso?.padrao)),
       fila: fila.filter((f) => f.cliente_piso_id === id),
-      sessoes: sessoes.filter((s) => nomes.has(s.estacao_nome)),
+      // servidor antigo (até reiniciar) não manda estacao_id: vale o nome
+      sessoes: sessoes.filter((s) => (s.estacao_id != null ? ids.has(s.estacao_id) : nomes.has(s.estacao_nome))),
     }
   }, [piso, estacoes, grupos, fila, sessoes])
 
@@ -210,7 +212,8 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       pendentes,
       pedidosNome,
       recarregarPendentes,
-      sessaoDaEstacao: (nome) => sessoes.find((s) => s.estacao_nome === nome),
+      // o nome se repete entre os pisos (6.18): procura só nas sessões do piso
+      sessaoDaEstacao: (nome) => doPiso.sessoes.find((s) => s.estacao_nome === nome),
     }),
     [pisos, piso, trocarPiso, recarregarPisos, doPiso, versaoClientes, sessoes, grupos, carregado, tempoReal, agora, recarregar,
      recarregarClientes, recarregarFila, recarregarEstacoes, pendentes, pedidosNome, recarregarPendentes],
