@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import {
   IconArrowsMove,
   IconCheck,
+  IconCopy,
   IconDeviceDesktopPlus,
   IconMessage,
   IconPencil,
@@ -10,6 +11,7 @@ import {
   IconPlus,
   IconPower,
   IconRefresh,
+  IconTrash,
   IconWifi,
   IconWifiOff,
   IconX,
@@ -196,9 +198,12 @@ export default function Mapa() {
   const [editandoZona, setEditandoZona] = useState<Grupo | "nova" | null>(null)
   // enquanto arrasta: a posição provisória da zona ou da estação
   const [provisorio, setProvisorio] = useState<{
-    zona?: { id: number; ret: Retangulo }
+    zonas?: Record<number, Retangulo>
     estacao?: { id: number; x: number; y: number }
   } | null>(null)
+  // zonas selecionadas no modo configuração (Ctrl+clique): movem, mudam de
+  // formato, duplicam e são excluídas juntas
+  const [selecao, setSelecao] = useState<Set<number>>(() => new Set())
   const quadro = useRef<HTMLDivElement>(null)
   const area = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(lerZoom)
@@ -218,7 +223,36 @@ export default function Mapa() {
     return c
   }, [estacoes])
 
-  const retDe = (z: ZonaNoMapa) => (provisorio?.zona?.id === z.id ? provisorio.zona.ret : z.ret)
+  const retDe = (z: ZonaNoMapa) => provisorio?.zonas?.[z.id] ?? z.ret
+  const selecionadas = zonas.filter((z) => z.grupo && selecao.has(z.id))
+
+  function alternarSelecao(id: number) {
+    setSelecao((atual) => {
+      const nova = new Set(atual)
+      if (nova.has(id)) nova.delete(id)
+      else nova.add(id)
+      return nova
+    })
+  }
+
+  /**
+   * Arrastando uma zona selecionada, as outras selecionadas vão junto (mover:
+   * o mesmo deslocamento; tamanho: o mesmo formato). Fora da seleção, só ela.
+   */
+  function zonasArrastadas(z: ZonaNoMapa, ret: Retangulo, tipo: "mover" | "tamanho") {
+    const alvo = selecao.has(z.id) ? selecionadas : [z]
+    if (tipo === "tamanho") {
+      const rets: Record<number, Retangulo> = { [z.id]: ret }
+      for (const x of alvo) if (x.id !== z.id) rets[x.id] = { ...x.ret, largura: ret.largura, altura: ret.altura }
+      return rets
+    }
+    // o grupo para inteiro na beirada (nenhuma zona passa do 0), mantendo o desenho
+    const dx = Math.max(ret.x - z.ret.x, -Math.min(...alvo.map((x) => x.ret.x)))
+    const dy = Math.max(ret.y - z.ret.y, -Math.min(...alvo.map((x) => x.ret.y)))
+    return Object.fromEntries(
+      alvo.map((x) => [x.id, { ...x.ret, x: x.ret.x + dx, y: x.ret.y + dy }]),
+    ) as Record<number, Retangulo>
+  }
   const larguraConteudo = Math.max(0, ...zonas.map((z) => retDe(z).x + retDe(z).largura + ESPACO_ZONAS))
   const alturaConteudo = Math.max(0, ...zonas.map((z) => retDe(z).y + retDe(z).altura + ESPACO_ZONAS))
   // configurando, sobra espaço para levar as zonas para qualquer lado
@@ -241,12 +275,12 @@ export default function Mapa() {
     return null
   })()
 
-  /** Grava a zona; as que ainda estão automáticas são gravadas junto, para não se moverem. */
-  async function salvarZona(id: number, ret: Retangulo) {
+  /** Grava as zonas; as que ainda estão automáticas são gravadas junto, para não se moverem. */
+  async function salvarZonas(rets: Record<number, Retangulo>) {
     try {
       const pedidos = zonas
-        .filter((z) => z.grupo && (z.id === id || z.automatica))
-        .map((z) => Api.put(`/api/estacoes/grupos/${z.id}`, { zona: z.id === id ? ret : z.ret }))
+        .filter((z) => z.grupo && (rets[z.id] || z.automatica))
+        .map((z) => Api.put(`/api/estacoes/grupos/${z.id}`, { zona: rets[z.id] ?? z.ret }))
       await Promise.all(pedidos)
       await recarregar()
     } catch (e) {
@@ -254,6 +288,57 @@ export default function Mapa() {
     } finally {
       setProvisorio(null)
     }
+  }
+
+  /** Copia as zonas (com os PCs renumerados) embaixo de tudo, no mesmo desenho. */
+  async function duplicar(lista: ZonaNoMapa[]) {
+    if (!lista.length) return
+    const topo = Math.min(...lista.map((z) => z.ret.y))
+    const dy = alturaConteudo - topo
+    try {
+      // as automáticas ficam onde estão (senão pulariam para baixo das cópias)
+      await Promise.all(
+        zonas
+          .filter((z) => z.grupo && z.automatica)
+          .map((z) => Api.put(`/api/estacoes/grupos/${z.id}`, { zona: z.ret })),
+      )
+      const copias = await Api.post<Grupo[]>("/api/estacoes/grupos/duplicar", {
+        itens: lista.map((z) => ({ grupo_id: z.id, zona: { ...z.ret, y: z.ret.y + dy } })),
+      })
+      const pcs = lista.reduce((n, z) => n + z.estacoes.length, 0)
+      avisar(
+        `${copias.length > 1 ? `${copias.length} zonas duplicadas` : "Zona duplicada"}` +
+          (pcs ? ` com ${pcs} estações (próximos números livres)` : ""),
+      )
+      setSelecao(new Set(copias.map((g) => g.id)))
+      await recarregar()
+      area.current?.scrollTo({ top: (topo + dy) * zoom - 40, behavior: "smooth" })
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    }
+  }
+
+  async function excluirZonas(lista: ZonaNoMapa[]) {
+    if (!lista.length) return
+    const pcs = lista.reduce((n, z) => n + z.estacoes.length, 0)
+    const nomes = lista.map((z) => z.nome).join(", ")
+    const texto =
+      `Excluir ${lista.length > 1 ? `as zonas ${nomes}` : `a zona ${nomes}`}` +
+      (pcs ? ` e ${pcs > 1 ? `as ${pcs} estações` : "a estação"} dentro dela${lista.length > 1 ? "s" : ""}?` : "?") +
+      (pcs ? " Quem já tem histórico de uso só sai do mapa." : "")
+    if (!window.confirm(texto)) return
+    const erros: string[] = []
+    for (const z of lista) {
+      try {
+        await Api.del(`/api/estacoes/grupos/${z.id}`)
+      } catch (e) {
+        erros.push((e as Error).message)
+      }
+    }
+    setSelecao(new Set())
+    await recarregar()
+    if (erros.length) avisar(erros.join(" · "), "erro")
+    else avisar(lista.length > 1 ? `${lista.length} zonas excluídas` : "Zona excluída")
   }
 
   /**
@@ -408,6 +493,30 @@ export default function Mapa() {
             </span>
           </Button>
         )}
+        {admin && modoConfig && selecionadas.length > 0 && (
+          <div className="animar-fade flex items-center gap-1 rounded-lg border border-destaque/40 bg-destaque/10 py-0.5 pr-0.5 pl-2.5 text-xs">
+            <span className="mr-1 font-medium">
+              {selecionadas.length} {selecionadas.length > 1 ? "selecionadas" : "selecionada"}
+            </span>
+            <Button size="xs" variant="ghost" className="gap-1" onClick={() => duplicar(selecionadas)}>
+              <IconCopy size={13} /> Duplicar
+            </Button>
+            <Button size="xs" variant="ghost" className="gap-1 text-perigo" onClick={() => excluirZonas(selecionadas)}>
+              <IconTrash size={13} /> Excluir
+            </Button>
+            <button
+              type="button"
+              aria-label="Limpar a seleção"
+              onClick={() => setSelecao(new Set())}
+              className="rounded p-1 text-texto-fraco hover:text-texto"
+            >
+              <IconX size={13} />
+            </button>
+          </div>
+        )}
+        {admin && modoConfig && selecionadas.length === 0 && (
+          <span className="hidden text-xs text-texto-fraco xl:inline">Ctrl+clique seleciona várias zonas</span>
+        )}
         {admin && modoConfig && (
           <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditandoZona("nova")}>
             <IconPlus size={14} /> Zona
@@ -420,6 +529,7 @@ export default function Mapa() {
             onClick={() => {
               setModoConfig((v) => !v)
               setAberta(null)
+              setSelecao(new Set())
             }}
           >
             {modoConfig ? "Concluir configuração" : "Modo configuração"}
@@ -430,7 +540,10 @@ export default function Mapa() {
       <div
         ref={area}
         className="fundo-pontilhado relative min-h-0 flex-1 overflow-auto"
-        onClick={() => setAberta(null)}
+        onClick={(ev) => {
+          setAberta(null)
+          if (!(ev.target as HTMLElement).closest("section[aria-label^='Zona ']")) setSelecao(new Set())
+        }}
       >
         {!zonas.length ? (
           <div className="pt-16">
@@ -450,11 +563,14 @@ export default function Mapa() {
                   zona={z}
                   ret={retDe(z)}
                   modoConfig={modoConfig}
+                  selecionada={selecao.has(z.id)}
                   zoom={zoom}
                   area={area}
-                  aoMoverZona={(ret) => setProvisorio({ zona: { id: z.id, ret } })}
-                  aoSoltarZona={(ret) => z.grupo && salvarZona(z.id, ret)}
+                  aoSelecionar={() => z.grupo && alternarSelecao(z.id)}
+                  aoMoverZona={(ret, tipo) => setProvisorio({ zonas: zonasArrastadas(z, ret, tipo) })}
+                  aoSoltarZona={(ret, tipo) => z.grupo && salvarZonas(zonasArrastadas(z, ret, tipo))}
                   aoEditar={() => z.grupo && setEditandoZona(z.grupo)}
+                  aoDuplicar={() => duplicar([z])}
                   aoNovaEstacao={() => setNovaEstacaoEm(z.grupo ? z.id : null)}
                 >
                   {z.estacoes.map(({ estacao: e, x, y }) => {
@@ -531,22 +647,28 @@ function ZonaDoMapa({
   zona: z,
   ret,
   modoConfig,
+  selecionada,
   zoom,
   area,
+  aoSelecionar,
   aoMoverZona,
   aoSoltarZona,
   aoEditar,
+  aoDuplicar,
   aoNovaEstacao,
   children,
 }: {
   zona: ZonaNoMapa
   ret: Retangulo
   modoConfig: boolean
+  selecionada: boolean
   zoom: number
   area: React.RefObject<HTMLDivElement | null>
-  aoMoverZona: (ret: Retangulo) => void
-  aoSoltarZona: (ret: Retangulo) => void
+  aoSelecionar: () => void
+  aoMoverZona: (ret: Retangulo, tipo: "mover" | "tamanho") => void
+  aoSoltarZona: (ret: Retangulo, tipo: "mover" | "tamanho") => void
   aoEditar: () => void
+  aoDuplicar: () => void
   aoNovaEstacao: () => void
   children: React.ReactNode
 }) {
@@ -569,6 +691,11 @@ function ZonaDoMapa({
     // pegar numa estação ou num botão não move a zona
     if (tipo === "mover" && (ev.target as HTMLElement).closest("button, [aria-label^='Estação ']")) return
     ev.stopPropagation()
+    // Ctrl (ou Shift) + clique: entra ou sai da seleção, sem arrastar
+    if (tipo === "mover" && (ev.ctrlKey || ev.metaKey || ev.shiftKey)) {
+      aoSelecionar()
+      return
+    }
     ev.currentTarget.setPointerCapture(ev.pointerId)
     const a = area.current
     arrasto.current = {
@@ -596,7 +723,7 @@ function ZonaDoMapa({
             largura: Math.max(tamanhoPara(1, 1).largura, arredondar(a.ret.largura + dx)),
             altura: Math.max(tamanhoPara(1, 1).altura, arredondar(a.ret.altura + dy)),
           }
-    aoMoverZona(a.atual)
+    aoMoverZona(a.atual, a.tipo)
   }
   function soltar() {
     const a = arrasto.current
@@ -608,18 +735,20 @@ function ZonaDoMapa({
         a.atual.largura !== a.ret.largura ||
         a.atual.altura !== a.ret.altura)
     )
-      aoSoltarZona(a.atual)
+      aoSoltarZona(a.atual, a.tipo)
   }
 
   return (
     <section
       aria-label={`Zona ${z.nome}`}
       className={cn(
-        "absolute rounded-xl border",
+        "absolute rounded-xl border transition-shadow duration-200 ease-in-out",
         modoConfig && "border-dashed",
+        selecionada && "ring-2 ring-destaque ring-offset-2 ring-offset-fundo",
         editavel && "cursor-grab touch-none active:cursor-grabbing",
       )}
-      title={editavel ? "Arraste para mover a zona" : undefined}
+      aria-selected={editavel ? selecionada : undefined}
+      title={editavel ? "Arraste para mover a zona (Ctrl+clique seleciona várias)" : undefined}
       onPointerDown={(ev) => iniciar("mover", ev)}
       onPointerMove={mover}
       onPointerUp={soltar}
@@ -659,12 +788,24 @@ function ZonaDoMapa({
                 <IconPencil size={14} />
               </button>
             )}
+            {z.grupo && (
+              <button
+                type="button"
+                onPointerDown={(ev) => ev.stopPropagation()}
+                onClick={aoDuplicar}
+                aria-label={`Duplicar a zona ${z.nome}`}
+                title="Duplicar a zona com as estações (próximos números)"
+                className="shrink-0 rounded p-0.5 text-texto-suave hover:text-texto"
+              >
+                <IconCopy size={14} />
+              </button>
+            )}
             <button
               type="button"
               onPointerDown={(ev) => ev.stopPropagation()}
               onClick={aoNovaEstacao}
               aria-label={`Nova estação em ${z.nome}`}
-              title="Nova estação nesta zona"
+              title="Novas estações nesta zona (uma ou várias)"
               className="shrink-0 rounded p-0.5 text-texto-suave hover:text-texto"
             >
               <IconPlus size={14} />
@@ -1155,50 +1296,172 @@ function ModalNovaEstacao({
   grupoInicial: number | null
   aoFechar: () => void
 }) {
-  const { grupos, recarregarEstacoes } = useDados()
+  const { grupos, estacoes, recarregarEstacoes } = useDados()
   const avisar = useAvisos()
+  const [varias, setVarias] = useState(false)
   const [nome, setNome] = useState("")
   const [grupoId, setGrupoId] = useState("")
+  const [prefixo, setPrefixo] = useState("PC-")
+  const [inicio, setInicio] = useState(1)
+  const [quantidade, setQuantidade] = useState(5)
+  const [digitos, setDigitos] = useState(2)
   const [erro, setErro] = useState("")
+  const [enviando, setEnviando] = useState(false)
+
+  // sugestão: o padrão dos nomes da zona (AD-07 -> "AD-", a partir do 8, 2 dígitos)
+  function sugerir(gid: string) {
+    const nomes = estacoes.filter((e) => String(e.grupo_id) === gid).map((e) => e.nome)
+    const m = nomes
+      .map((n) => n.match(/^(.*?)(\d+)$/))
+      .filter((x): x is RegExpMatchArray => !!x)
+      .sort((a, b) => Number(b[2]) - Number(a[2]))[0]
+    if (m) {
+      setPrefixo(m[1])
+      setDigitos(Math.min(4, m[2].length))
+      const usados = estacoes
+        .map((e) => e.nome.match(/^(.*?)(\d+)$/))
+        .filter((x) => x && x[1] === m[1])
+        .map((x) => Number(x![2]))
+      setInicio(Math.max(...usados) + 1)
+    }
+  }
 
   useEffect(() => {
-    if (aberto) {
-      setNome("")
-      setErro("")
-      setGrupoId(String(grupoInicial ?? grupos[0]?.id ?? ""))
-    }
-  }, [aberto, grupoInicial, grupos])
+    if (!aberto) return
+    const gid = String(grupoInicial ?? grupos[0]?.id ?? "")
+    setNome("")
+    setErro("")
+    setGrupoId(gid)
+    sugerir(gid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto, grupoInicial])
+
+  const nomesLote = Array.from({ length: Math.max(0, Math.min(quantidade, 60)) }, (_, k) =>
+    `${prefixo}${String(inicio + k).padStart(digitos, "0")}`,
+  )
 
   async function criar(ev: React.FormEvent) {
     ev.preventDefault()
-    if (!nome.trim()) return setErro("Informe o nome da estação")
+    setErro("")
+    setEnviando(true)
     try {
-      const params = new URLSearchParams({ nome: nome.trim() })
-      if (grupoId) params.append("grupo_id", grupoId)
-      await Api.post(`/api/estacoes/?${params}`)
-      avisar("Estação criada")
+      if (varias) {
+        if (!prefixo.trim()) return setErro("Informe o começo do nome (ex.: AD-)")
+        if (quantidade < 1 || quantidade > 60) return setErro("De 1 a 60 estações por vez")
+        await Api.post("/api/estacoes/lote", {
+          prefixo: prefixo.trim(),
+          inicio,
+          quantidade,
+          digitos,
+          grupo_id: grupoId ? Number(grupoId) : null,
+        })
+        avisar(`${quantidade} estações criadas (${nomesLote[0]} a ${nomesLote[nomesLote.length - 1]})`)
+      } else {
+        if (!nome.trim()) return setErro("Informe o nome da estação")
+        const params = new URLSearchParams({ nome: nome.trim() })
+        if (grupoId) params.append("grupo_id", grupoId)
+        await Api.post(`/api/estacoes/?${params}`)
+        avisar("Estação criada")
+      }
       aoFechar()
       await recarregarEstacoes()
     } catch (e) {
       setErro((e as Error).message)
+    } finally {
+      setEnviando(false)
     }
   }
 
   return (
-    <Modal titulo="Nova estação" aberto={aberto} aoFechar={aoFechar}>
+    <Modal titulo={varias ? "Novas estações" : "Nova estação"} aberto={aberto} aoFechar={aoFechar}>
       <form onSubmit={criar} className="flex flex-col gap-4">
-        <Campo rotulo="Nome da estação" id="est-nome">
-          <Input
-            id="est-nome"
-            placeholder="ex: PC-01"
-            autoComplete="off"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            autoFocus
-          />
-        </Campo>
+        <div role="radiogroup" aria-label="Quantas" className="flex rounded-lg border border-borda bg-superficie-2 p-0.5 text-sm">
+          {(
+            [
+              [false, "Uma"],
+              [true, "Várias de uma vez"],
+            ] as const
+          ).map(([v, rotulo]) => (
+            <button
+              key={rotulo}
+              type="button"
+              role="radio"
+              aria-checked={varias === v}
+              onClick={() => setVarias(v)}
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 font-medium transition-all duration-200 ease-in-out",
+                varias === v ? "bg-texto/10 text-texto" : "text-texto-suave hover:text-texto",
+              )}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+        {varias ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Campo rotulo="Começo do nome" id="lote-prefixo">
+                <Input id="lote-prefixo" value={prefixo} onChange={(e) => setPrefixo(e.target.value)} autoFocus />
+              </Campo>
+              <Campo rotulo="A partir do número" id="lote-inicio">
+                <Input
+                  id="lote-inicio"
+                  type="number"
+                  min={0}
+                  value={inicio}
+                  onChange={(e) => setInicio(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </Campo>
+              <Campo rotulo="Quantas estações" id="lote-qtd">
+                <Input
+                  id="lote-qtd"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={quantidade}
+                  onChange={(e) => setQuantidade(Number(e.target.value) || 0)}
+                />
+              </Campo>
+              <Campo rotulo="Dígitos do número" id="lote-digitos">
+                <Select id="lote-digitos" value={digitos} onChange={(e) => setDigitos(Number(e.target.value))}>
+                  <option value={1}>1 (PC-1)</option>
+                  <option value={2}>2 (PC-01)</option>
+                  <option value={3}>3 (PC-001)</option>
+                </Select>
+              </Campo>
+            </div>
+            {nomesLote.length > 0 && (
+              <p className="rounded-lg border border-borda bg-superficie-2 px-3 py-2 text-xs text-texto-suave">
+                Vai criar <strong className="text-texto">{nomesLote.length}</strong>:{" "}
+                <span className="font-mono">
+                  {nomesLote.length <= 6
+                    ? nomesLote.join(", ")
+                    : `${nomesLote.slice(0, 3).join(", ")} … ${nomesLote[nomesLote.length - 1]}`}
+                </span>
+              </p>
+            )}
+          </>
+        ) : (
+          <Campo rotulo="Nome da estação" id="est-nome">
+            <Input
+              id="est-nome"
+              placeholder="ex: PC-01"
+              autoComplete="off"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              autoFocus
+            />
+          </Campo>
+        )}
         <Campo rotulo="Zona" id="est-grupo">
-          <Select id="est-grupo" value={grupoId} onChange={(e) => setGrupoId(e.target.value)}>
+          <Select
+            id="est-grupo"
+            value={grupoId}
+            onChange={(e) => {
+              setGrupoId(e.target.value)
+              sugerir(e.target.value)
+            }}
+          >
             {grupos.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.nome}
@@ -1208,15 +1471,15 @@ function ModalNovaEstacao({
         </Campo>
         <p className="text-xs text-texto-fraco">
           Computadores com o agente 1.14 aparecem sozinhos em <strong>Novas estações</strong> depois da instalação.
-          Cadastrar aqui só é preciso para agentes antigos, com o mesmo nome usado neles.
+          Cadastrar aqui serve para montar o mapa antes: o PC instalado com o mesmo nome assume o lugar.
         </p>
         <MensagemErro>{erro}</MensagemErro>
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={aoFechar}>
             Cancelar
           </Button>
-          <Button type="submit" className="flex-1">
-            Criar
+          <Button type="submit" className="flex-1" disabled={enviando}>
+            {varias ? `Criar ${nomesLote.length}` : "Criar"}
           </Button>
         </div>
       </form>

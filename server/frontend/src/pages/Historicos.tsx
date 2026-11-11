@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { IconChevronDown, IconChevronUp, IconDownload, IconSelector } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
@@ -7,6 +7,7 @@ import { dataDoServidor, formatarTempo } from "@/lib/tempo"
 import { cn } from "@/lib/utils"
 import { CabecalhoTela } from "@/components/Layout"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
+import { AvatarCliente } from "@/components/AvatarCliente"
 import { AbaAcoesOperadores, type FiltrosAcoes } from "@/components/AbaAcoesOperadores"
 import { AbaUso, type FiltrosUso } from "@/components/AbaUso"
 import { Button } from "@/components/ui/button"
@@ -21,13 +22,17 @@ interface Resumo {
   ultima_vez: string | null
 }
 interface ItemUso {
+  /** tem uma sessão em andamento agora (o tempo dela entra quando acaba) */
+  em_uso?: boolean
   sessoes: number
   tempo_segundos: number
   primeira_vez: string | null
   ultima_vez: string | null
 }
 interface HistoricoCliente extends Resumo {
-  cliente: ClienteResumo
+  cliente: ClienteResumo & { tem_foto: boolean; foto_em: string | null }
+  /** estação em que o cliente está logado agora */
+  em_uso: string | null
   itens: (ItemUso & { estacao: string })[]
 }
 interface HistoricoEstacao extends Resumo {
@@ -175,14 +180,24 @@ export default function Historicos() {
   )
 }
 
-/** Carrega o histórico quando a escolha ou o período mudam. */
+/**
+ * Carrega o histórico quando a escolha ou o período mudam, e de novo quando
+ * uma sessão abre ou fecha (as sessões chegam pelo WebSocket): quem loga já
+ * aparece, sem esperar sair.
+ */
 function useHistorico<T>(caminho: string | null, de: string, ate: string) {
   const [dados, setDados] = useState<T | null>(null)
   const [erro, setErro] = useState("")
   const [carregando, setCarregando] = useState(false)
+  const { sessoes } = useDados()
+  const sessoesAbertas = sessoes.map((s) => s.id).join(",")
+  const consulta = `${caminho}|${de}|${ate}`
+  const ultima = useRef("")
 
   useEffect(() => {
-    setDados(null)
+    // só limpa a tela quando a escolha muda; ao vivo, troca os dados no lugar
+    if (ultima.current !== consulta) setDados(null)
+    ultima.current = consulta
     setErro("")
     if (!caminho) return
     let cancelado = false
@@ -197,7 +212,7 @@ function useHistorico<T>(caminho: string | null, de: string, ate: string) {
     return () => {
       cancelado = true
     }
-  }, [caminho, de, ate])
+  }, [caminho, de, ate, consulta, sessoesAbertas])
 
   return { dados, erro, carregando }
 }
@@ -255,6 +270,19 @@ function AbaCliente({ clienteId, de, ate, mudar, abrirEstacao }: {
         <Vazio>Carregando...</Vazio>
       ) : dados ? (
         <>
+          <div className="mb-4 flex items-center gap-3.5">
+            <AvatarCliente cliente={dados.cliente} className="size-14 text-base" />
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold">{dados.cliente.nome}</div>
+              <div className="text-sm text-texto-fraco">{dados.cliente.login}</div>
+            </div>
+            {dados.em_uso && (
+              <span className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-livre-borda bg-livre-fundo px-2.5 py-0.5 text-xs font-medium text-livre">
+                <span className="size-1.5 rounded-full bg-current" />
+                Usando agora · {dados.em_uso}
+              </span>
+            )}
+          </div>
           <Totais
             itens={[
               ["Sessões", String(dados.sessoes)],
@@ -443,11 +471,20 @@ function TabelaUso({ rotuloNome, linhas, vazio, aoExportar }: {
               tabIndex={0}
               onClick={l.aoAbrir}
               onKeyDown={(e) => e.key === "Enter" && l.aoAbrir()}
-              className="cursor-pointer hover:bg-superficie-2 focus-visible:bg-superficie-2 focus-visible:outline-none"
+              className="cursor-pointer transition-all duration-200 ease-in-out hover:bg-texto/5 focus-visible:bg-texto/5 focus-visible:outline-none"
             >
               <td className="border-b border-borda px-2.5 py-2">
                 {l.titulo}
                 {l.subtitulo && <span className="ml-1.5 text-xs text-texto-fraco">{l.subtitulo}</span>}
+                {l.em_uso && (
+                  <span
+                    title="Sessão em andamento: o tempo dela entra no total quando acabar"
+                    className="ml-2 inline-flex items-center gap-1 rounded-full border border-livre-borda bg-livre-fundo px-1.5 text-[11px] font-medium text-livre"
+                  >
+                    <span className="size-1.5 rounded-full bg-current" />
+                    agora
+                  </span>
+                )}
               </td>
               <td className="border-b border-borda px-2.5 py-2 text-right tabular-nums">{l.sessoes}</td>
               <td className="border-b border-borda px-2.5 py-2 text-right tabular-nums">{formatarTempo(l.tempo_segundos)}</td>

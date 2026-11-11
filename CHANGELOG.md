@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-11 — Histórico ao vivo; Mapa com seleção, duplicar e várias estações
+
+- **Históricos → Por cliente**: o cliente aparece assim que loga, não só depois de sair: "Usando agora · AD-10" no topo e "agora" na linha da estação (o tempo da sessão entra no total quando ela acaba). A tela atualiza sozinha quando uma sessão abre ou fecha, e mostra a foto do cliente. Por estação também conta a sessão em andamento.
+- **Configurações**: saíram "Relatórios" e "Histórico de uso", que repetiam Históricos. O CSV de todas as sessões continua no botão **Exportar CSV** da tela Clientes (baixa direto).
+- **Mapa (Modo configuração)**: Ctrl+clique (ou Shift) seleciona várias zonas; arrastar uma selecionada move todas juntas (o grupo para inteiro na beirada) e puxar o canto deixa todas com o mesmo formato. Com a seleção: **Duplicar** e **Excluir** juntas. Cada zona ganhou o botão Duplicar.
+- **Duplicar zona**: copia nome (com "(cópia)"), cor, tamanho e as estações nas mesmas posições, com os próximos números livres (AD-77 → AD-78...). A cópia vai para baixo de tudo, já selecionada.
+- **Excluir zona**: leva as estações dela (quem tem histórico só sai do mapa); com alguém usando um PC da zona, não exclui nada.
+- **Várias estações de uma vez**: no + da zona, "Várias de uma vez" (começo do nome, a partir do número, quantas, dígitos), com a prévia dos nomes e a sugestão a partir dos nomes da zona. Se algum nome já existe, não cria nenhuma.
+- Registro de ações: "Cadastrou estações", "Duplicou zona do mapa", "Excluiu zona do mapa".
+
 ## 2026-11-10 — Visual novo do painel (estilo shadcn/ui)
 
 - **Menu lateral** de 260px que recolhe para só os ícones, com o bloco MatheCafé · SP Leituras no topo, os grupos Operação e Gestão e quem está logado (com Sair) embaixo. Históricos e Configurações abrem **subitens** (abas e seções), recuados, com linha vertical e seta que gira; com o menu aberto, a lista própria de Configurações some.

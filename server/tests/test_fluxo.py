@@ -653,6 +653,32 @@ def test_historico_por_cliente_e_por_estacao(c, admin, operador):
     assert c.get("/api/relatorios/estacao/nao-existe", headers=admin).status_code == 404
 
 
+def test_historico_do_cliente_mostra_a_sessao_aberta(c, admin):
+    """O cliente aparece no histórico assim que loga, não só depois de sair
+    (o tempo dessa sessão entra quando ela acaba). Também traz a foto."""
+    from app.models import Estacao
+    sufixo = next(_contador)
+    nome = f"HA-{sufixo}"
+    assert c.post(f"/api/estacoes/?nome={nome}", headers=admin).status_code == 200
+    cid = c.post("/api/clientes/", headers=admin,
+                 json={"login": f"ha{sufixo}", "nome": "Hist Aberta", "senha": "x12345"}).json()["id"]
+    db = SessionLocal()
+    est = db.query(Estacao).filter(Estacao.nome == nome).one()
+    db.add(Sessao(cliente_id=cid, estacao_id=est.id, tempo_total_segundos=3600,
+                  iniciada_em=datetime.utcnow(), tempo_consumido_segundos=0))
+    db.commit()
+    db.close()
+
+    d = c.get(f"/api/relatorios/cliente/{cid}", headers=admin).json()
+    assert d["sessoes"] == 1 and d["ultima_vez"]
+    assert d["em_uso"] == nome
+    assert [(i["estacao"], i["sessoes"], i["em_uso"]) for i in d["itens"]] == [(nome, 1, True)]
+    assert d["cliente"]["tem_foto"] is False and "foto_em" in d["cliente"]
+
+    d = c.get(f"/api/relatorios/estacao/{nome}", headers=admin).json()
+    assert d["sessoes"] == 1 and d["itens"][0]["em_uso"] is True
+
+
 # ── 6.2 Pausa nao conta como uso ─────────────────────────────────────────────
 
 def _recuar(sessao_id, inicio_min, pausa_min=None):
@@ -2183,3 +2209,81 @@ def test_log_do_agente_sem_hora_e_comprido(c, admin, cenario):
             pass
     [linha] = c.get(f"/api/estacoes/{eid}/logs", headers=admin).json()
     assert len(linha["msg"]) <= 500 and len(linha["ts"]) == 8  # hora do servidor, HH:MM:SS
+
+
+# ── Mapa: varios PCs de uma vez, duplicar e excluir ilhas ────────────────────
+
+def _zona_nova(c, admin, nome):
+    piso = c.get("/api/pisos/", headers=admin).json()[0]["id"]
+    g = c.post("/api/estacoes/grupos", headers=admin, params={"nome": nome, "piso_id": piso}).json()
+    zona = {"x": 40, "y": 40, "largura": 300, "altura": 200}
+    assert c.put(f"/api/estacoes/grupos/{g['id']}", headers=admin, json={"zona": zona}).status_code == 200
+    return g["id"]
+
+
+def _nomes_do_grupo(c, admin, gid):
+    return sorted(e["nome"] for e in c.get("/api/estacoes/", headers=admin, params={"grupo_id": gid}).json())
+
+
+def test_varias_estacoes_de_uma_vez(c, admin):
+    s = next(_contador)
+    gid = _zona_nova(c, admin, f"Lote {s}")
+    corpo = {"prefixo": f"L{s}-", "inicio": 1, "quantidade": 3, "digitos": 2, "grupo_id": gid}
+    r = c.post("/api/estacoes/lote", headers=admin, json=corpo)
+    assert r.status_code == 200, r.text
+    assert _nomes_do_grupo(c, admin, gid) == [f"L{s}-01", f"L{s}-02", f"L{s}-03"]
+
+    # algum nome já existe: não cria nenhum e diz quais
+    r = c.post("/api/estacoes/lote", headers=admin, json={**corpo, "inicio": 3})
+    assert r.status_code == 400 and f"L{s}-03" in r.json()["detail"]
+    assert len(_nomes_do_grupo(c, admin, gid)) == 3
+    assert c.post("/api/estacoes/lote", headers=admin, json={**corpo, "quantidade": 0}).status_code == 422
+
+
+def test_duplicar_ilhas_com_os_pcs_numerados(c, admin):
+    s = next(_contador)
+    a = _zona_nova(c, admin, f"Ilha {s}")
+    c.post("/api/estacoes/lote", headers=admin,
+           json={"prefixo": f"D{s}-", "inicio": 1, "quantidade": 2, "digitos": 2, "grupo_id": a})
+    c.post(f"/api/estacoes/?nome=D{s}-07", headers=admin)  # o maior número já usado, fora da ilha
+    ids = {e["nome"]: e["id"] for e in c.get("/api/estacoes/", headers=admin, params={"grupo_id": a}).json()}
+    c.put(f"/api/estacoes/{ids[f'D{s}-02']}/posicao", headers=admin, json={"pos_x": 81, "pos_y": 1})
+
+    destino = {"x": 40, "y": 400, "largura": 300, "altura": 200}
+    r = c.post("/api/estacoes/grupos/duplicar", headers=admin, json={"itens": [{"grupo_id": a, "zona": destino}]})
+    assert r.status_code == 200, r.text
+    [copia] = r.json()
+    assert copia["nome"] == f"Ilha {s} (cópia)" and copia["zona"] == destino
+    novas = c.get("/api/estacoes/", headers=admin, params={"grupo_id": copia["id"]}).json()
+    # os próximos números livres, nas mesmas posições, já aprovadas
+    assert sorted((e["nome"], e["pos_x"]) for e in novas) == [(f"D{s}-08", 0), (f"D{s}-09", 81)]
+    assert _nomes_do_grupo(c, admin, a) == [f"D{s}-01", f"D{s}-02"]  # a original não muda
+
+
+def test_excluir_ilha(c, admin):
+    from app.models import Estacao
+    s = next(_contador)
+    gid = _zona_nova(c, admin, f"Some {s}")
+    c.post("/api/estacoes/lote", headers=admin,
+           json={"prefixo": f"X{s}-", "inicio": 1, "quantidade": 2, "digitos": 1, "grupo_id": gid})
+    cid = c.post("/api/clientes/", headers=admin,
+                 json={"login": f"xi{s}", "nome": "Na ilha", "senha": "x12345"}).json()["id"]
+    db = SessionLocal()
+    e1 = db.query(Estacao).filter(Estacao.nome == f"X{s}-1").one()
+    aberta = Sessao(cliente_id=cid, estacao_id=e1.id, tempo_total_segundos=600, iniciada_em=datetime.utcnow())
+    db.add(aberta)
+    db.commit()
+
+    # com alguém usando um PC da ilha, não exclui nada
+    r = c.delete(f"/api/estacoes/grupos/{gid}", headers=admin)
+    assert r.status_code == 400 and f"X{s}-1" in r.json()["detail"]
+
+    aberta.encerrada_em = datetime.utcnow()
+    db.commit()
+    db.close()
+    assert c.delete(f"/api/estacoes/grupos/{gid}", headers=admin).status_code == 200
+    assert gid not in [g["id"] for g in c.get("/api/estacoes/grupos", headers=admin).json()]
+    nomes = [e["nome"] for e in c.get("/api/estacoes/", headers=admin).json()]
+    assert f"X{s}-1" not in nomes and f"X{s}-2" not in nomes
+    acoes = [a["acao"] for a in c.get("/api/relatorios/acoes", headers=admin).json()]
+    assert "excluir_zona" in acoes

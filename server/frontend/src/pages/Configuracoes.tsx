@@ -8,14 +8,13 @@ import { formatarTempo, lerTempo } from "@/lib/tempo"
 import type { ConfigSistema, Grupo, Operador } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Campo, INICIO_RELATORIOS, Input, InputData, Interruptor, MensagemErro, Select, hojeIso } from "@/components/ui/campos"
+import { Campo, Input, Interruptor, MensagemErro } from "@/components/ui/campos"
 import { Modal } from "@/components/ui/modal"
 import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoPisos } from "@/components/SecaoPisos"
 import { SecaoApps } from "@/components/SecaoApps"
 import { SecaoHorario } from "@/components/SecaoHorario"
 import { SecaoProgramacao } from "@/components/SecaoProgramacao"
-import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
 const SECOES = [
@@ -26,8 +25,6 @@ const SECOES = [
   { id: "grupos", rotulo: "Mapas" },
   { id: "apps", rotulo: "Apps permitidos" },
   { id: "programacao", rotulo: "Programação" },
-  { id: "relatorios", rotulo: "Relatórios" },
-  { id: "historico", rotulo: "Histórico de uso" },
   { id: "servidor", rotulo: "Servidor" },
   { id: "conta", rotulo: "Minha conta" },
 ] as const
@@ -68,8 +65,6 @@ export default function Configuracoes() {
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
           {secao === "programacao" && <SecaoProgramacao />}
-          {secao === "relatorios" && <SecaoRelatorios />}
-          {secao === "historico" && <SecaoHistorico />}
           {secao === "servidor" && <SecaoBanco />}
           {secao === "conta" && <SecaoConta />}
         </div>
@@ -512,210 +507,6 @@ function SecaoGrupos() {
 }
 
 // ── Relatórios ──────────────────────────────────────────────────────────────
-
-function SecaoRelatorios() {
-  const avisar = useAvisos()
-  const { estacoes } = useDados()
-  const [inicio, setInicio] = useState("")
-  const [fim, setFim] = useState("")
-  const [cliente, setCliente] = useState<ClienteResumo | null>(null)
-  const [estacao, setEstacao] = useState("")
-  const [gerando, setGerando] = useState(false)
-
-  async function exportar(ev: React.FormEvent) {
-    ev.preventDefault()
-    const params = new URLSearchParams()
-    if (inicio) params.append("data_inicio", inicio)
-    if (fim) params.append("data_fim", fim)
-    if (cliente) params.append("cliente_id", String(cliente.id))
-    if (estacao) params.append("estacao_nome", estacao)
-    setGerando(true)
-    try {
-      await Api.baixar(`/api/relatorios/csv?${params}`, "relatorio_sessoes.csv")
-    } catch (e) {
-      avisar((e as Error).message, "erro")
-    } finally {
-      setGerando(false)
-    }
-  }
-
-  return (
-    <form onSubmit={exportar} className="flex flex-col gap-4">
-      <Titulo>Relatórios</Titulo>
-      <p className="-mt-3 text-sm text-texto-suave">Sessões encerradas, em CSV (abre no Excel).</p>
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <Campo rotulo="Data início" id="rel-inicio">
-            <InputData id="rel-inicio" min={INICIO_RELATORIOS} max={fim || hojeIso()} value={inicio} onChange={setInicio} />
-          </Campo>
-        </div>
-        <div className="flex-1">
-          <Campo rotulo="Data fim" id="rel-fim">
-            <InputData id="rel-fim" min={inicio || INICIO_RELATORIOS} max={hojeIso()} value={fim} onChange={setFim} />
-          </Campo>
-        </div>
-      </div>
-      <Campo rotulo="Cliente" id="rel-cliente">
-        <SeletorCliente id="rel-cliente" valor={cliente} aoMudar={setCliente} />
-      </Campo>
-      <Campo rotulo="Estação" id="rel-estacao">
-        <Select id="rel-estacao" value={estacao} onChange={(e) => setEstacao(e.target.value)}>
-          <option value="">Todas</option>
-          {estacoes.map((e) => (
-            <option key={e.id} value={e.nome}>
-              {e.nome}
-            </option>
-          ))}
-        </Select>
-      </Campo>
-      <Button type="submit" className="self-start" disabled={gerando}>
-        {gerando ? "Gerando..." : "Exportar CSV"}
-      </Button>
-    </form>
-  )
-}
-
-// ─── Seção: Histórico de uso ─────────────────────────────────────────────────
-interface SessaoHist {
-  id: number
-  cliente_nome: string
-  cliente_login: string
-  estacao_nome: string
-  iniciada_em: string
-  encerrada_em: string | null
-  tempo_consumido_segundos: number
-  motivo_encerramento: string | null
-}
-
-const MOTIVOS: Record<string, string> = {
-  tempo_esgotado: "Tempo esgotado",
-  encerrado_operador: "Operador",
-  conexao_perdida: "Queda de conexão",
-  encerrado_cliente: "Cliente encerrou",
-  saldo_zerado: "Saldo zerado",
-}
-
-function SecaoHistorico() {
-  const [sessoes, setSessoes] = useState<SessaoHist[] | null>(null)
-  const [filtroCliente, setFiltroCliente] = useState("")
-  const [filtroEstacao, setFiltroEstacao] = useState("")
-  const [filtroDe, setFiltroDe] = useState("")
-  const [filtroAte, setFiltroAte] = useState("")
-  const [carregando, setCarregando] = useState(false)
-
-  const carregar = useCallback(async () => {
-    setCarregando(true)
-    try {
-      const params = new URLSearchParams({ limit: "500" })
-      const data = await Api.get<SessaoHist[]>(`/api/sessoes/historico?${params}`)
-      setSessoes(data)
-    } finally {
-      setCarregando(false)
-    }
-  }, [])
-
-  useEffect(() => { void carregar() }, [carregar])
-
-  // listas únicas para os selects
-  const clientes = Array.from(new Map((sessoes ?? []).map(s => [s.cliente_login, s.cliente_nome])).entries())
-    .sort((a, b) => a[1].localeCompare(b[1]))
-  const estacoes = Array.from(new Set((sessoes ?? []).map(s => s.estacao_nome))).sort()
-
-  const lista = (sessoes ?? []).filter((s) => {
-    if (filtroCliente && s.cliente_login !== filtroCliente) return false
-    if (filtroEstacao && s.estacao_nome !== filtroEstacao) return false
-    if (filtroDe) {
-      const inicio = new Date(s.iniciada_em)
-      const de = new Date(filtroDe + "T00:00:00")
-      if (inicio < de) return false
-    }
-    if (filtroAte) {
-      const inicio = new Date(s.iniciada_em)
-      const ate = new Date(filtroAte + "T23:59:59")
-      if (inicio > ate) return false
-    }
-    return true
-  })
-
-  const temFiltro = filtroCliente || filtroEstacao || filtroDe || filtroAte
-  const selectCls = "rounded-md border border-borda bg-superficie-2 px-2 py-1.5 text-sm outline-none focus:border-destaque"
-
-  return (
-    <>
-      <Titulo>Histórico de uso</Titulo>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <select value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} className={selectCls}>
-          <option value="">Todos os clientes</option>
-          {clientes.map(([login, nome]) => (
-            <option key={login} value={login}>{nome} ({login})</option>
-          ))}
-        </select>
-        <select value={filtroEstacao} onChange={(e) => setFiltroEstacao(e.target.value)} className={selectCls}>
-          <option value="">Todas as estações</option>
-          {estacoes.map((e) => (
-            <option key={e} value={e}>{e}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-texto-suave">De</span>
-          <InputData aria-label="De" min={INICIO_RELATORIOS} max={filtroAte || hojeIso()} value={filtroDe} onChange={setFiltroDe} className={selectCls} />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-texto-suave">até</span>
-          <InputData aria-label="Até" min={filtroDe || INICIO_RELATORIOS} max={hojeIso()} value={filtroAte} onChange={setFiltroAte} className={selectCls} />
-        </div>
-        {temFiltro && (
-          <button type="button" onClick={() => { setFiltroCliente(""); setFiltroEstacao(""); setFiltroDe(""); setFiltroAte("") }}
-            className="text-xs text-texto-suave underline hover:text-texto">
-            Limpar filtros
-          </button>
-        )}
-        <Button variant="outline" size="xs" onClick={carregar} disabled={carregando} className="ml-auto">
-          {carregando ? "..." : "Atualizar"}
-        </Button>
-      </div>
-      {sessoes === null ? (
-        <Vazio>Carregando...</Vazio>
-      ) : lista.length === 0 ? (
-        <Vazio>Nenhuma sessão encontrada</Vazio>
-      ) : (
-        <div className="overflow-auto rounded-lg border border-borda">
-          <table className="w-full text-sm">
-            <thead className="bg-superficie-2 text-xs text-texto-suave">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">Cliente</th>
-                <th className="px-3 py-2 text-left font-medium">Estação</th>
-                <th className="px-3 py-2 text-left font-medium">Início</th>
-                <th className="px-3 py-2 text-left font-medium">Duração</th>
-                <th className="px-3 py-2 text-left font-medium">Motivo</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-borda">
-              {lista.map((s) => (
-                <tr key={s.id} className="hover:bg-superficie-2">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{s.cliente_nome}</div>
-                    <div className="font-mono text-xs text-texto-fraco">{s.cliente_login}</div>
-                  </td>
-                  <td className="px-3 py-2 text-texto-suave">{s.estacao_nome}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-texto-suave">
-                    {new Date(s.iniciada_em).toLocaleString("pt-BR")}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">
-                    {formatarTempo(s.tempo_consumido_segundos)}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-texto-suave">
-                    {MOTIVOS[s.motivo_encerramento ?? ""] ?? s.motivo_encerramento ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  )
-}
 
 // ─── Seção: Minha conta ───────────────────────────────────────────────────────
 function SecaoConta() {
