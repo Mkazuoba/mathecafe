@@ -187,6 +187,9 @@ class ItemProgramacao(Base):
     atualizado_em = Column(DateTime, default=datetime.utcnow)
     # 9.11: botão "Ver no navegador / Inscrição" no banner do agente
     link = Column(String(500), nullable=True)
+    # 9.13: texto curto e créditos ("Com fulana e beltrano") no banner
+    descricao = Column(String(300), nullable=True)
+    creditos = Column(String(160), nullable=True)
 
 
 class AvisoBiblioteca(Base):
@@ -199,6 +202,9 @@ class AvisoBiblioteca(Base):
     ordem = Column(Integer, default=0)
     ativo = Column(Boolean, default=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
+    # 9.13: alerta (âmbar), evento (violeta) ou info (azul); horário livre ("16:00")
+    tipo = Column(String(12), default="info")
+    horario = Column(String(20), nullable=True)
 
 
 class AcaoOperador(Base):

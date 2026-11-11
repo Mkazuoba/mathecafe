@@ -42,6 +42,8 @@ class NovoItem(BaseModel):
     titulo: str = ""
     imagem: str  # data URL (o painel reduz antes de enviar)
     link: Optional[str] = None
+    descricao: Optional[str] = Field(default=None, max_length=300)
+    creditos: Optional[str] = Field(default=None, max_length=160)
 
     _link = field_validator("link")(normalizar_link)
 
@@ -50,6 +52,8 @@ class EditarItem(BaseModel):
     titulo: Optional[str] = None
     ativo: Optional[bool] = None
     link: Optional[str] = None  # "" apaga
+    descricao: Optional[str] = Field(default=None, max_length=300)  # "" apaga
+    creditos: Optional[str] = Field(default=None, max_length=160)  # "" apaga
 
     _link = field_validator("link")(normalizar_link)
 
@@ -69,6 +73,8 @@ def _serial(i: ItemProgramacao):
         "ativo": i.ativo,
         "ordem": i.ordem,
         "link": i.link or None,
+        "descricao": i.descricao or None,
+        "creditos": i.creditos or None,
         # vai na URL da imagem: o agente e o navegador não usam a antiga
         "versao": int(i.atualizado_em.timestamp()) if i.atualizado_em else 0,
     }
@@ -115,6 +121,7 @@ async def criar(body: NovoItem, db: Session = Depends(get_db), _=Depends(requer_
     tipo, dados = ler_imagem(body.imagem, IMAGEM_MAX_BYTES)
     ultimo = _ordenados(db).order_by(None).order_by(ItemProgramacao.ordem.desc()).first()
     item = ItemProgramacao(titulo=body.titulo.strip(), tipo=tipo, conteudo=dados, link=body.link or None,
+                           descricao=(body.descricao or "").strip() or None, creditos=(body.creditos or "").strip() or None,
                            ordem=(ultimo.ordem + 1) if ultimo else 0, atualizado_em=datetime.utcnow())
     db.add(item)
     db.commit()
@@ -157,6 +164,10 @@ async def editar(id: int, body: EditarItem, db: Session = Depends(get_db), _=Dep
         item.ativo = body.ativo
     if body.link is not None:
         item.link = body.link or None
+    for campo in ("descricao", "creditos"):
+        valor = getattr(body, campo)
+        if valor is not None:
+            setattr(item, campo, valor.strip() or None)
     db.commit()
     await _avisar_agentes()
     return _serial(item)

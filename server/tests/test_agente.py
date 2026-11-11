@@ -879,9 +879,9 @@ def test_area_do_cliente_menu_widgets_e_cards():
     menu = src[src.index("class MenuLateral:"):src.index("class PainelDireito:")]
     assert '"Início"' in menu and '"Meus Apps"' in menu
     assert "Histórico" not in menu and "Biblioteca" not in menu
-    assert "LARGURA_ABERTO, LARGURA_FECHADO = 240, 70" in menu
+    assert "LARGURA_ABERTO, LARGURA_FECHADO = 240, 64" in menu  # 9.13: recolhido em 64 px
     direito = src[src.index("class PainelDireito:"):src.index("class AgenteApp:")]
-    assert "AVISOS DA BIBLIOTECA" in direito and "SESSÃO ATIVA" in direito
+    assert "AVISOS DA BIBLIOTECA" in direito and "TEMPO RESTANTE DE USO" in direito  # 9.13
     assert "/api/avisos/agente" in direito
     assert "+30" not in src
     assert "topo_sessao" not in src  # o tempo e o Encerrar estao no widget e no dock
@@ -906,7 +906,7 @@ def test_cor_da_categoria_no_agente():
 def test_banner_abre_o_link_do_cartaz():
     src = _fonte()
     prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
-    assert "Ver no navegador / Inscrição" in prog
+    assert "Abrir Inscrição / Programação" in prog  # 9.13: o texto do botão mudou
     assert "webbrowser.open(" in prog
     assert 'item.get("link")' in prog
 
@@ -924,7 +924,7 @@ def test_area_do_cliente_acabamento_shadcn():
     cartao = src[src.index("def montar_cartao("):src.index("def baixar_imagem(")]
     assert "0.4)  # opacity-60" in cartao  # capa escurecida: 40% do zinc-950 por cima
     prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
-    assert "return 250" in prog
+    assert "min(340" in prog  # 9.13: h-[340px] (encolhe em tela baixa)
     assert "AZUL" in prog  # botao do banner em pilula azul
     banner = src[src.index("def montar_banner("):src.index("def montar_cartao(")]
     assert "#09090b" in banner  # degrade da esquerda no zinc-950, nao em preto
@@ -1016,3 +1016,36 @@ def test_trocar_o_piso_pela_manutencao():
     salvar = janela[janela.index("        def salvar():"):]
     assert 'gravar_cfg(PISO=piso, ID="")' in salvar and "askyesno" in salvar
     assert salvar.index("askyesno") < salvar.index('gravar_cfg(PISO=piso, ID="")') < salvar.index("os.execv")
+
+
+def test_area_do_cliente_terceira_versao():
+    # 11/11 (9.13): imagem + prompt do Matheus. Menu so com a marca, Inicio, Meus
+    # Apps e Configuracoes no rodape (sem o cartao do cliente, sem Historico); o
+    # cliente vai para o card da sessao, a direita; avisos com tipo e horario;
+    # dock com abas dos apps abertos a esquerda
+    src = _fonte()
+    menu = src[src.index("class MenuLateral:"):src.index("class PainelDireito:")]
+    assert "LARGURA_ABERTO, LARGURA_FECHADO = 240, 64" in menu
+    assert '"Início"' in menu and '"Meus Apps"' in menu and '"Configurações"' in menu
+    assert "Histórico" not in menu and "avatar" not in menu  # o cliente saiu do menu
+    direito = src[src.index("class PainelDireito:"):src.index("class AgenteApp:")]
+    assert "TEMPO RESTANTE DE USO" in direito and "Login:" in direito and "Online" in direito
+    assert '"alerta"' in direito and '"evento"' in direito and 'aviso.get("horario")' in direito
+    assert "+30" not in src
+    tela = src[src.index("class TelaApps:"):src.index("class TelaLogin:")]
+    assert "Aplicativos da Estação" in tela and "liberados" in tela
+    assert "Buscar por nome ou categoria" in tela
+    assert '"Aberto"' in tela and '"Pronto"' in tela  # situacao do app no card
+    prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
+    assert 'item.get("descricao")' in prog or '"descricao"' in prog
+    assert "Abrir Inscrição / Programação" in prog
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert "_caixas(" in dock  # abas da esquerda, cada uma com a sua largura
+    inicio = src[src.index("    def __init__(self, root"):src.index("        self._build_ui()")]
+    assert '"Inter"' in src and "FONTE" in inicio  # Inter se estiver instalada
+
+
+def test_busca_acha_pela_categoria():
+    ns = _carregar("normalizar_busca", "categorias_da_tela", "filtrar_apps")
+    apps = [{"nome": "Kindle", "categoria": "Estudo & Leitura"}, {"nome": "Chrome", "categoria": "Navegação"}]
+    assert [a["nome"] for a in ns["filtrar_apps"](apps, "todos", "navegacao")] == ["Chrome"]

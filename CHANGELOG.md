@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-11 — Área do Cliente, terceira versão (9.13)
+
+- **Visual da imagem enviada pelo Matheus**, no agente (Tkinter):
+  - **Menu mais limpo**: só a marca, Início, Meus Apps (com a quantidade) e **Configurações** no rodapé, que abre preferências da sessão (tema e tamanho do texto dos apps). O cliente saiu do menu.
+  - **Card da sessão com o cliente**: avatar, nome, estação, login e Online no topo; embaixo o tempo restante, a hora de início, o limite e a barra.
+  - **Avisos com tipo e horário**: Alerta (âmbar), Evento (violeta) ou Informativo (azul), com ícone e título na cor.
+  - **Banner** mais alto, com selo, título, **descrição e créditos** do cartaz, botão "Abrir Inscrição / Programação" e setas para trocar de cartaz.
+  - **Apps**: "Aplicativos da Estação" com a quantidade liberada, busca que acha também pela categoria, pílulas arredondadas, ícone da categoria no card e a situação **Pronto / Aberto**.
+  - **Dock**: à esquerda o botão M e uma aba para cada app aberto; à direita notificações, relógio e tempo juntos, tema e Encerrar.
+  - Fonte **Inter** quando estiver instalada no PC; senão continua a Segoe UI.
+- **Painel** (Programação e avisos): tipo e horário em cada aviso; descrição e créditos em cada cartaz.
+- O login do PC agora recebe o login do cliente (para o card da sessão).
+- Sem Histórico no menu, por decisão do Matheus.
+
 ## 2026-11-11 — Trocar o piso pela manutenção (agente 1.22.0)
 
 - Configurar conexão (Ctrl+Shift+M, modo manutenção) ganhou o campo **Piso**, com a lista do servidor e o piso atual do PC já escolhido. Trocar para outro piso pede confirmação e faz o PC entrar lá como computador novo (mesma regra do instalar.bat: ID novo); no mesmo piso, só grava o piso.
