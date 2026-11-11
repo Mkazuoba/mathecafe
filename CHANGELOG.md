@@ -11,7 +11,7 @@
 - **Históricos → Por estação** ganhou o próprio filtro **Piso** (começa no último piso usado); **Por cliente** busca clientes de todos os pisos. **Uso** já tinha o filtro de piso.
 - Corrigido: o histórico de um cliente juntava numa linha só estações de mesmo nome nos dois pisos (AD-01 do Adulto e do Infantil). Agora cada uma tem a sua linha, com o piso.
 
-## 2026-11-11 — Acabamento da Área do Cliente (9.12)
+## 2026-11-11 — Acabamento da Área do Cliente (9.12; agente 1.21.0)
 
 - **Cards dos apps no padrão novo**: capa em cima (escurecida), selo da categoria no canto, ícone sobre a capa e embaixo o nome, uma **descrição curta** e um só botão **Abrir** (azul). Com o mouse em cima, a borda puxa para a cor da categoria.
 - **Descrição do app**: campo novo em Configurações → Apps permitidos → editar app ("Descrição curta", até 120 letras). Sem descrição, o card mostra o nome da categoria.
