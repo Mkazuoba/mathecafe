@@ -909,3 +909,34 @@ def test_banner_abre_o_link_do_cartaz():
     assert "Ver no navegador / Inscrição" in prog
     assert "webbrowser.open(" in prog
     assert 'item.get("link")' in prog
+
+
+def test_area_do_cliente_acabamento_shadcn():
+    # 11/11 (9.12): segundo prompt do Matheus: cards com capa em cima e rodape
+    # (titulo, descricao e Abrir azul a direita), selo no canto de cima a
+    # esquerda, banner de 250 px com degrade do fundo, dock em barra inteira com
+    # Encerrar rosa suave, relogio e tempo juntos e contador azul
+    src = _fonte()
+    tela = src[src.index("class TelaApps:"):src.index("class TelaLogin:")]
+    assert "CAPA_H = 128" in tela
+    assert 'a.get("descricao")' in tela
+    assert "AZUL" in tela and '"Abrir"' in tela
+    cartao = src[src.index("def montar_cartao("):src.index("def baixar_imagem(")]
+    assert "0.4)  # opacity-60" in cartao  # capa escurecida: 40% do zinc-950 por cima
+    prog = src[src.index("class Programacao:"):src.index("class TelaApps:")]
+    assert "return 250" in prog
+    assert "AZUL" in prog  # botao do banner em pilula azul
+    banner = src[src.index("def montar_banner("):src.index("def montar_cartao(")]
+    assert "#09090b" in banner  # degrade da esquerda no zinc-950, nao em preto
+    dock = src[src.index("class BarraSessao:"):src.index("class Notificacoes:")]
+    assert "Pilula(" in dock and "ROSA" in dock
+    assert '"#ef4444", fg="white"' not in dock  # sem o vermelho vivo no Encerrar
+    assert "AZUL" in dock[dock.index("def atualizar_sininho"):]  # contador azul
+    assert "class Pilula:" in src
+    # sem branco puro nos textos dos cards e do banner
+    assert 'fill="#ffffff"' not in tela and 'fill="#ffffff"' not in prog
+
+
+def test_paleta_das_categorias_no_agente():
+    ns = _carregar("_paleta_categorias")
+    assert ns["_paleta_categorias"]()[:5] == ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e"]

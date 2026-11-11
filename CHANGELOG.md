@@ -6,6 +6,15 @@
 - **Históricos → Por estação** ganhou o próprio filtro **Piso** (começa no último piso usado); **Por cliente** busca clientes de todos os pisos. **Uso** já tinha o filtro de piso.
 - Corrigido: o histórico de um cliente juntava numa linha só estações de mesmo nome nos dois pisos (AD-01 do Adulto e do Infantil). Agora cada uma tem a sua linha, com o piso.
 
+## 2026-11-11 — Acabamento da Área do Cliente (9.12)
+
+- **Cards dos apps no padrão novo**: capa em cima (escurecida), selo da categoria no canto, ícone sobre a capa e embaixo o nome, uma **descrição curta** e um só botão **Abrir** (azul). Com o mouse em cima, a borda puxa para a cor da categoria.
+- **Descrição do app**: campo novo em Configurações → Apps permitidos → editar app ("Descrição curta", até 120 letras). Sem descrição, o card mostra o nome da categoria.
+- **Cores das categorias** como no prompt: violeta, azul, **verde esmeralda**, âmbar e rosa (categorias novas; as já criadas mantêm a cor escolhida).
+- **Banner** com 250 px de altura, degradê escuro da esquerda e o botão "Ver no navegador / Inscrição" em pílula azul.
+- **Dock** em barra inteira na base da tela: sininho discreto com contador azul, relógio e tempo restante juntos, tema e **Encerrar sessão em rosa suave** (no lugar do vermelho vivo).
+- Textos sem branco puro e rótulos pequenos em caixa alta, nos dois temas.
+
 ## 2026-11-11 — Mapas separados por piso, parte B: o instalador escolhe o piso (6.18; agente 1.20.0)
 
 - **Instalador**: depois de testar o servidor, pergunta **em qual piso** fica o computador (a lista vem do servidor: Adulto, Infantil...) e grava `PISO=` no `agente.cfg`. Sem resposta do servidor, segue sem piso.

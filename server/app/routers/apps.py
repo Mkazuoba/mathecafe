@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from app.database import get_db
 from app.models import AppPermitido, AppPiso, CategoriaApp, GrupoEstacao, Piso
@@ -17,6 +17,7 @@ class AppCreate(BaseModel):
     imagem_url: Optional[str] = None
     piso_id: Optional[int] = None  # nasce ligado neste piso (vazio: o padrao)
     categoria_id: Optional[int] = None
+    descricao: Optional[str] = Field(default=None, max_length=120)
 
 class AppUpdate(BaseModel):
     nome: Optional[str] = None
@@ -28,6 +29,7 @@ class AppUpdate(BaseModel):
     grupo_id: Optional[int] = None
     # categoria: o que vier substitui (null = sem categoria); o que nao vier fica
     categoria_id: Optional[int] = None
+    descricao: Optional[str] = Field(default=None, max_length=120)  # "" apaga
 
 def validar_caminho(caminho: Optional[str]) -> Optional[str]:
     """O agente executa o caminho diretamente: precisa ser o arquivo .exe."""
@@ -48,6 +50,7 @@ def serial(a: AppPermitido):
         "grupo_nome": a.grupo.nome if a.grupo else "Todos os grupos",
         "ativo": a.ativo,
         "categoria_id": a.categoria_id,
+        "descricao": a.descricao,
         "categoria_nome": a.categoria.nome if a.categoria else None,
         # pisos em que o app esta ligado
         "pisos": sorted(p.piso_id for p in a.pisos_ligados),
@@ -80,6 +83,7 @@ def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfi
         caminho=validar_caminho(data.caminho),
         imagem_url=data.imagem_url.strip() if data.imagem_url else None,
         categoria_id=data.categoria_id,
+        descricao=(data.descricao or "").strip() or None,
     )
     app_p.pisos_ligados.append(AppPiso(piso_id=piso.id))
     db.add(app_p); db.commit(); db.refresh(app_p)
@@ -117,6 +121,8 @@ def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends
         app_p.caminho = validar_caminho(data.caminho)
     if data.imagem_url is not None:
         app_p.imagem_url = data.imagem_url.strip() or None
+    if data.descricao is not None:
+        app_p.descricao = data.descricao.strip() or None
     if data.ativo is not None: app_p.ativo = data.ativo
     if "grupo_id" in data.model_fields_set:
         if data.grupo_id is not None and not db.query(GrupoEstacao).filter(GrupoEstacao.id == data.grupo_id).first():

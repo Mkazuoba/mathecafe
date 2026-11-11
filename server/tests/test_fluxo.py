@@ -2546,3 +2546,32 @@ def test_historico_do_cliente_separa_o_mesmo_nome_nos_dois_pisos(c, admin):
     assert sorted((i["estacao"], i["piso_id"], i["tempo_segundos"]) for i in itens) == sorted([
         (nome, pisos["Adulto"]["id"], 600), (nome, pisos["Infantil"]["id"], 1200)])
     assert {i["estacao_id"] for i in itens} == {est["Adulto"]["id"], est["Infantil"]["id"]}
+
+
+# ── Area do Cliente, acabamento (9.12): descricao do app e cores da paleta ───
+
+def test_app_tem_descricao_curta(c, admin, cenario):
+    n = next(_contador)
+    proc = f"desc{n}.exe"
+    r = c.post("/api/apps/", headers=admin, json={"nome": "Kindle", "processo": proc, "caminho": f"C:\\{proc}",
+                                                 "descricao": "  Livros digitais da biblioteca  "})
+    assert r.status_code == 200, r.text
+    aid = r.json()["id"]
+    assert r.json()["descricao"] == "Livros digitais da biblioteca"
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"nome": "Kindle 2"}).json()["descricao"] == \
+        "Livros digitais da biblioteca"  # o que nao vem fica
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"descricao": "x" * 121}).status_code == 422
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+        item = next(a for a in dados["whitelist"] if a["processo"] == proc)
+        assert item["descricao"] == "Livros digitais da biblioteca"
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+    assert c.put(f"/api/apps/{aid}", headers=admin, json={"descricao": ""}).json()["descricao"] is None
+
+
+def test_paleta_das_categorias_do_prompt():
+    # violet-500, blue-500, emerald-500, amber-500, rose-500 nessa ordem
+    from app.routers.categorias import CORES
+    assert CORES[:5] == ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e"]

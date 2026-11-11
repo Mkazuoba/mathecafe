@@ -111,6 +111,7 @@ def whitelist_para_o_agente(apps) -> list:
             "categoria": a.categoria.nome if a.categoria else None,
             "categoria_ordem": a.categoria.ordem if a.categoria else None,
             "categoria_cor": cor_da_categoria(a.categoria) if a.categoria else None,
+            "descricao": a.descricao,
         }
         for a in apps
     ]

@@ -447,6 +447,11 @@ PALETAS = {
 ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
 # o computador acima do login: conectando, online, offline
 COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f97316", "#22c55e", "#ef4444"
+# acabamento da Área do Cliente (9.12, padrão shadcn): sem branco puro nem vermelho vivo
+ZINC_950, ZINC_900 = "#09090b", "#18181b"
+AZUL, AZUL_CLARO = "#2563eb", "#3b82f6"  # blue-600 / blue-500: Abrir, banner, contador
+ROSA, ROSA_CLARO, ROSA_TEXTO = "#e11d48", "#f43f5e", "#fb7185"  # Encerrar sessão
+TEXTO_CLARO = "#f4f4f5"  # zinc-100, no lugar do branco puro
 
 CORES_DOS_WIDGETS = ("background", "foreground", "activebackground", "activeforeground",
                      "highlightbackground", "highlightcolor", "insertbackground",
@@ -460,6 +465,16 @@ def escurecer(cor, fator=0.82):
     except (ValueError, TypeError):
         return cor
     return "#%02x%02x%02x" % tuple(max(0, int(v * fator)) for v in (r, g, b))
+
+
+def misturar(cor, fundo, quanto):
+    """`cor` sobre `fundo` com opacidade `quanto` (0 a 1): o bg-cor/15 do Tailwind."""
+    try:
+        a = [int(cor[i:i + 2], 16) for i in (1, 3, 5)]
+        b = [int(fundo[i:i + 2], 16) for i in (1, 3, 5)]
+    except (ValueError, TypeError):
+        return cor
+    return "#%02x%02x%02x" % tuple(round(x * quanto + y * (1 - quanto)) for x, y in zip(a, b))
 
 
 def cor_valida(cor):
@@ -552,6 +567,52 @@ class BloqueioTeclado:
             self._user32.DispatchMessageW(ctypes.byref(msg))
 
 
+class Pilula:
+    """Botão (ou rótulo) de cantos arredondados desenhado num Canvas: o Tk não
+    arredonda Button nem pinta borda colorida. `estilo(sobre)` devolve
+    (fundo, borda, texto) com as cores do tema na hora (troca de tema e piso).
+    config(text=..., fg=...) muda o texto ou a cor dele, como num Label."""
+
+    def __init__(self, pai, texto, fonte, estilo, fundo_pai, comando=None, padx=12, altura=30, raio=10):
+        self.texto, self.fonte, self.estilo, self.fundo_pai = texto, fonte, estilo, fundo_pai
+        self.comando, self.padx, self.altura, self.raio = comando, padx, altura, raio
+        self.fg = None  # cor do texto fixada por config(fg=)
+        self.sobre = False
+        self.canvas = tk.Canvas(pai, height=altura, highlightthickness=0, bd=0,
+                                cursor="hand2" if comando else "arrow")
+        if comando:
+            self.canvas.bind("<Enter>", lambda e: self._mouse(True))
+            self.canvas.bind("<Leave>", lambda e: self._mouse(False))
+            self.canvas.bind("<Button-1>", lambda e: self.comando())
+        self.desenhar()
+
+    def pack(self, **opcoes):
+        self.canvas.pack(**opcoes)
+
+    def config(self, text=None, fg=None, **_):
+        if text is not None:
+            self.texto = text
+        if fg is not None:
+            self.fg = fg or None  # "" volta a cor do estilo
+        self.desenhar()
+
+    configure = config
+
+    def _mouse(self, sim):
+        self.sobre = sim
+        self.desenhar()
+
+    def desenhar(self):
+        c = self.canvas
+        fundo, borda, cor_texto = self.estilo(self.sobre)
+        largura = self.fonte.measure(self.texto) + 2 * self.padx
+        c.config(width=largura, bg=self.fundo_pai())
+        c.delete("all")
+        BarraSessao._retangulo(c, 0, 0, largura - 1, self.altura - 1, self.raio, fill=borda, outline="")
+        BarraSessao._retangulo(c, 1, 1, largura - 2, self.altura - 2, self.raio - 1, fill=fundo, outline="")
+        c.create_text(largura / 2, self.altura / 2, text=self.texto, font=self.fonte, fill=self.fg or cor_texto)
+
+
 class BarraSessao:
     """Dock do MatheCafé na sessão, no lugar da barra do Windows (9.4).
 
@@ -608,26 +669,45 @@ class BarraSessao:
         self._janela_bloco = None  # item do canvas com o bloco (criado uma vez só)
         self._img_pasta = None  # ícone de pasta (Meus arquivos), guardado para o Tk não perdê-lo
 
-        # bloco da direita (widgets de verdade, sobre um retângulo arredondado do canvas)
-        self.bloco = tk.Frame(self.canvas, bg=p["superficie"])
-        # sininho pequeno, colado na hora (clicar mostra/esconde as notificações)
-        self.sininho = tk.Canvas(self.bloco, width=26, height=26, bg=p["superficie"], highlightthickness=0,
+        # bloco da direita: sininho, relógio + tempo juntos, tema e Encerrar, em pílulas
+        # (9.12: bg-zinc-900 com borda zinc-800; Encerrar em rosa suave)
+        self._hora, self._tempo, self._alerta = "--:--", "00:00:00", False
+        self.bloco = tk.Frame(self.canvas, bg=p["fundo"])
+        fundo_bloco = lambda: self.app.paleta["fundo"]
+        neutro = lambda sobre: (self.app.paleta["superficie2" if sobre else "superficie"], self.app.paleta["borda"],
+                                self.app.paleta["texto2"])
+        # sininho pequeno com o contador azul (clicar mostra/esconde as notificações)
+        self.sininho = tk.Canvas(self.bloco, width=34, height=32, bg=p["fundo"], highlightthickness=0,
                                  bd=0, cursor="hand2")
-        self.sininho.pack(side="left", padx=(8, 0))
+        self.sininho.pack(side="left", padx=(0, 6))
         self.sininho.bind("<Button-1>", lambda _e: self._sininho())
-        self.lbl_relogio = tk.Label(self.bloco, text="--:--", font=("Segoe UI", 12, "bold"),
-                                    fg=p["texto"], bg=p["superficie"])
-        self.lbl_relogio.pack(side="left", padx=(2, 6))
-        self.lbl_tempo = tk.Label(self.bloco, text="00:00:00", font=("Consolas", 12, "bold"),
-                                  fg="#22c55e", bg=p["superficie"])
-        self.lbl_tempo.pack(side="left", padx=6)
-        self.btn_tema = tk.Button(self.bloco, text=ROTULO_TEMA[app.tema], font=app.f_small, bg=p["superficie2"],
-                                  fg=p["texto2"], activebackground=p["superficie3"], relief="flat", padx=8,
-                                  command=app.alternar_tema)
-        self.btn_tema.pack(side="left", padx=3, pady=4)
-        tk.Button(self.bloco, text="Encerrar sessão", font=app.f_small, bg="#ef4444", fg="white",
-                  activebackground="#dc2626", activeforeground="white", relief="flat", padx=10,
-                  command=app._encerrar_sessao_cliente).pack(side="left", padx=(3, 6), pady=4)
+        self.lbl_relogio = Pilula(self.bloco, "", tkfont.Font(family="Consolas", size=9), neutro, fundo_bloco,
+                                  altura=30)
+        self.lbl_relogio.pack(side="left", padx=3)
+        self._mostrar_relogio()
+        self.btn_tema = Pilula(self.bloco, ROTULO_TEMA[app.tema], tkfont.Font(family="Segoe UI", size=8, weight="bold"),
+                               neutro, fundo_bloco, comando=app.alternar_tema, altura=30)
+        self.btn_tema.pack(side="left", padx=3)
+        rosa = lambda sobre: ((ROSA, ROSA, TEXTO_CLARO) if sobre else
+                              (misturar(ROSA, self.app.paleta["fundo"], 0.15),
+                               misturar(ROSA_CLARO, self.app.paleta["fundo"], 0.3), ROSA_TEXTO))
+        self.btn_encerrar = Pilula(self.bloco, "Encerrar sessão", tkfont.Font(family="Segoe UI", size=8, weight="bold"),
+                                   rosa, fundo_bloco, comando=app._encerrar_sessao_cliente, altura=30)
+        self.btn_encerrar.pack(side="left", padx=(3, 0))
+
+    def _mostrar_relogio(self):
+        """Hora e tempo restante no mesmo bloco (font-mono); o tempo fica rosa nos 5 minutos finais."""
+        self.lbl_relogio.config(text=f"{self._hora}  \u00b7  {self._tempo}", fg=ROSA_TEXTO if self._alerta else "")
+
+    def definir_hora(self, hora):
+        if hora != self._hora:
+            self._hora = hora
+            self._mostrar_relogio()
+
+    def definir_tempo(self, texto, alerta):
+        if (texto, alerta) != (self._tempo, self._alerta):
+            self._tempo, self._alerta = texto, alerta
+            self._mostrar_relogio()
 
     # ── janela ──
     def mostrar(self):
@@ -663,7 +743,7 @@ class BarraSessao:
             self.top.deiconify()
         if barra_do_windows_visivel():
             barra_do_windows(False)
-        self.lbl_relogio.config(text=time.strftime("%H:%M"))
+        self.definir_hora(time.strftime("%H:%M"))
         self.top.lift()
 
     def inicio(self):
@@ -852,10 +932,12 @@ class BarraSessao:
         largura = self.top.winfo_width() or self.app.root.winfo_screenwidth()
         h, t = self.altura, self.ICONE
         meio = h / 2
+        # barra inteira na base (bg zinc-950, borda de cima zinc-800)
+        c.create_rectangle(0, 0, largura, h, fill=p["fundo"], outline="", tags="desenho")
+        c.create_line(0, 0, largura, 0, fill=p["borda"], tags="desenho")
+        c.tag_lower("desenho")
         if self._itens:
             centros = self._centros()
-            self._retangulo(c, centros[0] - t / 2 - 8, 3, centros[-1] + t / 2 + 8, h - 3, 14,
-                            fill=p["superficie"], outline=p["superficie3"], tags="desenho")
             for k, (item, x) in enumerate(zip(self._itens, centros)):
                 topo = meio - t / 2 - 2
                 if item["chave"] == "arquivos" and PIL_AVAILABLE:
@@ -878,16 +960,15 @@ class BarraSessao:
                                   font=("Segoe UI", int(t * 0.4), "bold"), tags="desenho")
                 if item["chave"] == self._foco:
                     c.create_oval(x - 2, h - 6, x + 2, h - 2, fill=p["texto"], outline="", tags="desenho")
-        # bloco separado à direita: sininho, relógio, tempo, tema e Encerrar
+        # bloco à direita: sininho, relógio + tempo, tema e Encerrar (pílulas)
         self.atualizar_sininho()
-        self.bloco.update_idletasks()
-        bw = self.bloco.winfo_reqwidth()
-        self._retangulo(c, largura - bw - 18, 3, largura - 6, h - 3, 12, fill=p["superficie"],
-                        outline=p["superficie3"], tags="desenho")
+        self.bloco.config(bg=p["fundo"])
+        for pil in (self.lbl_relogio, self.btn_tema, self.btn_encerrar):
+            pil.desenhar()
         if self._janela_bloco is None:
-            self._janela_bloco = c.create_window(largura - 12, meio, window=self.bloco, anchor="e")
+            self._janela_bloco = c.create_window(largura - 16, meio, window=self.bloco, anchor="e")
         else:
-            c.coords(self._janela_bloco, largura - 12, meio)
+            c.coords(self._janela_bloco, largura - 16, meio)
 
     def _icone_pasta(self):
         if self._img_pasta is None:
@@ -898,12 +979,15 @@ class BarraSessao:
         """Só o sininho (número de não lidas), sem tocar no resto do dock."""
         s, p = self.sininho, self.app.paleta
         s.delete("all")
-        s.config(bg=p["superficie"])
+        s.config(bg=p["fundo"])
         n = self.contagem_notificacoes()
-        s.create_text(12, 14, text="🔔", font=("Segoe UI Emoji", 11), fill=p["texto" if n else "texto2"])
+        # botão discreto (bg zinc-900, borda zinc-800) com o contador azul
+        self._retangulo(s, 0, 1, 30, 31, 10, fill=p["borda"], outline="")
+        self._retangulo(s, 1, 2, 29, 30, 9, fill=p["superficie"], outline="")
+        s.create_text(15, 16, text="\uEA8F", font=("Segoe MDL2 Assets", 10), fill=p["texto" if n else "texto2"])
         if n:
-            s.create_oval(14, 1, 26, 13, fill="#ef4444", outline="")
-            s.create_text(20, 7, text=str(n) if n < 10 else "9+", fill="white", font=("Segoe UI", 6, "bold"))
+            s.create_oval(21, 0, 33, 12, fill=AZUL, outline=p["fundo"])
+            s.create_text(27, 6, text=str(n) if n < 10 else "9+", fill=TEXTO_CLARO, font=("Segoe UI", 6, "bold"))
 
 
 class Notificacoes:
@@ -1344,10 +1428,13 @@ def montar_banner(cartaz, largura, altura, fundo):
     pequeno = _preencher(cartaz, max(1, largura // 4), max(1, altura // 4))
     fundo_img = pequeno.filter(ImageFilter.GaussianBlur(6)).resize((largura, altura), Image.BILINEAR)
     fundo_img = Image.blend(fundo_img, Image.new("RGB", fundo_img.size, (0, 0, 0)), 0.45)
-    # degradê da esquerda (onde fica o título): preto 70% -> 0% em 65% da largura
+    # degradê da esquerda (onde fica o título): zinc-950 cheio -> 90% -> transparente
+    def opacidade(v):
+        x = v / 255
+        return 1 - x / 0.45 * 0.1 if x < 0.45 else max(0.0, 0.9 * (1 - (x - 0.45) / 0.4))
     faixa = Image.linear_gradient("L").rotate(90, expand=True).resize((largura, altura))
-    faixa = faixa.point(lambda v: int(max(0.0, 1 - (v / 255) / 0.65) * 180))
-    fundo_img.paste((0, 0, 0), (0, 0), faixa)
+    faixa = faixa.point(lambda v: int(opacidade(v) * 255))
+    fundo_img.paste(_cor_rgb("#09090b"), (0, 0), faixa)
     # o cartaz inteiro, à direita
     margem = max(12, altura // 14)
     alto = altura - 2 * margem
@@ -1369,8 +1456,8 @@ def montar_banner(cartaz, largura, altura, fundo):
 
 def _paleta_categorias():
     """Cores das categorias quando o servidor não manda (antigo): violeta, azul,
-    verde, âmbar, rosa... As mesmas do servidor (routers/categorias.py)."""
-    return ["#8b5cf6", "#3b82f6", "#22c55e", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
+    esmeralda, âmbar, rosa... As mesmas do servidor (routers/categorias.py)."""
+    return ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
 
 
 def cor_do_app(app, destaque):
@@ -1385,49 +1472,68 @@ def cor_do_app(app, destaque):
     return cores[(app.get("categoria_ordem") or 0) % len(cores)]
 
 
-def montar_cartao(dados, largura, altura, fundo, cor_vazia, cor, margem, brilho=False):
-    """Card da grade de apps: a capa cobre o card (cortada no centro) com um
-    degradê escuro embaixo para o nome e o botão. Sem capa (dados None), um
-    degradê da cor da categoria. O card fica no meio de uma moldura de `margem`
-    px na cor do fundo, onde cabem a sombra (normal) ou o brilho na cor da
-    categoria (mouse em cima). Imagem RGB de (largura + 2m) x (altura + 2m)."""
-    img = None
+def montar_cartao(dados, largura, altura, capa_h, fundo, cartao, borda, cor, margem, brilho=False):
+    """Card da grade de apps (9.12): capa em cima (capa_h px, escurecida como
+    opacity-60 sobre o zinc-950) e o rodapé liso na cor `cartao`, com borda de
+    1 px. Mouse em cima (brilho): a borda puxa para a cor da categoria. Sem capa
+    (dados None), um degradê da cor da categoria. O card fica no meio de uma
+    moldura de `margem` px na cor do fundo, onde cabe a sombra. Imagem RGB."""
+    S = 3
+    capa = None
     if dados:
         try:
-            img = _preencher(Image.open(BytesIO(dados)).convert("RGB"), largura, altura)
+            capa = _preencher(Image.open(BytesIO(dados)).convert("RGB"), largura, capa_h)
+            capa = Image.blend(capa, Image.new("RGB", capa.size, _cor_rgb(ZINC_950)), 0.4)  # opacity-60
         except Exception:
-            img = None
-    if img is None:
-        img = Image.blend(Image.new("RGB", (largura, altura), _cor_rgb(cor_vazia)),
-                          Image.new("RGB", (largura, altura), _cor_rgb(cor)), 0.55)
-        degrade = Image.linear_gradient("L").resize((largura, altura))
-        img.paste(_cor_rgb(cor_vazia), (0, 0), degrade)
-    if brilho:  # a capa puxa para a cor da categoria
-        img = Image.blend(img, Image.new("RGB", img.size, _cor_rgb(cor)), 0.12)
-    sombra = Image.linear_gradient("L").resize((largura, altura))  # 0 em cima, 255 embaixo
-    sombra = sombra.point(lambda v: int(max(0, (v / 255 - 0.38) / 0.62) * 225))
-    img.paste((0, 0, 0), (0, 0), sombra)
-    S = 3
-    if brilho:  # contorno fino na cor da categoria
-        borda = Image.new("L", (largura * S, altura * S), 0)
-        d = ImageDraw.Draw(borda)
-        d.rounded_rectangle((0, 0, largura * S - 1, altura * S - 1), 14 * S, fill=255)
-        d.rounded_rectangle((2 * S, 2 * S, largura * S - 1 - 2 * S, altura * S - 1 - 2 * S), 12 * S, fill=0)
-        img.paste(_cor_rgb(cor), (0, 0), borda.resize((largura, altura), Image.LANCZOS))
+            capa = None
+    if capa is None:
+        capa = Image.blend(Image.new("RGB", (largura, capa_h), _cor_rgb(ZINC_900)),
+                           Image.new("RGB", (largura, capa_h), _cor_rgb(cor)), 0.45)
+        capa.paste(_cor_rgb(ZINC_900), (0, 0), Image.linear_gradient("L").resize((largura, capa_h)))
+    if brilho:
+        capa = Image.blend(capa, Image.new("RGB", capa.size, _cor_rgb(cor)), 0.08)
+    # o card: borda de 1 px (cor da categoria a 40% no hover) e o rodapé liso
+    contorno = misturar(cor, cartao, 0.4) if brilho else borda
+    card = Image.new("RGB", (largura, altura), _cor_rgb(cartao))
+    card.paste(capa, (0, 0))
+    linha = Image.new("L", (largura * S, altura * S), 0)
+    d = ImageDraw.Draw(linha)
+    d.rounded_rectangle((0, 0, largura * S - 1, altura * S - 1), 14 * S, fill=255)
+    d.rounded_rectangle((S, S, largura * S - 1 - S, altura * S - 1 - S), 13 * S, fill=0)
+    card.paste(_cor_rgb(contorno), (0, 0), linha.resize((largura, altura), Image.LANCZOS))
+    # moldura com a sombra
     total = Image.new("RGB", (largura + 2 * margem, altura + 2 * margem), _cor_rgb(fundo))
     halo = Image.new("L", total.size, 0)
-    if brilho:
-        ImageDraw.Draw(halo).rounded_rectangle((margem - 2, margem - 2, margem + largura + 2, margem + altura + 2), 16,
-                                               fill=170)
-        total.paste(_cor_rgb(cor), (0, 0), halo.filter(ImageFilter.GaussianBlur(margem / 2)))
-    else:
-        ImageDraw.Draw(halo).rounded_rectangle((margem + 2, margem + 5, margem + largura - 2, margem + altura + 3), 14,
-                                               fill=120)
-        total.paste((0, 0, 0), (0, 0), halo.filter(ImageFilter.GaussianBlur(margem / 2)))
+    ImageDraw.Draw(halo).rounded_rectangle((margem + 3, margem + 6, margem + largura - 3, margem + altura + 2), 14,
+                                           fill=150 if brilho else 90)
+    total.paste((0, 0, 0), (0, 0), halo.filter(ImageFilter.GaussianBlur(margem / 2)))
     mascara = Image.new("L", (largura * S, altura * S), 0)
     ImageDraw.Draw(mascara).rounded_rectangle((0, 0, largura * S - 1, altura * S - 1), 14 * S, fill=255)
-    total.paste(img, (margem, margem), mascara.resize((largura, altura), Image.LANCZOS))
+    total.paste(card, (margem, margem), mascara.resize((largura, altura), Image.LANCZOS))
     return total
+
+
+def cortar_linhas(texto, fonte, largura, linhas=2):
+    """O texto em até `linhas` linhas de `largura` px; o que sobra vira "…" (line-clamp)."""
+    palavras, saida, atual = (texto or "").split(), [], ""
+    for p in palavras:
+        teste = f"{atual} {p}".strip()
+        if fonte.measure(teste) <= largura or not atual:
+            atual = teste
+            continue
+        saida.append(atual)
+        atual = p
+        if len(saida) == linhas:
+            break
+    else:
+        if atual:
+            saida.append(atual)
+        return "\n".join(saida[:linhas])
+    ultima = saida[-1]
+    while ultima and fonte.measure(ultima + "…") > largura:
+        ultima = ultima[:-1]
+    saida[-1] = ultima.rstrip() + "…"
+    return "\n".join(saida)
 
 
 def baixar_imagem(url, timeout=8):
@@ -1469,7 +1575,7 @@ class Programacao:
 
     @staticmethod
     def altura_para(tela):
-        return max(170, min(280, int(tela * 0.3)))
+        return 250  # h-[250px] do prompt
 
     def recarregar(self):
         if not PIL_AVAILABLE:
@@ -1588,31 +1694,33 @@ class Programacao:
         h = img.height
         x = max(28, h // 7)
         livre = max(120, img.width - largura_cartaz - x - 24)
-        c.create_text(x, h * 0.26, anchor="w", text="PROGRAMAÇÃO DA BIBLIOTECA", fill=p["destaque"],
-                      font=("Segoe UI", 10, "bold"))
+        c.create_text(x, h * 0.26, anchor="w", text="PROGRAMAÇÃO DA BIBLIOTECA", fill="#a1a1aa",
+                      font=("Segoe UI", 8, "bold"))
         item = {"titulo": self.itens[i][0] or "", "link": self.itens[i][2] if len(self.itens[i]) > 2 else None}
         titulo = item["titulo"]
         tamanho = 26 if len(titulo) < 40 else 20
-        id_titulo = c.create_text(x, h * 0.26 + 18, anchor="nw", text=titulo, fill="#ffffff", width=livre,
+        id_titulo = c.create_text(x, h * 0.26 + 16, anchor="nw", text=titulo, fill=TEXTO_CLARO, width=livre,
                                   font=("Segoe UI", tamanho, "bold"))
         link = item.get("link")
         if link:  # botão do cartaz: abre a página (inscrição, notícia) no navegador
-            fonte = tkfont.Font(family="Segoe UI", size=10, weight="bold")
+            # pílula azul com sombra (bg-blue-600 hover:bg-blue-500 shadow-md)
+            fonte = tkfont.Font(family="Segoe UI", size=9, weight="bold")
             texto = "Ver no navegador / Inscrição  \u2197"
             y0 = (c.bbox(id_titulo) or (0, 0, 0, h * 0.5))[3] + 16
-            x1 = x + fonte.measure(texto) + 32
-            BarraSessao._retangulo(c, x, y0, x1, y0 + 38, 10, fill=p["destaque"], outline="", tags="link")
-            c.create_text((x + x1) / 2, y0 + 19, text=texto, fill="#ffffff", font=fonte, tags="link")
+            x1, alto = x + fonte.measure(texto) + 36, 34
+            BarraSessao._retangulo(c, x + 2, y0 + 4, x1 + 2, y0 + alto + 4, alto / 2, fill="#0b1636", outline="")
+            BarraSessao._retangulo(c, x, y0, x1, y0 + alto, alto / 2, fill=AZUL, outline="", tags=("link", "link_fundo"))
+            c.create_text((x + x1) / 2, y0 + alto / 2, text=texto, fill=TEXTO_CLARO, font=fonte, tags="link")
             c.tag_bind("link", "<Button-1>", lambda e, u=link: self._abrir_link(u))
-            c.tag_bind("link", "<Enter>", lambda e: c.config(cursor="hand2"))
-            c.tag_bind("link", "<Leave>", lambda e: c.config(cursor="arrow"))
+            c.tag_bind("link", "<Enter>", lambda e: (c.config(cursor="hand2"), c.itemconfig("link_fundo", fill=AZUL_CLARO)))
+            c.tag_bind("link", "<Leave>", lambda e: (c.config(cursor="arrow"), c.itemconfig("link_fundo", fill=AZUL)))
         # bolinhas: qual cartaz está na tela (clicar troca)
         if len(self.itens) > 1:
             for k in range(len(self.itens)):
                 cx, cy = x + k * 18 + 5, h - x * 0.7
                 atual = k == i
                 bol = c.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, outline="",
-                                    fill="#ffffff" if atual else "#6b7280")
+                                    fill=TEXTO_CLARO if atual else "#52525b")
                 c.tag_bind(bol, "<Button-1>", lambda e, k=k: self.ir_para(k))
                 c.tag_bind(bol, "<Enter>", lambda e: c.config(cursor="hand2"))
                 c.tag_bind(bol, "<Leave>", lambda e: c.config(cursor="arrow"))
@@ -1652,10 +1760,11 @@ class TelaApps:
     uma na cor da sua categoria; embaixo os cards com a capa, a logo e o selo
     na cor da categoria e um botão Abrir. Mouse em cima: o card sobe um pouco
     e brilha na cor da categoria."""
-    CARD_W, CARD_H = 166, 228
-    MARGEM = 10  # moldura do card: a sombra e o brilho cabem nela
-    ESPACO = 6
-    SUBIR = 4  # quanto o card sobe com o mouse em cima
+    CARD_W, CARD_H = 170, 250
+    CAPA_H = 128  # capa de altura fixa (h-32); embaixo, o rodapé com título, descrição e Abrir
+    MARGEM = 8  # moldura do card: a sombra cabe nela
+    ESPACO = 8
+    SUBIR = 2  # quanto o card sobe com o mouse em cima
 
     def __init__(self, app, frame):
         self.app = app
@@ -1804,40 +1913,59 @@ class TelaApps:
         cv = c["canvas"]
         cv.delete("all")
         cv.config(bg=p["fundo"])
-        M, W, H = self.MARGEM, self.CARD_W, self.CARD_H
+        M, W, H, CH = self.MARGEM, self.CARD_W, self.CARD_H, self.CAPA_H
         if PIL_AVAILABLE:
             if c["normal"] is None:
-                # sem capa: degradê da cor da categoria para o zinc-900, igual nos dois temas
-                args = (dados, W, H, p["fundo"], "#18181b", cor, M)
+                args = (dados, W, H, CH, p["fundo"], p["superficie"], p["borda"], cor, M)
                 c["normal"] = ImageTk.PhotoImage(montar_cartao(*args))
                 c["hover"] = ImageTk.PhotoImage(montar_cartao(*args, brilho=True))
             cv.create_image(0, 0, anchor="nw", image=c["hover"] if c["sobre"] else c["normal"], tags="capa")
         else:
-            BarraSessao._retangulo(cv, M, M, M + W, M + H, 14, fill=p["superficie"], outline="", tags="capa")
+            BarraSessao._retangulo(cv, M, M, M + W, M + H, 14, fill=p["superficie"], outline=p["borda"], tags="capa")
         nome = a.get("nome") or ""
-        if not dados:  # sem capa: a inicial grande no meio
-            cv.create_text(M + W / 2, M + H * 0.36, text=nome[:1].upper() or "?", fill="#ffffff",
-                           font=("Segoe UI", 44, "bold"))
-        # logo: quadrado na cor da categoria, no canto de cima
-        BarraSessao._retangulo(cv, M + 12, M + 12, M + 46, M + 46, 9, fill=cor, outline="")
-        cv.create_text(M + 29, M + 29, text=nome[:1].upper() or "?", fill="#ffffff", font=("Segoe UI", 14, "bold"))
-        # selo da categoria, no outro canto
+        letra = nome[:1].upper() or "?"
+        if not dados:  # sem capa: a inicial grande no meio da capa
+            cv.create_text(M + W / 2, M + CH / 2 - 4, text=letra, fill=misturar(cor, TEXTO_CLARO, 0.35),
+                           font=("Segoe UI", 36, "bold"))
+        # selo da categoria no canto de cima, à esquerda (fundo translúcido e borda na cor)
         categoria = (a.get("categoria") or "").strip() or "Outros"
-        fonte_selo = tkfont.Font(family="Segoe UI", size=8, weight="bold")
-        texto_selo, limite = categoria.upper(), W - 70
-        while fonte_selo.measure(texto_selo) + 18 > limite and len(texto_selo) > 2:
+        fonte_selo = tkfont.Font(family="Segoe UI", size=7, weight="bold")
+        texto_selo, limite = categoria.upper(), W - 24
+        while fonte_selo.measure(texto_selo) + 16 > limite and len(texto_selo) > 2:
             texto_selo = texto_selo[:-2].rstrip() + "…"  # não quebra em duas linhas
-        larg = min(limite, fonte_selo.measure(texto_selo) + 18)
-        BarraSessao._retangulo(cv, M + W - 12 - larg, M + 16, M + W - 12, M + 38, 11, fill=escurecer(cor, 0.55),
+        larg = fonte_selo.measure(texto_selo) + 16
+        BarraSessao._retangulo(cv, M + 10, M + 10, M + 10 + larg, M + 30, 8, fill=misturar(cor, ZINC_950, 0.5),
                                outline="")
-        cv.create_text(M + W - 12 - larg / 2, M + 27, text=texto_selo, fill="#ffffff", font=fonte_selo)
-        # nome e o botão Abrir
-        cv.create_text(M + 14, M + H - 58, anchor="sw", text=nome, fill="#ffffff", width=W - 28,
-                       font=("Segoe UI", 12, "bold"))
-        BarraSessao._retangulo(cv, M + 12, M + H - 48, M + W - 12, M + H - 14, 9, fill=cor, outline="",
-                               tags="abrir")
-        cv.create_text(M + W / 2, M + H - 31, text="Abrir", fill="#ffffff", font=("Segoe UI", 10, "bold"),
-                       tags="abrir_txt")
+        BarraSessao._retangulo(cv, M + 11, M + 11, M + 9 + larg, M + 29, 7, fill=misturar(cor, ZINC_950, 0.2),
+                               outline="")
+        cv.create_text(M + 10 + larg / 2, M + 20, text=texto_selo, fill=misturar(cor, TEXTO_CLARO, 0.45),
+                       font=fonte_selo)
+        # ícone (w-9 h-9 rounded-xl) sobre a borda de baixo da capa
+        y_ic = M + CH - 18
+        BarraSessao._retangulo(cv, M + 12, y_ic, M + 48, y_ic + 36, 11, fill=misturar(cor, ZINC_950, 0.55),
+                               outline="")
+        BarraSessao._retangulo(cv, M + 13, y_ic + 1, M + 47, y_ic + 35, 10, fill=misturar(cor, ZINC_900, 0.3),
+                               outline="")
+        cv.create_text(M + 30, y_ic + 18, text=letra, fill=misturar(cor, TEXTO_CLARO, 0.55),
+                       font=("Segoe UI", 13, "bold"))
+        # rodapé: título, descrição curta (2 linhas) e o Abrir à direita
+        fonte_desc = tkfont.Font(family="Segoe UI", size=8)
+        descricao = (a.get("descricao") or "").strip() or (categoria if categoria != "Outros" else "Aplicativo")
+        cv.create_text(M + 14, M + CH + 26, anchor="nw", text=nome, fill=p["texto"], width=W - 28,
+                       font=("Segoe UI", 10, "bold"))
+        cv.create_text(M + 14, M + CH + 46, anchor="nw", text=cortar_linhas(descricao, fonte_desc, W - 28),
+                       fill=p["texto2"], font=fonte_desc)
+        fonte_btn = tkfont.Font(family="Segoe UI", size=9, weight="bold")
+        bx1, by1 = M + W - 12, M + H - 12
+        bx0, by0 = bx1 - fonte_btn.measure("Abrir") - 28, by1 - 28
+        BarraSessao._retangulo(cv, bx0 + 1, by0 + 3, bx1 + 1, by1 + 3, 10, fill=misturar(AZUL, p["superficie"], 0.25),
+                               outline="")  # shadow-blue-600/20
+        BarraSessao._retangulo(cv, bx0, by0, bx1, by1, 10, fill=AZUL, outline="", tags=("abrir",))
+        cv.create_text((bx0 + bx1) / 2, (by0 + by1) / 2, text="Abrir", fill=TEXTO_CLARO, font=fonte_btn,
+                       tags=("abrir_txt",))
+        for tag in ("abrir", "abrir_txt"):
+            cv.tag_bind(tag, "<Enter>", lambda e, cv=cv: cv.itemconfig("abrir", fill=AZUL_CLARO))
+            cv.tag_bind(tag, "<Leave>", lambda e, cv=cv: cv.itemconfig("abrir", fill=AZUL))
         if c["sobre"]:
             cv.move("all", 0, -self.SUBIR)
 
@@ -1850,8 +1978,6 @@ class TelaApps:
         if c["normal"] is not None:  # só troca a imagem e sobe: sem redesenhar (não pisca)
             cv.itemconfig("capa", image=c["hover"] if sim else c["normal"])
         cv.move("all", 0, -self.SUBIR if sim else self.SUBIR)
-        cor = cor_do_app(c["app"], self.app.paleta["destaque"])
-        cv.itemconfig("abrir", fill=escurecer(cor, 0.85) if sim else cor)
 
     # ── pílulas e filtro ──
     def _cor_da_chave(self, chave):
@@ -1902,7 +2028,7 @@ class TelaApps:
             escolhida = chave == self.chave
             if escolhida:
                 BarraSessao._retangulo(cv, 1, 1, w - 1, h - 1, 16, fill=cor, outline="")
-                cor_texto = "#ffffff"
+                cor_texto = TEXTO_CLARO
             else:
                 fundo = p["superficie2"] if chave == sobre else p["superficie"]
                 BarraSessao._retangulo(cv, 1, 1, w - 1, h - 1, 16, fill=p["borda"], outline="")
@@ -1910,7 +2036,7 @@ class TelaApps:
                 cor_texto = p["texto"] if chave == sobre else p["texto2"]
             x = 14
             if chave != "todos":  # bolinha na cor da categoria
-                cv.create_oval(x, h / 2 - 4, x + 8, h / 2 + 4, fill="#ffffff" if escolhida else cor, outline="")
+                cv.create_oval(x, h / 2 - 4, x + 8, h / 2 + 4, fill=TEXTO_CLARO if escolhida else cor, outline="")
                 x += 14
             cv.create_text(x, h / 2, anchor="w", text=texto, fill=cor_texto, font=fonte)
 
@@ -2156,7 +2282,7 @@ class MenuLateral:
                                   bg=p["superficie"])
         self.lbl_marca.pack(side="left")
 
-        self.lbl_menu = tk.Label(f, text="MENU", font=("Segoe UI", 8, "bold"), fg=p["fraco"], bg=p["superficie"])
+        self.lbl_menu = tk.Label(f, text="MENU", font=("Segoe UI", 8, "bold"), fg=p["texto2"], bg=p["superficie"])
         self.lbl_menu.pack(anchor="w", padx=22, pady=(0, 6))
         for chave, rotulo, icone in self.ITENS:
             linha = tk.Frame(f, bg=p["superficie"], cursor="hand2")
@@ -2209,7 +2335,7 @@ class MenuLateral:
         a.delete("all")
         a.config(bg=p["superficie2"])
         a.create_oval(1, 1, 35, 35, fill=p["destaque"], outline="")
-        a.create_text(18, 18, text=(self.nome[:1] or "?").upper(), fill="#ffffff", font=("Segoe UI", 13, "bold"))
+        a.create_text(18, 18, text=(self.nome[:1] or "?").upper(), fill=TEXTO_CLARO, font=("Segoe UI", 13, "bold"))
         a.create_oval(26, 26, 35, 35, fill=COR_ONLINE if self.online else COR_OFFLINE, outline=p["superficie2"],
                       width=2)
         primeiro = self.nome.split()[0] if self.nome.split() else ""
@@ -2272,7 +2398,7 @@ class PainelDireito:
         p = self.app.paleta
         card = tk.Frame(self.frame, bg=p["superficie"], highlightthickness=1, highlightbackground=p["borda"])
         card.pack(fill="x", padx=(0, 24), **pack)
-        tk.Label(card, text=titulo, font=("Segoe UI", 8, "bold"), fg=p["fraco"], bg=p["superficie"]).pack(
+        tk.Label(card, text=titulo, font=("Segoe UI", 8, "bold"), fg=p["texto2"], bg=p["superficie"]).pack(
             anchor="w", padx=16, pady=(14, 4))
         return card
 
@@ -3240,7 +3366,7 @@ class AgenteApp:
             decorrido = time.time() - self.inicio_sessao
             restante = max(0, self.tempo_total - decorrido)
             self._painel_direito.atualizar_tempo(restante, self.tempo_total)
-            self.barra.lbl_tempo.config(text=self._fmt(restante), fg="#ef4444" if restante < 300 else "#22c55e")
+            self.barra.definir_tempo(self._fmt(restante), restante < 300)
 
             if restante < 300:
                 # Aviso de 5 minutos — disparado uma unica vez pelo countdown

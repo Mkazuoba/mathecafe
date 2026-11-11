@@ -142,6 +142,8 @@ class AppPermitido(Base):
     caminho = Column(String(500), nullable=True)
     imagem_url = Column(String(500), nullable=True)
     categoria_id = Column(Integer, ForeignKey("categorias_apps.id"), nullable=True)
+    # 9.12: frase curta no card do app no agente (vazia: o nome da categoria)
+    descricao = Column(String(120), nullable=True)
     # antigo (ate 09/11/2026): o app valia num mapa ou em todos. Agora vale por
     # piso (apps_pisos); grupo_id e ativo ficam so para a conversao.
     grupo_id = Column(Integer, ForeignKey("grupos_estacao.id"), nullable=True)

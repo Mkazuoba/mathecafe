@@ -123,6 +123,8 @@ export interface AppPermitido {
   processo: string
   caminho: string | null
   imagem_url: string | null
+  /** frase curta no card do agente (vazia: o nome da categoria) */
+  descricao?: string | null
   grupo_id: number | null
   grupo_nome: string
   ativo: boolean
