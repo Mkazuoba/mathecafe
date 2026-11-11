@@ -964,3 +964,27 @@ def test_desinstalador_limpa_tudo():
     # o instalador leva o desinstalador para C:\MatheCafe
     instalador = open(os.path.join(pasta, "instalar.bat"), "rb").read().decode("ascii")
     assert "desinstalar.bat" in instalador
+
+
+def test_politicas_do_ctrl_alt_del_valem_mesmo_se_a_instalacao_falhar():
+    # 11/11: numa maquina nova o passo [6/6] falhou (perfil do cliente ainda nao
+    # existia) e o Ctrl+Alt+Del deixava trocar a senha e abrir o Gerenciador de
+    # Tarefas. Agora uma tarefa como SYSTEM grava as politicas a cada logon do
+    # cliente (o perfil dele ja esta carregado), sem depender da instalacao.
+    pasta = os.path.dirname(AGENTE)
+    reg = open(os.path.join(pasta, "registrar_politicas.ps1"), "rb").read()
+    assert b"\r\n" in reg and b"\n" not in reg.replace(b"\r\n", b"")
+    reg = reg.decode("ascii")
+    assert '"MatheCafe-Politicas"' in reg and "-AtLogOn -User" in reg
+    assert 'New-ScheduledTaskPrincipal -UserId "SYSTEM"' in reg and "politicas_cliente.ps1" in reg
+    pol = _fonte(os.path.join(pasta, "politicas_cliente.ps1"))
+    for nome in ("DisableTaskMgr", "DisableLockWorkstation", "DisableChangePassword"):
+        assert nome in pol
+    instalar = open(os.path.join(pasta, "instalar.bat"), "rb").read().decode("ascii")
+    assert "registrar_politicas.ps1" in instalar
+    copia = instalar[instalar.index("for %%f in (agente.py"):]
+    assert "registrar_politicas.ps1" in copia[:copia.index(")")]
+    seis = instalar[instalar.index("[6/6]"):instalar.index(":fim")]
+    assert seis.index("registrar_politicas.ps1") < seis.index("politicas_cliente.ps1")
+    desinstalar = open(os.path.join(pasta, "desinstalar.bat"), "rb").read().decode("ascii")
+    assert 'schtasks /delete /tn "MatheCafe-Politicas"' in desinstalar

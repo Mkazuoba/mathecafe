@@ -166,7 +166,7 @@ if errorlevel 1 (
     exit /b 1
 )
 if /i not "%ORIGEM%"=="%DESTINO%\" (
-    for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 politicas_cliente.ps1 desinstalar.bat) do (
+    for %%f in (agente.py requirements.txt iniciar.bat registrar_tarefa.ps1 registrar_politicas.ps1 politicas_cliente.ps1 desinstalar.bat) do (
         copy /y "%ORIGEM%%%f" "%DESTINO%\" >nul
     )
 )
@@ -221,11 +221,21 @@ echo       O agente abre sozinho quando o "cliente" entrar no Windows.
 :: Ctrl+Alt+Del nao passa pelo agente: desliga Gerenciador de Tarefas,
 :: Bloquear e Alterar senha no perfil do "cliente"
 echo [6/6] Bloqueando o Gerenciador de Tarefas para o "cliente"...
-set MC_SENHA=!SENHA_CLIENTE!
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\politicas_cliente.ps1"
+:: A tarefa grava as politicas a cada logon do cliente (como SYSTEM, com o
+:: perfil dele carregado): valem mesmo se a gravacao abaixo falhar
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\registrar_politicas.ps1" -Pasta "%DESTINO%"
 if !errorlevel! neq 0 (
-    echo       AVISO: Nao foi possivel gravar as politicas. Rode o instalar.bat de novo
-    echo       depois que o "cliente" entrar no Windows uma vez.
+    echo ERRO: Nao foi possivel criar a tarefa das politicas ^(Ctrl+Alt+Del^).
+    pause
+    exit /b 1
+)
+:: E grava ja agora, se o perfil do cliente puder ser aberto
+set MC_SENHA=!SENHA_CLIENTE!
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DESTINO%\politicas_cliente.ps1" >nul 2>&1
+if !errorlevel! neq 0 (
+    echo       As politicas entram no primeiro logon do "cliente" ^(pela tarefa^).
+) else (
+    echo       Politicas gravadas.
 )
 set MC_SENHA=
 

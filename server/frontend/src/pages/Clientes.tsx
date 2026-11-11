@@ -6,6 +6,7 @@ import {
   IconMessageCircle,
   IconPencil,
   IconSelector,
+  IconUserPlus,
 } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
@@ -100,8 +101,9 @@ export default function Clientes() {
             Exportar CSV
           </Button>
         )}
-        <Button size="sm" onClick={() => setNovo(true)}>
-          + Novo cliente
+        <Button size="sm" className="gap-1.5 shadow-sm" onClick={() => setNovo(true)}>
+          <IconUserPlus size={15} />
+          Novo cliente
         </Button>
       </CabecalhoTela>
 

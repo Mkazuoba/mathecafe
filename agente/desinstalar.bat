@@ -63,6 +63,7 @@ taskkill /f /fi "USERNAME eq cliente" >nul 2>&1
 echo [2/6] Removendo a tarefa agendada...
 schtasks /delete /tn "MatheCafe-Agente" /f >nul 2>&1
 schtasks /delete /tn "MatheCafe_Agente" /f >nul 2>&1
+schtasks /delete /tn "MatheCafe-Politicas" /f >nul 2>&1
 
 :: ---- 3. Autologin ----
 echo [3/6] Desligando o autologin...

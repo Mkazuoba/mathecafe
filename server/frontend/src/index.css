@@ -61,19 +61,20 @@
 :root[data-tema="claro"] {
   color-scheme: light;
 
-  --color-fundo: #fafafa;
-  --color-superficie: #ffffff;
-  --color-superficie-2: #f4f4f5;
-  --color-superficie-3: #e4e4e7;
-  --color-borda: #e4e4e7;
-  --color-borda-forte: #d4d4d8;
-  --color-texto: #18181b; /* zinc-900: nunca preto puro */
-  --color-texto-suave: #52525b;
-  --color-texto-fraco: #71717a;
-  --color-texto-menu: #27272a; /* zinc-800 */
-  --color-texto-sub: #52525b; /* zinc-600 */
-  --color-texto-celula: #3f3f46; /* zinc-700 */
-  --color-rotulo: #71717a; /* zinc-500 */
+  /* creme / off-white (paleta Stone, quente): no branco puro cansava ler */
+  --color-fundo: #f3efe7;
+  --color-superficie: #faf7f1;
+  --color-superficie-2: #efeae0;
+  --color-superficie-3: #e5dfd2;
+  --color-borda: #e0d9cb;
+  --color-borda-forte: #cbc2b1;
+  --color-texto: #1c1917; /* stone-900: nunca preto puro */
+  --color-texto-suave: #4a4541;
+  --color-texto-fraco: #6b645e;
+  --color-texto-menu: #292524; /* stone-800 */
+  --color-texto-sub: #57534e; /* stone-600 */
+  --color-texto-celula: #3a3532;
+  --color-rotulo: #6b645e;
 
   --color-destaque: #4f46e5;
   --color-destaque-forte: #4338ca;

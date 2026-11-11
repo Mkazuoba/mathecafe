@@ -1334,8 +1334,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
       total={lista.length}
       controles={controles}
       topo={
-        <div className="shrink-0 border-b border-borda p-2 flex flex-col gap-2">
-          <Button size="xs" variant="outline" className="w-full gap-1 justify-center" onClick={aoNovoCliente}><IconUserPlus size={14} /> Novo cliente</Button>
+        <div className="shrink-0 border-b border-borda p-2">
           <div className="flex gap-1.5">
             <input
               type="search"
@@ -1346,6 +1345,16 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
               className="min-w-0 flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
             />
             <FiltrosBusca valor={filtros} padrao={FILTROS_PADRAO} campos={["campo", "modo", "saldo"]} aoMudar={mudarFiltros} />
+            {/* cadastrar: botão principal, ao lado da busca (quem não acha o cliente cadastra) */}
+            <Button
+              size="sm"
+              className="shrink-0 gap-1.5 shadow-sm"
+              title="Cadastrar um cliente novo"
+              onClick={aoNovoCliente}
+            >
+              <IconUserPlus size={15} />
+              Novo
+            </Button>
           </div>
         </div>
       }

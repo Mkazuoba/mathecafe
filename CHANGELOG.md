@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-11 — Corrigido: Ctrl+Alt+Del liberado numa máquina nova
+
+- Numa instalação nova o passo [6/6] falhava (o perfil do `cliente` ainda não existia) e o Ctrl+Alt+Del deixava **alterar a senha** e abrir o **Gerenciador de Tarefas**.
+- O instalador agora cria a tarefa **MatheCafe-Politicas** (`registrar_politicas.ps1`), que roda como SYSTEM a cada logon do `cliente` e grava as políticas (sem Gerenciador de Tarefas, Bloquear e Alterar senha; downloads presos). Sair e Trocar usuário continuam (decisão do Matheus: Sair é a saída de emergência).
+- O desinstalador remove essa tarefa. **PCs já instalados: rode o `instalar.bat` novo** (mantém o ID e a configuração) e entre como `cliente` de novo.
+
+## 2026-11-11 — Tema claro creme e botão Novo cliente
+
+- **Tema claro** em tom creme/off-white (paleta Stone, quente) no lugar do branco: fundo, cartões, bordas e textos um pouco mais escuros para ler melhor.
+- **Novo cliente**: no Painel virou um botão principal (roxo, com ícone) ao lado da busca de clientes; em Clientes ganhou o ícone.
+
 ## 2026-11-11 — Desinstalador completo
 
 - `agente/desinstalar.bat` agora deixa o PC como antes do `instalar.bat`: fecha o agente e a sessão do `cliente`, remove a tarefa e o autologin, desinstala o Python do agente (só o registrado em `C:\MatheCafe\python`), apaga o usuário `cliente` com o perfil (e as políticas dele) e a pasta `C:\MatheCafe`. Pede para digitar SIM; rodando de dentro de `C:\MatheCafe`, continua de uma cópia na pasta temporária.
