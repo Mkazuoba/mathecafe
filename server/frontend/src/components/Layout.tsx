@@ -181,6 +181,9 @@ export function Layout() {
   const { tema, alternar: alternarTema } = useTema()
   const { pathname } = useLocation()
   const atual = ITENS.find((i) => (i.para === "/" ? pathname === "/" : pathname.startsWith(i.para)))
+  // o piso so muda o que aparece no Painel, em Clientes e no Mapa; Historicos
+  // tem o filtro dele e Configuracoes vale para todos os pisos
+  const comPiso = pathname === "/" || pathname.startsWith("/clientes") || pathname.startsWith("/mapa")
 
   // Ctrl+K (ou Cmd+K no Mac) abre a busca de qualquer tela
   useEffect(() => {
@@ -321,6 +324,7 @@ export function Layout() {
             <span className="font-medium">{atual?.rotulo ?? ""}</span>
           </nav>
 
+          {comPiso && (
           <div role="radiogroup" aria-label="Piso" className="ml-3 flex rounded-lg border border-borda bg-superficie p-0.5">
             {pisos.map((p) => {
               const ativo = piso?.id === p.id
@@ -343,6 +347,7 @@ export function Layout() {
               )
             })}
           </div>
+          )}
 
           <div className="flex-1" />
           <button

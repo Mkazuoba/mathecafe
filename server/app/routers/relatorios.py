@@ -119,10 +119,13 @@ def historico_do_cliente(cliente_id: int, de: Optional[str] = None, ate: Optiona
     tempo = func.coalesce(func.sum(Sessao.tempo_consumido_segundos), 0)
     linhas = _filtrar(
         db.query(Estacao.nome, func.count(Sessao.id), tempo,
-                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em), _ABERTA)
+                 func.min(Sessao.iniciada_em), func.max(Sessao.iniciada_em), _ABERTA, Estacao.id)
           .join(Estacao, Estacao.id == Sessao.estacao_id)
           .filter(Sessao.cliente_id == cliente_id), de, ate, db, abertas=True
-    ).group_by(Estacao.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
+    ).group_by(Estacao.id, Estacao.nome).order_by(func.max(Sessao.iniciada_em).desc()).all()
+    # por estacao (6.18: o mesmo nome pode estar nos dois pisos), com o piso de cada
+    from app.nomes_estacao import piso_id_de
+    pisos = {e.id: piso_id_de(e) for e in db.query(Estacao).filter(Estacao.id.in_([l[6] for l in linhas]))}
     return {
         "cliente": {"id": cliente.id, "login": cliente.login, "nome": cliente.nome,
                     "tem_foto": cliente.foto_em is not None,
@@ -133,8 +136,9 @@ def historico_do_cliente(cliente_id: int, de: Optional[str] = None, ate: Optiona
         "tempo_segundos": int(sum(l[2] for l in linhas)),
         "primeira_vez": _iso(min((l[3] for l in linhas), default=None)),
         "ultima_vez": _iso(max((l[4] for l in linhas), default=None)),
-        "itens": [{"estacao": nome, "sessoes": n, "tempo_segundos": int(t), "primeira_vez": _iso(p),
-                   "ultima_vez": _iso(u), "em_uso": bool(a)} for nome, n, t, p, u, a in linhas],
+        "itens": [{"estacao": nome, "estacao_id": eid, "piso_id": pisos.get(eid), "sessoes": n,
+                   "tempo_segundos": int(t), "primeira_vez": _iso(p), "ultima_vez": _iso(u), "em_uso": bool(a)}
+                  for nome, n, t, p, u, a, eid in linhas],
     }
 
 

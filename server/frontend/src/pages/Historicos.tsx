@@ -33,7 +33,7 @@ interface HistoricoCliente extends Resumo {
   cliente: ClienteResumo & { tem_foto: boolean; foto_em: string | null }
   /** estação em que o cliente está logado agora */
   em_uso: string | null
-  itens: (ItemUso & { estacao: string })[]
+  itens: (ItemUso & { estacao: string; estacao_id?: number; piso_id?: number | null })[]
 }
 interface HistoricoEstacao extends Resumo {
   estacao: { id: number; nome: string; grupo: string | null }
@@ -164,7 +164,7 @@ export default function Historicos() {
             de={de}
             ate={ate}
             mudar={mudar}
-            abrirEstacao={(nome) => mudar({ aba: "estacao", estacao: nome })}
+            abrirEstacao={(nome, pisoId) => mudar({ aba: "estacao", estacao: nome, piso: pisoId ? String(pisoId) : null })}
           />
         ) : (
           <AbaEstacao
@@ -235,17 +235,20 @@ function AbaCliente({ clienteId, de, ate, mudar, abrirEstacao }: {
   de: string
   ate: string
   mudar: (n: Record<string, string | null>) => void
-  abrirEstacao: (nome: string) => void
+  abrirEstacao: (nome: string, pisoId?: number | null) => void
 }) {
   const { dados, erro, carregando } = useHistorico<HistoricoCliente>(
     clienteId ? `/api/relatorios/cliente/${clienteId}` : null, de, ate,
   )
 
+  const { pisos } = useDados()
   const linhas: Linha[] = (dados?.itens ?? []).map((i) => ({
     ...i,
-    chave: i.estacao,
+    chave: String(i.estacao_id ?? i.estacao),
     titulo: i.estacao,
-    aoAbrir: () => abrirEstacao(i.estacao),
+    // o mesmo nome pode estar nos dois pisos (6.18)
+    subtitulo: pisos.length > 1 ? pisos.find((p) => p.id === i.piso_id)?.nome : undefined,
+    aoAbrir: () => abrirEstacao(i.estacao, i.piso_id),
   }))
 
   return (
@@ -254,6 +257,7 @@ function AbaCliente({ clienteId, de, ate, mudar, abrirEstacao }: {
         <div className="w-80 max-w-full">
           <Campo rotulo="Cliente" id="hist-cliente">
             <SeletorCliente
+              todosOsPisos
               id="hist-cliente"
               placeholder="Digite o nome ou login..."
               valor={dados?.cliente ?? null}
@@ -317,11 +321,17 @@ function AbaEstacao({ estacaoNome, de, ate, mudar, abrirCliente }: {
   mudar: (n: Record<string, string | null>) => void
   abrirCliente: (id: number) => void
 }) {
-  const { estacoes, piso } = useDados()
-  const ordenadas = useMemo(() => [...estacoes].sort((a, b) => compararNome(a.nome, b.nome)), [estacoes])
+  const { todasEstacoes, pisos, piso: pisoDoTopo } = useDados()
+  // o filtro de piso desta aba (?piso=); começa no piso usado por último no Painel
+  const [params] = useSearchParams()
+  const pisoId = Number(params.get("piso")) || pisoDoTopo?.id || pisos[0]?.id
+  const ordenadas = useMemo(
+    () => todasEstacoes.filter((e) => e.piso_id === pisoId).sort((a, b) => compararNome(a.nome, b.nome)),
+    [todasEstacoes, pisoId],
+  )
   const { dados, erro, carregando } = useHistorico<HistoricoEstacao>(
-    // o nome pode estar nos dois pisos (6.18): vale o piso do topo
-    estacaoNome && piso ? `/api/relatorios/estacao/${encodeURIComponent(estacaoNome)}?piso_id=${piso.id}` : null, de, ate,
+    // o nome pode estar nos dois pisos (6.18): vale o piso escolhido aqui
+    estacaoNome && pisoId ? `/api/relatorios/estacao/${encodeURIComponent(estacaoNome)}?piso_id=${pisoId}` : null, de, ate,
   )
 
   const linhas: Linha[] = (dados?.itens ?? []).map((i) => ({
@@ -335,6 +345,22 @@ function AbaEstacao({ estacaoNome, de, ate, mudar, abrirCliente }: {
   return (
     <>
       <div className="mb-5 flex flex-wrap items-end gap-3">
+        {pisos.length > 1 && (
+          <Campo rotulo="Piso" id="hist-piso">
+            <Select
+              id="hist-piso"
+              value={pisoId ?? ""}
+              onChange={(e) => mudar({ piso: e.target.value, estacao: null })}
+              className="w-40"
+            >
+              {pisos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+        )}
         <Campo rotulo="Estação" id="hist-estacao">
           <Select id="hist-estacao" value={estacaoNome} onChange={(e) => mudar({ estacao: e.target.value || null })} className="w-56">
             <option value="">Escolha a estação</option>

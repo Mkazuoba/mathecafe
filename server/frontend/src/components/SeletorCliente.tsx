@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/campos"
 export type ClienteResumo = Pick<Cliente, "id" | "login" | "nome">
 
 /** Escolher um cliente buscando no servidor (são ~43k, não cabem num select). */
-export function SeletorCliente({ id, valor, aoMudar, placeholder = "Todos — digite para buscar" }: {
+export function SeletorCliente({ id, valor, aoMudar, placeholder = "Todos — digite para buscar", todosOsPisos = false }: {
   id?: string
+  /** busca em todos os pisos (senão, só no piso do topo) */
+  todosOsPisos?: boolean
   valor: ClienteResumo | null
   aoMudar: (c: ClienteResumo | null) => void
   placeholder?: string
@@ -16,7 +18,7 @@ export function SeletorCliente({ id, valor, aoMudar, placeholder = "Todos — di
   const [busca, setBusca] = useState("")
   const [aberto, setAberto] = useState(false)
   const caixa = useRef<HTMLDivElement>(null)
-  const { clientes, carregando } = useBuscaClientes(busca, {}, { limite: 8 })
+  const { clientes, carregando } = useBuscaClientes(busca, {}, { limite: 8, todosOsPisos })
 
   useEffect(() => {
     if (!aberto) return

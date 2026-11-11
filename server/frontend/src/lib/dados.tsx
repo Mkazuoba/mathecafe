@@ -12,6 +12,8 @@ interface Dados {
   trocarPiso: (id: number) => void
   recarregarPisos: () => Promise<void>
   estacoes: Estacao[]
+  /** As estações de todos os pisos (Históricos tem o próprio filtro de piso). */
+  todasEstacoes: Estacao[]
   fila: ItemFila[]
   sessoes: Sessao[]
   grupos: Grupo[]
@@ -197,6 +199,7 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
       trocarPiso,
       recarregarPisos,
       estacoes: doPiso.estacoes,
+      todasEstacoes: estacoes,
       versaoClientes,
       fila: doPiso.fila,
       sessoes: doPiso.sessoes,

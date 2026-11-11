@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-11 — Seletor de piso só onde ele vale
+
+- O seletor de piso do topo aparece só no **Painel**, em **Clientes** e no **Mapa**, as telas que mostram um piso por vez. Em Configurações e Históricos ele saiu.
+- **Históricos → Por estação** ganhou o próprio filtro **Piso** (começa no último piso usado); **Por cliente** busca clientes de todos os pisos. **Uso** já tinha o filtro de piso.
+- Corrigido: o histórico de um cliente juntava numa linha só estações de mesmo nome nos dois pisos (AD-01 do Adulto e do Infantil). Agora cada uma tem a sua linha, com o piso.
+
 ## 2026-11-11 — Mapas separados por piso, parte B: o instalador escolhe o piso (6.18; agente 1.20.0)
 
 - **Instalador**: depois de testar o servidor, pergunta **em qual piso** fica o computador (a lista vem do servidor: Adulto, Infantil...) e grava `PISO=` no `agente.cfg`. Sem resposta do servidor, segue sem piso.
