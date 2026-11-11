@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 const base =
-  "w-full rounded-lg border border-borda bg-superficie-2 px-3 py-2 text-sm text-texto outline-none transition-colors placeholder:text-texto-fraco focus:border-destaque disabled:cursor-not-allowed disabled:opacity-60"
+  "w-full rounded-xl border border-borda bg-superficie-2 px-3 py-2 text-sm text-texto outline-none transition-colors placeholder:text-texto-fraco focus:border-destaque disabled:cursor-not-allowed disabled:opacity-60"
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => <input ref={ref} className={cn(base, "h-10", className)} {...props} />,

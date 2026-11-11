@@ -4,7 +4,7 @@ import {
   IconChevronRight,
   IconHistory,
   IconLayoutSidebar,
-  IconLogout,
+  IconPower,
   IconSearch,
   IconSelector,
   IconLayoutDashboard,
@@ -183,17 +183,51 @@ function lerExpandida() {
   }
 }
 
+/** Seletor de piso em pílula: o ativo na cor do piso. */
+export function SeletorPiso({ className }: { className?: string }) {
+  const { pisos, piso, trocarPiso } = useDados()
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Piso"
+      className={cn("flex rounded-xl border border-borda bg-superficie-2 p-1", className)}
+    >
+      {pisos.map((p) => {
+        const ativo = piso?.id === p.id
+        return (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={ativo}
+            onClick={() => trocarPiso(p.id)}
+            title={`Mostrar só as estações, a fila e os clientes do piso ${p.nome}`}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all duration-300 ease-in-out",
+              ativo ? "text-zinc-50 shadow-md" : "text-texto-suave hover:text-texto",
+            )}
+            style={ativo ? { background: p.cor, boxShadow: `0 4px 12px -4px ${p.cor}` } : undefined}
+          >
+            {!ativo && <span className="size-2 rounded-full" style={{ background: p.cor }} />}
+            Piso {p.nome}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function Layout() {
   const [expandida, setExpandida] = useState(lerExpandida)
   const [buscando, setBuscando] = useState(false)
-  const { tempoReal, pisos, piso, trocarPiso } = useDados()
+  const { tempoReal } = useDados()
   const admin = Api.ehAdmin()
   const { tema, alternar: alternarTema } = useTema()
   const { pathname } = useLocation()
   const atual = ITENS.find((i) => (i.para === "/" ? pathname === "/" : pathname.startsWith(i.para)))
   // o piso so muda o que aparece no Painel, em Clientes e no Mapa; Historicos
   // tem o filtro dele e Configuracoes vale para todos os pisos
-  const comPiso = pathname === "/" || pathname.startsWith("/clientes") || pathname.startsWith("/mapa")
+  const comPiso = pathname.startsWith("/clientes") || pathname.startsWith("/mapa")  // no Painel, na barra de operações
 
   // Ctrl+K (ou Cmd+K no Mac) abre a busca de qualquer tela
   useEffect(() => {
@@ -220,7 +254,7 @@ export function Layout() {
 
   const nome = Api.nome() ?? ""
   return (
-    <div className="flex h-full bg-fundo">
+    <div className="transicao-piso flex h-full bg-fundo">
       <nav
         aria-label="Menu principal"
         className={cn(
@@ -302,16 +336,12 @@ export function Layout() {
             >
               {nome.slice(0, 1).toUpperCase()}
             </span>
-            {expandida && <span className="min-w-0 flex-1 truncate text-sm">{nome}</span>}
-            <button
-              type="button"
-              onClick={() => Api.sair()}
-              title="Sair"
-              aria-label="Sair"
-              className="rounded-md p-1.5 text-texto-fraco transition-all duration-200 ease-in-out hover:bg-texto/5 hover:text-texto"
-            >
-              <IconLogout size={16} />
-            </button>
+            {expandida && (
+              <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="truncate text-sm">{nome}</span>
+                <span className="text-[11px] text-texto-fraco capitalize">{Api.perfil()}</span>
+              </span>
+            )}
           </div>
         </div>
       </nav>
@@ -331,47 +361,33 @@ export function Layout() {
           <nav aria-label="Você está em" className="flex items-center gap-1.5 text-sm">
             <span className="text-texto-fraco">MatheCafé</span>
             <IconChevronRight size={14} className="text-texto-fraco" />
-            <span className="font-medium">{atual?.rotulo ?? ""}</span>
+            <span className="font-medium">{pathname === "/" ? "Painel principal" : (atual?.rotulo ?? "")}</span>
           </nav>
 
-          {comPiso && (
-          <div role="radiogroup" aria-label="Piso" className="ml-3 flex rounded-lg border border-borda bg-superficie p-0.5">
-            {pisos.map((p) => {
-              const ativo = piso?.id === p.id
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={ativo}
-                  onClick={() => trocarPiso(p.id)}
-                  title={`Mostrar só as estações, a fila e os clientes do piso ${p.nome}`}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-all duration-200 ease-in-out",
-                    ativo ? "bg-texto/10 text-texto" : "text-texto-suave hover:text-texto",
-                  )}
-                >
-                  <span className="size-2 rounded-full" style={{ background: p.cor }} />
-                  Piso {p.nome}
-                </button>
-              )
-            })}
-          </div>
-          )}
+          {comPiso && <SeletorPiso className="ml-3" />}
 
           <div className="flex-1" />
           <button
             type="button"
             onClick={() => setBuscando(true)}
-            className="flex h-8 w-56 items-center gap-2 rounded-lg border border-borda bg-superficie px-2.5 text-sm text-texto-fraco transition-all duration-200 ease-in-out hover:bg-texto/5 hover:text-texto-suave"
+            className="flex h-8 w-56 items-center gap-2 rounded-xl border border-borda bg-superficie/60 px-2.5 text-sm text-texto-fraco backdrop-blur transition-all duration-200 ease-in-out hover:bg-texto/5 hover:text-texto-suave"
           >
             <IconSearch size={15} />
             <span>Buscar...</span>
             <kbd className="ml-auto rounded border border-borda bg-superficie-3 px-1.5 text-[10px] font-medium">Ctrl K</kbd>
           </button>
-          <span className="flex items-center gap-1.5 text-xs text-texto-fraco" title={tempoReal ? "tempo real" : "reconectando..."}>
-            <span className={cn("size-2 rounded-full", tempoReal ? "bg-livre" : "bg-desligada")} />
-            <span className="hidden xl:inline">{tempoReal ? "tempo real" : "reconectando..."}</span>
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-medium",
+              tempoReal ? "border-livre-borda bg-livre-fundo text-livre" : "border-borda bg-superficie-2 text-texto-fraco",
+            )}
+            title={tempoReal ? "Recebendo as mudanças na hora" : "Sem conexão com o servidor: tentando de novo"}
+          >
+            <span className="relative flex size-2">
+              {tempoReal && <span className="absolute inline-flex size-full animate-ping rounded-full bg-livre opacity-60" />}
+              <span className={cn("relative inline-flex size-2 rounded-full", tempoReal ? "bg-livre" : "bg-desligada")} />
+            </span>
+            <span className="hidden lg:inline">{tempoReal ? "Tempo real" : "Reconectando..."}</span>
           </span>
           <button
             type="button"
@@ -381,6 +397,15 @@ export function Layout() {
             className="rounded-md p-1.5 text-texto-suave transition-all duration-200 ease-in-out hover:bg-texto/5 hover:text-texto"
           >
             {tema === "claro" ? <IconMoon size={18} /> : <IconSun size={18} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => Api.sair()}
+            title="Encerrar a sessão no painel"
+            className="flex items-center gap-1.5 rounded-xl border border-perigo-borda bg-perigo-fundo px-3 py-1.5 text-xs font-semibold text-perigo transition-all duration-200 hover:brightness-110 active:scale-95"
+          >
+            <IconPower size={14} />
+            Sair
           </button>
         </header>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

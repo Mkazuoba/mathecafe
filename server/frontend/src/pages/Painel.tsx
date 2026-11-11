@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Link, useSearchParams } from "react-router-dom"
-import { IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconUserPlus, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconLayoutColumns, IconPlus, IconSearch, IconUsersGroup, IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -11,7 +11,8 @@ import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "
 import type { Cliente, Estacao, Grupo, Piso, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Select } from "@/components/ui/campos"
-import { BotoesMover, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
+import { AlcaColuna, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
+import { SeletorPiso } from "@/components/Layout"
 import { FichaCliente } from "@/components/FichaCliente"
 import { AcoesEmMassa } from "@/components/AcoesEmMassa"
 import { AvatarCliente } from "@/components/AvatarCliente"
@@ -59,7 +60,7 @@ export default function Painel() {
   const { liberar } = useAcoes()
   const [ficha, setFicha] = useState<number | null>(null)
   const [novoCliente, setNovoCliente] = useState(false)
-  const { layout, setLayout, mover, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
+  const { layout, setLayout, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
   const [params, setParams] = useSearchParams()
   useEffect(() => {
     const id = Number(params.get("cliente"))
@@ -83,20 +84,28 @@ export default function Painel() {
 
   return (
     <>
-      <div className="flex shrink-0 gap-2 px-3 pt-3 text-sm">
-        <Contador cor="bg-livre" valor={contagem.livre} rotulo="livres" />
-        <Contador cor="bg-ocupada" valor={contagem.ocupada} rotulo="ocupadas" />
-        <Contador cor="bg-desligada" valor={contagem.desligada} rotulo="desligadas" />
-        {contagem.manutencao > 0 && <Contador cor="bg-manutencao" valor={contagem.manutencao} rotulo="em manutenção" />}
-        {alterado && (
-          <button type="button" onClick={restaurar} className="ml-auto hidden text-xs text-texto-fraco hover:text-destaque lg:block">
-            Restaurar layout
-          </button>
-        )}
+      {/* barra de operações: o piso (muda a cor do painel), o estado das estações e o layout */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-3 text-sm">
+        <SeletorPiso />
+        <span className="mx-1 hidden h-6 w-px bg-borda sm:block" />
+        <Chip status="livre" valor={contagem.livre} rotulo="Livres" />
+        <Chip status="ocupada" valor={contagem.ocupada} rotulo="Ocupadas" />
+        <Chip status="desligada" valor={contagem.desligada} rotulo="Desligadas" />
+        <Chip status="manutencao" valor={contagem.manutencao} rotulo="Em manutenção" />
+        <button
+          type="button"
+          onClick={restaurar}
+          disabled={!alterado}
+          title={alterado ? "Volta a ordem e a largura das colunas ao padrão" : "As colunas já estão no padrão"}
+          className="ml-auto hidden items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs text-texto-fraco transition-all hover:bg-texto/5 hover:text-texto disabled:opacity-40 disabled:hover:bg-transparent lg:flex"
+        >
+          <IconLayoutColumns size={14} /> Restaurar layout
+        </button>
       </div>
       <ColunasAjustaveis layout={layout} padrao={LAYOUT_PADRAO} aoMudar={setLayout}>
         {(id, posicao) => {
-          const controles = <BotoesMover posicao={posicao} total={layout.ordem.length} aoMover={(d) => mover(id, d)} />
+          void posicao
+          const controles = <AlcaColuna id={id} />
           if (id === "estacoes") return <ColunaEstacoes controles={controles} />
           if (id === "clientes")
             return <ColunaClientes controles={controles} aoEditarCliente={(c) => setFicha(c.id)} aoNovoCliente={() => setNovoCliente(true)} />
@@ -116,12 +125,20 @@ export default function Painel() {
   )
 }
 
-function Contador({ cor, valor, rotulo }: { cor: string; valor: number; rotulo: string }) {
+const CORES_CHIP: Record<StatusEstacao, string> = {
+  livre: "border-livre-borda bg-livre-fundo text-livre",
+  ocupada: "border-ocupada-borda bg-ocupada-fundo text-ocupada",
+  desligada: "border-desligada-borda bg-desligada-fundo text-desligada",
+  manutencao: "border-manutencao-borda bg-manutencao-fundo text-manutencao",
+}
+
+/** Chip do estado das estações (Livres, Ocupadas...), na cor do estado. */
+function Chip({ status, valor, rotulo }: { status: StatusEstacao; valor: number; rotulo: string }) {
   return (
-    <span className="flex items-center gap-1.5 rounded-lg border border-borda bg-superficie/50 px-3 py-1.5">
-      <span className={cn("size-2 rounded-full", cor)} />
-      <strong className="font-semibold">{valor}</strong>
-      <span className="text-xs text-texto-fraco">{rotulo}</span>
+    <span className={cn("flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs", CORES_CHIP[status])}>
+      <span className="size-1.5 rounded-full bg-current" />
+      <strong className="font-semibold tabular-nums">{valor}</strong>
+      <span className="opacity-80">{rotulo}</span>
     </span>
   )
 }
@@ -132,6 +149,7 @@ function Coluna({
   children,
   topo,
   controles,
+  acao,
   piso,
   ...props
 }: {
@@ -140,19 +158,22 @@ function Coluna({
   children: React.ReactNode
   topo?: React.ReactNode
   controles?: React.ReactNode
+  /** botão no canto direito do cabeçalho (ex.: + Novo) */
+  acao?: React.ReactNode
   /** Colunas de clientes e fila: cabeçalho e fundo na cor do piso escolhido. */
   piso?: Piso | null
 } & React.HTMLAttributes<HTMLElement>) {
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl" {...props}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-borda px-3.5">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-borda px-2.5">
+        {controles}
         {piso && <span className="size-2 shrink-0 rounded-full bg-piso" title={`Piso ${piso.nome}`} />}
         <h2 className={cn("truncate", "text-[11px] font-semibold tracking-[0.05em] text-rotulo uppercase")}>
           {titulo}
           {piso && <> · {piso.nome}</>}
         </h2>
         <span className="rounded-md border border-borda bg-superficie-3 px-1.5 text-[11px] font-medium text-texto-suave">{total}</span>
-        {controles && <span className="ml-auto">{controles}</span>}
+        {acao && <span className="ml-auto">{acao}</span>}
       </div>
       {topo}
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">{children}</div>
@@ -307,7 +328,8 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   return (
     // só as estações do piso escolhido (dados.tsx), na cor dele, como as outras colunas
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-borda px-3.5">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-borda px-2.5">
+        {controles}
         {piso && <span className="size-2 shrink-0 rounded-full bg-piso" title={`Piso ${piso.nome}`} />}
         <h2 className={cn("whitespace-nowrap", "text-[11px] font-semibold tracking-[0.05em] text-rotulo uppercase")}>
           Controle de sessões{piso && <> · {piso.nome}</>}
@@ -329,7 +351,6 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
           ))}
           {temSemGrupo && <option value={SEM_GRUPO}>Sem grupo</option>}
         </Select>
-        {controles}
       </div>
 
       {marcadasVisiveis.length > 0 && (
@@ -382,7 +403,6 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
 
       <div className="flex shrink-0 flex-wrap gap-x-4 gap-y-0.5 border-t border-borda bg-superficie-2 px-3.5 py-1.5 text-xs text-texto-suave">
         {(Object.keys(ROTULO_PLURAL) as StatusEstacao[])
-          .filter((s) => s !== "manutencao" || contagem.manutencao > 0)
           .map((s) => (
             <span key={s}>
               {ROTULO_PLURAL[s]}: <strong className={COR_TEXTO_STATUS[s]}>{contagem[s]}</strong>
@@ -479,7 +499,7 @@ function LinhaEstacao({ linha: { estacao: e, sessao, restante }, aoAbrir, marcad
       <td className="px-2 py-1.5 whitespace-nowrap">
         <SeloStatus status={e.status} />
       </td>
-      <td className="px-2 py-1.5 whitespace-nowrap">
+      <td className="px-2 py-1.5 font-mono text-[12px] whitespace-nowrap">
         <span className="inline-flex items-center gap-1.5">
           {e.nome}
           {!e.online && e.status !== "desligada" && (
@@ -1333,28 +1353,33 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
       piso={piso}
       total={lista.length}
       controles={controles}
+      acao={
+        // cadastrar: na cor do piso, no alto da coluna
+        <Button
+          size="xs"
+          className="gap-1 px-3 shadow-md shadow-destaque/25"
+          title="Cadastrar um cliente novo"
+          onClick={aoNovoCliente}
+        >
+          <IconPlus size={14} />
+          Novo
+        </Button>
+      }
       topo={
         <div className="shrink-0 border-b border-borda p-2">
           <div className="flex gap-1.5">
-            <input
-              type="search"
-              aria-label="Buscar cliente"
-              placeholder={dica}
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-borda bg-superficie-2 px-3 py-1.5 text-sm outline-none focus:border-destaque"
-            />
+            <label className="relative min-w-0 flex-1">
+              <IconSearch size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-texto-fraco" />
+              <input
+                type="search"
+                aria-label="Buscar cliente"
+                placeholder={dica}
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="w-full rounded-xl border border-borda bg-superficie-2 py-1.5 pr-3 pl-8 text-sm outline-none transition-colors focus:border-destaque"
+              />
+            </label>
             <FiltrosBusca valor={filtros} padrao={FILTROS_PADRAO} campos={["campo", "modo", "saldo"]} aoMudar={mudarFiltros} />
-            {/* cadastrar: botão principal, ao lado da busca (quem não acha o cliente cadastra) */}
-            <Button
-              size="sm"
-              className="shrink-0 gap-1.5 shadow-sm"
-              title="Cadastrar um cliente novo"
-              onClick={aoNovoCliente}
-            >
-              <IconUserPlus size={15} />
-              Novo
-            </Button>
           </div>
         </div>
       }
@@ -1369,7 +1394,7 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
               draggable={!naFila}
               onDragStart={(ev) => ev.dataTransfer.setData(TIPO_ARRASTO, String(c.id))}
               className={cn(
-                "group flex items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors",
+                "group flex items-center gap-2.5 rounded-xl border px-3 py-2 transition-colors",
                 naFila
                   ? "border-destaque bg-destaque-fundo"
                   : "cursor-grab border-borda bg-superficie-2 hover:border-borda-forte",
@@ -1385,9 +1410,10 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-texto-fraco">
+                <div className="truncate text-xs text-texto-fraco">
                   {c.login}
                   {textoIdade(c.data_nascimento) && <> · {textoIdade(c.data_nascimento)}</>}
+                  {c.documento && <> · Doc. {c.documento}</>}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1 text-xs">
                   {emUso ? (
@@ -1447,7 +1473,7 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
     >
       {fila.length ? (
         fila.map((f, i) => (
-          <div key={f.id} className="rounded-lg border border-destaque bg-superficie-2 px-3 py-2.5">
+          <div key={f.id} className="rounded-xl border border-destaque bg-superficie-2 px-3 py-2.5">
             <div className="mb-1 flex items-center gap-2">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-destaque text-xs font-semibold text-zinc-100">
                 {i + 1}
@@ -1467,7 +1493,13 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
           </div>
         ))
       ) : (
-        <Vazio>Nenhum cliente na fila. Clique em Liberar ou arraste um cliente para cá.</Vazio>
+        <div className="m-auto flex max-w-56 flex-col items-center gap-2.5 px-4 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl border border-dashed border-borda-forte bg-superficie-2 text-texto-fraco">
+            <IconUsersGroup size={22} />
+          </span>
+          <p className="text-sm font-medium text-texto-suave">Nenhum cliente na fila</p>
+          <p className="text-xs text-texto-fraco">Clique em Liberar ou arraste um cliente para cá.</p>
+        </div>
       )}
     </Coluna>
   )

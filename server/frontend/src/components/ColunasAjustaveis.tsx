@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
+import { IconChevronLeft, IconChevronRight, IconGripVertical } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 
 /** Ordem das colunas e largura de cada uma, em % da largura da tela. */
@@ -46,6 +46,26 @@ export function useLayoutColunas<Id extends string>(chave: string, padrao: Layou
 
   const alterado = JSON.stringify(layout) !== JSON.stringify(padrao)
   return { layout, setLayout, mover, restaurar: () => setLayout(padrao), alterado }
+}
+
+const TIPO_COLUNA = "application/x-mathecafe-coluna"
+
+/** Alça para arrastar a coluna para outro lugar (solte em cima de outra coluna). */
+export function AlcaColuna({ id }: { id: string }) {
+  return (
+    <span
+      draggable
+      onDragStart={(ev) => {
+        ev.dataTransfer.setData(TIPO_COLUNA, id)
+        ev.dataTransfer.effectAllowed = "move"
+      }}
+      title="Arraste para trocar a coluna de lugar"
+      aria-label="Arrastar a coluna"
+      className="hidden shrink-0 cursor-grab rounded-md p-0.5 text-texto-fraco transition-colors hover:bg-texto/5 hover:text-texto active:cursor-grabbing lg:inline-flex"
+    >
+      <IconGripVertical size={15} />
+    </span>
+  )
 }
 
 /** Setas para trocar a coluna de lugar (só em tela larga). */
@@ -125,6 +145,17 @@ export function ColunasAjustaveis<Id extends string>({ layout, padrao, aoMudar, 
     alvo.addEventListener("pointercancel", soltar)
   }
 
+  const [alvo, setAlvo] = useState<string | null>(null)
+  function soltarColuna(ev: React.DragEvent, destino: number) {
+    const id = ev.dataTransfer.getData(TIPO_COLUNA)
+    setAlvo(null)
+    if (!id || !layout.ordem.includes(id as Id)) return
+    ev.preventDefault()
+    const ordem = layout.ordem.filter((x) => x !== id)
+    ordem.splice(destino, 0, id as Id)
+    aoMudar({ ...layout, ordem })
+  }
+
   return (
     <div
       ref={caixa}
@@ -133,9 +164,19 @@ export function ColunasAjustaveis<Id extends string>({ layout, padrao, aoMudar, 
       {layout.ordem.map((id, i) => (
         <div
           key={id}
+          onDragOver={(ev) => {
+            if (!ev.dataTransfer.types.includes(TIPO_COLUNA)) return
+            ev.preventDefault()
+            setAlvo(id)
+          }}
+          onDragLeave={(ev) => {
+            if (!(ev.currentTarget as HTMLElement).contains(ev.relatedTarget as Node)) setAlvo(null)
+          }}
+          onDrop={(ev) => soltarColuna(ev, i)}
           style={larga ? { width: `calc(${layout.larguras[id]}% - ${(12 * (layout.ordem.length - 1)) / layout.ordem.length}px)` } : undefined}
           className={cn(
-            "relative flex min-w-0 shrink-0 flex-col rounded-xl border border-borda bg-superficie/50 lg:min-h-0",
+            "relative flex min-w-0 shrink-0 flex-col rounded-xl border border-borda bg-superficie/50 transition-shadow duration-200 lg:min-h-0",
+            alvo === id && "ring-2 ring-destaque ring-offset-2 ring-offset-fundo",
           )}
         >
           {children(id, i)}

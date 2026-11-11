@@ -186,3 +186,31 @@ body {
 .animar-fade {
   animation: entrar-fade 150ms ease-out;
 }
+
+/* Cor do piso escolhido (Painel principal): o fundo, as bordas e os botões
+   principais tomam a cor cadastrada do piso (--color-piso, lib/piso.tsx).
+   Fica depois dos temas para valer nos dois. */
+:root {
+  --color-fundo: color-mix(in srgb, var(--color-piso) 5%, #09090b);
+  --color-superficie: color-mix(in srgb, var(--color-piso) 3%, #111113);
+  --color-borda: color-mix(in srgb, var(--color-piso) 22%, #232326);
+  --color-destaque: var(--color-piso);
+  --color-destaque-forte: color-mix(in srgb, var(--color-piso) 82%, black);
+  --color-destaque-fundo: color-mix(in srgb, var(--color-piso) 16%, #111113);
+}
+:root[data-tema="claro"] {
+  --color-fundo: color-mix(in srgb, var(--color-piso) 7%, #f3efe7);
+  --color-superficie: color-mix(in srgb, var(--color-piso) 3%, #faf7f1);
+  --color-borda: color-mix(in srgb, var(--color-piso) 24%, #e0d9cb);
+  --color-destaque: var(--color-piso);
+  --color-destaque-forte: color-mix(in srgb, var(--color-piso) 82%, black);
+  --color-destaque-fundo: color-mix(in srgb, var(--color-piso) 14%, #faf7f1);
+}
+
+/* troca de piso suave */
+.transicao-piso,
+.transicao-piso header,
+.transicao-piso nav,
+.transicao-piso section {
+  transition: background-color 500ms ease, border-color 500ms ease, color 500ms ease;
+}
