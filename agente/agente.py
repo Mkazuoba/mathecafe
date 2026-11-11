@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.19.0"
+VERSAO = "1.20.0"
 
 import asyncio
 import json
@@ -2360,7 +2360,7 @@ class AgenteApp:
         url_anterior = None
         while True:
             # refeita a cada tentativa: o painel pode ter renomeado a estacao
-            url = url_da_estacao(self.servidor, self.estacao, self.identificador)
+            url = url_da_estacao(self.servidor, self.estacao, self.identificador, piso_da_instalacao())
             # Servidor na rede interna: conexão direta. O websockets usa o proxy do
             # Windows por padrão, e redes com proxy desviam até IPs internos.
             proxy = None if servidor_na_rede_local(url) else True
@@ -3514,12 +3514,20 @@ def identificador_da_estacao():
     return novo
 
 
-def url_da_estacao(servidor, estacao, identificador=None):
+def piso_da_instalacao():
+    """O piso escolhido no instalador (PISO= no agente.cfg, o id do piso). Com
+    ele o servidor poe o PC na estacao desse nome naquele piso: AD-01 pode
+    existir no Adulto e no Infantil (6.18)."""
+    piso = carregar_cfg().get("PISO", "").strip()
+    return piso if piso.isdigit() else None
+
+
+def url_da_estacao(servidor, estacao, identificador=None, piso=None):
     # quote: nomes com espaço ou acento ("PC 01") viram um endereço válido
     url = f"{servidor}/ws/estacao/{urllib.parse.quote(estacao)}"
-    if identificador:
-        url += "?id=" + urllib.parse.quote(identificador)
-    return url
+    params = [("id", identificador), ("piso", piso)]
+    consulta = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params if v)
+    return url + ("?" + consulta if consulta else "")
 
 
 def linhas_do_texto(texto, medir, largura_px):
@@ -3564,7 +3572,7 @@ def normalizar_servidor(texto):
 
 def testar_conexao(servidor, estacao):
     """Conecta como a estacao e diz se o servidor a aceitou. Roda numa thread."""
-    url = url_da_estacao(servidor, estacao, identificador_da_estacao())
+    url = url_da_estacao(servidor, estacao, identificador_da_estacao(), piso_da_instalacao())
     proxy = None if servidor_na_rede_local(url) else True
 
     async def tentar():

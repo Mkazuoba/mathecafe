@@ -83,6 +83,7 @@ if "!SERVIDOR:~-1!"=="/" set SERVIDOR=!SERVIDOR:~0,-1!
 :: Confere agora se o servidor responde: endereco errado nao da erro nenhum
 :: depois, o PC so nunca aparece no painel. --noproxy: a rede tem proxy.
 echo Testando a conexao com o servidor !SERVIDOR!...
+set SERVIDOR_OK=
 curl -s -f -m 5 --noproxy "*" -o nul "http://!SERVIDOR!/health"
 if errorlevel 1 (
     echo.
@@ -94,7 +95,15 @@ if errorlevel 1 (
     echo Continuando: o PC aparece no painel quando conseguir falar com o servidor.
 ) else (
     echo   O servidor respondeu.
+    set SERVIDOR_OK=1
 )
+
+:: ---- Piso (6.18) ----
+:: O mesmo nome pode existir no Adulto e no Infantil: o piso diz de qual mapa
+:: e este PC. Se o mapa do piso ja tem uma estacao com esse nome, o PC entra
+:: direto nela; senao espera em Mapa -^> Novas estacoes. Sem servidor, sem piso.
+set PISO=
+if defined SERVIDOR_OK call :escolher_piso
 
 echo.
 echo ---- Conta Windows do cliente ----
@@ -191,6 +200,7 @@ if exist "%DESTINO%\agente.cfg" (
     echo SERVIDOR=ws://!SERVIDOR!
     echo ESTACAO=!ESTACAO!
     if defined ID_PC echo ID=!ID_PC!
+    if defined PISO echo PISO=!PISO!
 ) > "%DESTINO%\agente.cfg"
 :: O agente roda como "cliente" e precisa gravar na pasta: agente.cfg e o
 :: auto-update (substitui o proprio agente.py)
@@ -238,6 +248,34 @@ exit /b 0
 :: ============================================================
 :: Sub-rotinas (call :nome)
 :: ============================================================
+
+:escolher_piso
+:: Os pisos vem do servidor, uma linha "id;nome" cada (sem login)
+set N_PISOS=0
+for /f "usebackq tokens=1,* delims=;" %%a in (`curl -s -f -m 5 --noproxy "*" "http://!SERVIDOR!/api/agente/pisos"`) do (
+    set /a N_PISOS+=1
+    set PISO_ID_!N_PISOS!=%%a
+    set PISO_NOME_!N_PISOS!=%%b
+)
+if !N_PISOS!==0 exit /b 0
+if !N_PISOS!==1 (
+    set PISO=!PISO_ID_1!
+    echo   Piso: !PISO_NOME_1!
+    exit /b 0
+)
+echo.
+echo Em qual piso fica este computador?
+for /l %%i in (1,1,!N_PISOS!) do echo   %%i - !PISO_NOME_%%i!
+:perguntar_piso
+set ESCOLHA=
+set /p ESCOLHA="Numero do piso: "
+set PISO=
+for /l %%i in (1,1,!N_PISOS!) do if "!ESCOLHA!"=="%%i" set PISO=!PISO_ID_%%i!
+if not defined PISO (
+    echo Digite um dos numeros da lista.
+    goto perguntar_piso
+)
+exit /b 0
 
 :preparar_proxy
 :: O pip e o download nao usam o proxy do Windows sozinhos: pega o do sistema

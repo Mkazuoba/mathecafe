@@ -21,7 +21,7 @@ import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, restanteDaSessao } from "@/lib/tempo"
-import type { Estacao, Grupo, StatusEstacao } from "@/lib/tipos"
+import type { Estacao, Grupo, Piso, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { CabecalhoTela } from "@/components/Layout"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
@@ -1490,7 +1490,7 @@ function ModalNovaEstacao({
 // ── Novas estações (PCs instalados esperando aprovação) ─────────────────────
 
 function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () => void }) {
-  const { pendentes, pedidosNome, piso, grupos } = useDados()
+  const { pendentes, pedidosNome, todosGrupos, pisos } = useDados()
   // todas as estacoes (de todos os pisos), para "Substitui a ..."
   const [existentes, setExistentes] = useState<Estacao[]>([])
   useEffect(() => {
@@ -1501,10 +1501,17 @@ function ModalPendentes({ aberto, aoFechar }: { aberto: boolean; aoFechar: () =>
       <div className="flex flex-col gap-3">
         {pendentes.length > 0 && <p className="text-sm text-texto-suave">
           Computadores instalados que ainda não foram aprovados. Até aprovar, ninguém faz login neles. Escolha o nome
-          e a zona {piso ? `(zonas do piso ${piso.nome}; troque o piso no topo para ver outras)` : ""}.
+          e a zona (as zonas do piso escolhido na instalação vêm primeiro).
         </p>}
         {pendentes.map((p) => (
-          <LinhaPendente key={p.id} estacao={p} grupos={grupos} existentes={existentes} />
+          <LinhaPendente
+            key={p.id}
+            estacao={p}
+            // as zonas do piso do PC primeiro (agente 1.20 escolhe na instalação), depois as outras
+            grupos={[...todosGrupos].sort((a, b) => Number(b.piso_id === p.piso_id) - Number(a.piso_id === p.piso_id))}
+            pisos={pisos}
+            existentes={existentes}
+          />
         ))}
         {pedidosNome.length > 0 && (
           <>
@@ -1531,16 +1538,20 @@ function semSufixo(nome: string) {
 function LinhaPendente({
   estacao: p,
   grupos,
+  pisos,
   existentes,
 }: {
   estacao: Estacao
   grupos: Grupo[]
+  pisos: Piso[]
   existentes: Estacao[]
 }) {
+  const nomePiso = (id: number | null | undefined) => pisos.find((x) => x.id === id)?.nome
   const { recarregarEstacoes, recarregarPendentes } = useDados()
   const avisar = useAvisos()
   // mesmo nome de uma estacao que ja existe: provavelmente o PC dela, formatado ou trocado
-  const parecida = existentes.find((e) => e.nome === semSufixo(p.nome) && e.nome !== p.nome)
+  // (só no piso do PC: o mesmo nome no outro piso é outra estação)
+  const parecida = existentes.find((e) => e.nome === semSufixo(p.nome) && e.id !== p.id && e.piso_id === p.piso_id)
   const [substitui, setSubstitui] = useState(parecida ? String(parecida.id) : "")
   // a lista de estacoes chega depois: sugere assim que ela vier
   const idParecida = parecida?.id
@@ -1606,6 +1617,12 @@ function LinhaPendente({
             <IconWifiOff size={13} /> desconectado
           </span>
         )}
+        {p.piso_nome && (
+          <span className="inline-flex items-center gap-1 font-medium text-texto-suave">
+            <span className="size-2 rounded-full" style={{ background: p.piso_cor ?? undefined }} />
+            Piso {p.piso_nome}
+          </span>
+        )}
         {p.versao_agente && <span>agente {p.versao_agente}</span>}
         {p.ip && <span>{p.ip}</span>}
       </div>
@@ -1619,8 +1636,7 @@ function LinhaPendente({
           <option value="">Uma estação nova</option>
           {existentes.map((e) => (
             <option key={e.id} value={e.id}>
-              Substitui a {e.nome}
-              {e.grupo_nome ? ` (${e.grupo_nome})` : ""}
+              Substitui a {e.nome} ({[nomePiso(e.piso_id), e.grupo_nome].filter(Boolean).join(" · ")})
             </option>
           ))}
         </Select>
@@ -1654,6 +1670,7 @@ function LinhaPendente({
             {grupos.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.nome}
+                {nomePiso(g.piso_id) ? ` · ${nomePiso(g.piso_id)}` : ""}
               </option>
             ))}
             {!grupos.length && <option value="">Sem zona</option>}

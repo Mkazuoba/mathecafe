@@ -11,8 +11,10 @@ e copie o arquivo para server/agente_dist/agente.py.
 """
 import os
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
+from sqlalchemy.orm import Session
+from app.database import get_db
 
 router = APIRouter(prefix="/agente", tags=["agente"])
 
@@ -64,6 +66,15 @@ def desatualizado(versao_agente) -> bool:
 def versao():
     """Retorna a versao do agente que o servidor esta distribuindo."""
     return {"versao": _versao_dist()}
+
+
+@router.get("/pisos", response_class=PlainTextResponse)
+def pisos_para_o_instalador(db: Session = Depends(get_db)):
+    """Os pisos, uma linha "id;nome" cada (o instalador.bat le sem JSON e sem
+    login: so os nomes dos pisos). O PC instalado conecta com ?piso=id (6.18)."""
+    from app.models import Piso
+    pisos = db.query(Piso).order_by(Piso.id).all()
+    return "".join(f"{p.id};{p.nome}\r\n" for p in pisos)  # CRLF: o cmd le direito
 
 
 @router.get("/download")

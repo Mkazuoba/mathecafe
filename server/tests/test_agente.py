@@ -47,7 +47,7 @@ def test_servidor_interno_conecta_sem_proxy():
 
 def test_estacao_com_espaco_e_nao_cadastrada():
     src = _fonte()
-    assert "url_da_estacao(self.servidor, self.estacao, self.identificador)" in src
+    assert "url_da_estacao(self.servidor, self.estacao, self.identificador, piso_da_instalacao())" in src
     assert "4004" in src
 
 
@@ -56,6 +56,23 @@ def test_url_leva_o_id_da_instalacao():
     url = _carregar("url_da_estacao")["url_da_estacao"]
     assert url("ws://10.0.0.1:8000", "PC 01", "abc123") == "ws://10.0.0.1:8000/ws/estacao/PC%2001?id=abc123"
     assert url("ws://10.0.0.1:8000", "PC-01") == "ws://10.0.0.1:8000/ws/estacao/PC-01"
+
+
+def test_url_leva_o_piso_escolhido_na_instalacao():
+    # 1.20 (6.18): o instalador grava PISO= no agente.cfg; o servidor poe o PC
+    # na estacao com esse nome naquele piso (o mesmo nome pode estar nos dois)
+    url = _carregar("url_da_estacao")["url_da_estacao"]
+    assert url("ws://s:8000", "AD-01", "abc", "2") == "ws://s:8000/ws/estacao/AD-01?id=abc&piso=2"
+    assert url("ws://s:8000", "AD-01", "abc", None) == "ws://s:8000/ws/estacao/AD-01?id=abc"
+    ns = _carregar("piso_da_instalacao")
+    ns["carregar_cfg"] = lambda: {"PISO": " 2 "}
+    assert ns["piso_da_instalacao"]() == "2"
+    ns["carregar_cfg"] = lambda: {"PISO": "Infantil"}  # so o id vale
+    assert ns["piso_da_instalacao"]() is None
+    ns["carregar_cfg"] = lambda: {}
+    assert ns["piso_da_instalacao"]() is None
+    src = _fonte()
+    assert "url_da_estacao(servidor, estacao, identificador_da_estacao(), piso_da_instalacao())" in src
 
 
 def test_id_e_criado_uma_vez_e_guardado():
@@ -838,3 +855,14 @@ def test_log_sem_conexao_vai_ao_servidor_depois():
     assert '"ts": ' in log
     conectado = src[src.index('if evento == "_conectado":'):src.index('elif evento == "_desconectado":')]
     assert "self._enviar_logs_offline()" in conectado
+
+
+def test_instalador_pergunta_o_piso():
+    # 6.18 parte B: com o servidor respondendo, lista os pisos dele
+    # (/api/agente/pisos, "id;nome") e grava PISO= no agente.cfg
+    texto = open(os.path.join(os.path.dirname(AGENTE), "instalar.bat"), "rb").read().decode("ascii")
+    assert "/api/agente/pisos" in texto and "call :escolher_piso" in texto
+    assert texto.index("call :escolher_piso") < texto.index("[1/6]")
+    assert "if defined PISO echo PISO=!PISO!" in texto
+    rotina = texto[texto.index(":escolher_piso"):]
+    assert 'delims=;' in rotina and "goto perguntar_piso" in rotina

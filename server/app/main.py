@@ -256,10 +256,12 @@ def _nome_atual(estacao: Estacao, nome: str) -> str:
 
 
 @app.websocket("/ws/estacao/{nome}")
-async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, db: Session = Depends(get_db)):
+async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, piso: Optional[int] = None,
+                     db: Session = Depends(get_db)):
     # agente 1.14 manda ?id= (o UUID da instalacao): PC desconhecido vira estacao
     # pendente em "Novas estacoes" (app/estacoes_novas.py). Sem id, so pelo nome.
-    estacao, nova = estacao_do_agente(db, nome, id)
+    # agente 1.20 manda ?piso= (escolhido na instalacao; 6.18)
+    estacao, nova = estacao_do_agente(db, nome, id, piso)
     if not estacao:
         # Aceita antes de fechar: assim o agente recebe o código 4004 e o
         # motivo, em vez de um "HTTP 403" genérico

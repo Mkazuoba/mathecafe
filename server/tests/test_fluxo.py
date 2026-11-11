@@ -2421,3 +2421,44 @@ def test_pc_novo_com_nome_dos_dois_pisos_vai_para_aprovacao(c, admin):
         assert info["aprovada"] is False
         p = _pendente(c, admin, f"uuid-ambiguo-{nome}")
         assert p["id"] not in (est["Adulto"]["id"], est["Infantil"]["id"])
+
+
+# ── 6.18 parte B: o instalador escolhe o piso (agente 1.20, ?piso=) ──────────
+
+def test_instalador_lista_os_pisos_sem_login(c, admin):
+    r = c.get("/api/agente/pisos")
+    assert r.status_code == 200
+    linhas = [l.split(";", 1) for l in r.text.strip().splitlines()]
+    nomes = {nome: int(i) for i, nome in linhas}
+    pisos = _pisos(c, admin)
+    assert nomes["Adulto"] == pisos["Adulto"]["id"] and nomes["Infantil"] == pisos["Infantil"]["id"]
+
+
+def test_pc_com_piso_assume_a_vaga_do_mapa(c, admin):
+    """O admin montou o mapa (MN-x nos dois pisos); o PC instalado como MN-x no
+    Infantil entra direto naquela estação, aprovado."""
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    infantil = pisos["Infantil"]["id"]
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-piso-{nome}&piso={infantil}") as ws:
+        assert _estado_114(ws) == {"nome": nome, "aprovada": True}
+    lista = {e["id"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+    assert lista[est["Infantil"]["id"]]["identificador"] == f"uuid-piso-{nome}"
+    assert lista[est["Adulto"]["id"]]["identificador"] is None
+
+
+def test_pc_com_piso_e_nome_novo_espera_no_piso_certo(c, admin):
+    """Nome que o piso não tem (mesmo que exista no outro): fica pendente, já com
+    o piso escolhido e o nome pedido (sem sufixo)."""
+    nome, est, pisos = _dois_pisos_com_o_mesmo_nome(c, admin)
+    infantil = pisos["Infantil"]["id"]
+    c.delete(f"/api/estacoes/{est['Infantil']['id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{nome}?id=uuid-pend-{nome}&piso={infantil}") as ws:
+        assert _estado_114(ws) == {"nome": nome, "aprovada": False}
+        p = _pendente(c, admin, f"uuid-pend-{nome}")
+        assert p["piso_id"] == infantil and p["nome"] == nome
+    # o PC da estação do Adulto não foi tocado
+    lista = {e["id"]: e for e in c.get("/api/estacoes/", headers=admin).json()}
+    assert lista[est["Adulto"]["id"]]["identificador"] is None
+    # piso que não existe: vale como sem piso
+    with c.websocket_connect(f"/ws/estacao/PISO-X-{nome}?id=uuid-px-{nome}&piso=99999") as ws:
+        assert _estado_114(ws)["aprovada"] is False

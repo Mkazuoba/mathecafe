@@ -40,7 +40,8 @@ def nome_livre(db: Session, desejado: str, ignorar_id: Optional[int] = None) -> 
         n += 1
 
 
-def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> Tuple[Optional[Estacao], bool]:
+def estacao_do_agente(db: Session, nome: str, identificador: Optional[str],
+                      piso_id: Optional[int] = None) -> Tuple[Optional[Estacao], bool]:
     """A estacao deste agente: (estacao, nova_pendente). (None, False) = recusar a
     conexao (agente antigo com nome desconhecido, ou PC recusado no painel)."""
     identificador = (identificador or "").strip()[:64] or None
@@ -59,6 +60,26 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
             db.commit()
             return e, True
 
+    from app.models import Piso
+    if piso_id is not None and db.get(Piso, piso_id) is None:
+        piso_id = None  # piso que nao existe (apagado depois da instalacao): como sem piso
+    if identificador and piso_id is not None:
+        # agente 1.20: o instalador escolheu o piso. A estacao com esse nome no
+        # piso, ainda sem PC, e dele (o admin ja montou o mapa); senao espera
+        # em Novas estacoes, ja no piso (6.18)
+        from app.nomes_estacao import com_o_nome
+        vaga = next((x for x in com_o_nome(db, nome, piso_id) if not x.identificador), None)
+        if vaga:
+            vaga.identificador = identificador
+            db.commit()
+            return vaga, False
+        e = Estacao(nome=nome_livre_no_piso(db, nome, piso_id), identificador=identificador,
+                    aprovada=False, status="livre", piso_id=piso_id)
+        db.add(e)
+        db.commit()
+        db.refresh(e)
+        return e, True
+
     e = _pelo_nome(db, nome, identificador)
     if e and not (identificador and e.identificador):
         if identificador:
@@ -74,6 +95,18 @@ def estacao_do_agente(db: Session, nome: str, identificador: Optional[str]) -> T
     db.commit()
     db.refresh(e)
     return e, True
+
+
+def nome_livre_no_piso(db: Session, desejado: str, piso_id: Optional[int], ignorar_id: Optional[int] = None) -> str:
+    """O nome pedido, ou com -2, -3... se outra estacao ativa do piso ja o usa."""
+    from app.nomes_estacao import ocupado_no_piso
+    base = (desejado or "").strip()[:TAMANHO_NOME] or "PC"
+    nome, n = base, 2
+    while ocupado_no_piso(db, nome, piso_id, ignorar_id):
+        sufixo = f"-{n}"
+        nome = base[:TAMANHO_NOME - len(sufixo)] + sufixo
+        n += 1
+    return nome
 
 
 def _pelo_nome(db: Session, nome: str, identificador: Optional[str]) -> Optional[Estacao]:

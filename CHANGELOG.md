@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-11 — Mapas separados por piso, parte B: o instalador escolhe o piso (6.18; agente 1.20.0)
+
+- **Instalador**: depois de testar o servidor, pergunta **em qual piso** fica o computador (a lista vem do servidor: Adulto, Infantil...) e grava `PISO=` no `agente.cfg`. Sem resposta do servidor, segue sem piso.
+- **Agente 1.20.0**: conecta com o piso escolhido (`?piso=`).
+- **Servidor**: o PC instalado com o nome de uma estação que já está no mapa daquele piso (e ainda sem computador) **entra direto nela**, aprovado. Nome que o piso não tem vai para **Novas estações**, já com o piso, e com o nome pedido mesmo que exista no outro piso. `GET /api/agente/pisos` (sem login) lista os pisos para o instalador.
+- **Novas estações**: mostra o piso de cada PC; a zona sugerida é a do piso dele (as outras vêm depois, com o piso no nome) e "Substitui a X" mostra o piso de cada estação.
+- Agentes até a 1.19 continuam como antes (pelo nome).
+
 ## 2026-11-11 — Mapas separados por piso, parte A: o mesmo nome no Adulto e no Infantil (6.18)
 
 - O nome da estação passou a ser único **só dentro do piso**: dá para ter AD-01 no Adulto e AD-01 no Infantil, cada uma com o seu histórico. No mesmo piso continua proibido (criar, várias de uma vez, renomear, aprovar, mudar de zona ou mudar a zona de piso).
