@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11 — Desinstalador completo
+
+- `agente/desinstalar.bat` agora deixa o PC como antes do `instalar.bat`: fecha o agente e a sessão do `cliente`, remove a tarefa e o autologin, desinstala o Python do agente (só o registrado em `C:\MatheCafe\python`), apaga o usuário `cliente` com o perfil (e as políticas dele) e a pasta `C:\MatheCafe`. Pede para digitar SIM; rodando de dentro de `C:\MatheCafe`, continua de uma cópia na pasta temporária.
+- A estação continua no painel: para reinstalar com o mesmo nome, exclua no Mapa antes (ou Substitui a X).
+
 ## 2026-11-11 — Restaurar um backup pelo painel (10.2)
 
 - Configurações → Servidor → Backup do banco: **Restaurar** em cada backup e **Restaurar de um arquivo...** (um banco guardado fora do servidor). O servidor confere o arquivo, reinicia e, ao subir, guarda o banco atual (`antes-da-restauracao-...db`) e põe o backup no lugar; o painel recarrega sozinho.

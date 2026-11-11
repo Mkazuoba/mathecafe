@@ -940,3 +940,27 @@ def test_area_do_cliente_acabamento_shadcn():
 def test_paleta_das_categorias_no_agente():
     ns = _carregar("_paleta_categorias")
     assert ns["_paleta_categorias"]()[:5] == ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e"]
+
+
+def test_desinstalador_limpa_tudo():
+    # 11/11: para testar a instalacao de novo numa maquina, o desinstalar.bat
+    # precisa deixar o PC como antes: tarefa, autologin, usuario cliente e perfil,
+    # Python do agente (so o instalado pelo instalar.bat) e a pasta inteira
+    pasta = os.path.dirname(AGENTE)
+    bat = open(os.path.join(pasta, "desinstalar.bat"), "rb").read()
+    assert b"\r\n" in bat and b"\n" not in bat.replace(b"\r\n", b"")  # CRLF
+    texto = bat.decode("ascii")
+    assert "net session" in texto  # so como administrador
+    assert 'set /p CONFIRMA=' in texto and '"SIM"' in texto  # pede confirmacao
+    assert 'schtasks /delete /tn "MatheCafe-Agente"' in texto
+    assert "AutoAdminLogon /t REG_SZ /d \"0\"" in texto and "DefaultPassword" in texto
+    assert "Win32_UserProfile" in texto and "net user cliente /delete" in texto
+    # o Python so sai se for o registrado na pasta do agente
+    assert "PythonCore" in texto and "QuietUninstallString" in texto and "$alvo" in texto
+    assert 'rmdir /s /q "%DESTINO%"' in texto
+    # rodando de dentro da pasta que vai apagar, continua de uma copia
+    assert '%TEMP%\mathecafe_desinstalar.bat' in texto
+    assert texto.index("[6/6]") > texto.index("[5/6]") > texto.index("[4/6]")
+    # o instalador leva o desinstalador para C:\MatheCafe
+    instalador = open(os.path.join(pasta, "instalar.bat"), "rb").read().decode("ascii")
+    assert "desinstalar.bat" in instalador
