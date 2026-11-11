@@ -14,7 +14,8 @@ router = APIRouter(prefix="/categorias", tags=["categorias"])
 
 
 # a cor que cada categoria nova ganha, em ordem (o admin troca no painel)
-CORES = ["#8b5cf6", "#3b82f6", "#22c55e", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
+# violet-500, blue-500, emerald-500, amber-500, rose-500 (prompt da Area do Cliente) e mais tres
+CORES = ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
 COR = r"^#[0-9a-fA-F]{6}$"
 
 

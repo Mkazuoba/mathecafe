@@ -538,6 +538,7 @@ function ModalApp({
   const [caminho, setCaminho] = useState("")
   const [imagem, setImagem] = useState("")
   const [categoria, setCategoria] = useState("")
+  const [descricao, setDescricao] = useState("")
   const [erro, setErro] = useState("")
   const [aberto, setAberto] = useState<AppPermitido | "novo" | null>(null)
 
@@ -548,6 +549,7 @@ function ModalApp({
     setCaminho(atual?.caminho ?? "")
     setImagem(atual?.imagem_url ?? "")
     setCategoria(atual?.categoria_id ? String(atual.categoria_id) : "")
+    setDescricao(atual?.descricao ?? "")
     setErro("")
   }
 
@@ -560,6 +562,7 @@ function ModalApp({
       caminho: caminho.trim() || null,
       imagem_url: imagem.trim() || null,
       categoria_id: categoria ? Number(categoria) : null,
+      descricao: descricao.trim(),
     }
     try {
       if (novo) await Api.post("/api/apps/", { ...dados, piso_id: piso?.id })
@@ -645,6 +648,15 @@ function ModalApp({
                 </option>
               ))}
             </Select>
+          </Campo>
+          <Campo rotulo="Descrição curta (opcional)" id="app-desc">
+            <Input
+              id="app-desc"
+              value={descricao}
+              maxLength={120}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="ex.: Livros digitais da biblioteca"
+            />
           </Campo>
           {novo && piso && (
             <p className="text-xs text-texto-fraco">
