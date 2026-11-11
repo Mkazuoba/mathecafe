@@ -90,7 +90,7 @@ npm run build        # compila para server/app/static
 2. **Configurações → Apps permitidos**: cadastre os programas que os clientes podem abrir (processo `.exe`, caminho completo e, se quiser, uma imagem de capa).
 3. **Mapa → Modo configuração**: crie as zonas da sala. As estações aparecem sozinhas depois de instalar o agente (ver 4): aprove-as em **Mapa → Novas estações** e arraste-as para a posição na sala. Cadastrar a estação à mão só é preciso para agentes antigos (até a 1.13), com o mesmo nome usado neles.
 4. **Clientes**: cadastre os clientes.
-5. **Configurações → Programação** (opcional): suba os cartazes da programação da biblioteca; eles aparecem ao lado dos apps durante a sessão.
+5. **Programação e avisos** (menu lateral, abaixo do Mapa; opcional): suba os cartazes da programação da biblioteca; eles aparecem ao lado dos apps durante a sessão.
 6. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
 
 ## 4. Agente (em cada estação)

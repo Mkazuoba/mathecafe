@@ -9,6 +9,7 @@ import Clientes from "@/pages/Clientes"
 import Mapa from "@/pages/Mapa"
 import Configuracoes from "@/pages/Configuracoes"
 import Historicos from "@/pages/Historicos"
+import Divulgacao from "@/pages/Divulgacao"
 
 function AreaLogada() {
   if (!Api.token()) return <Navigate to="/login" replace />
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/clientes" element={<Clientes />} />
             <Route path="/mapa" element={<Mapa />} />
             <Route path="/historicos" element={<Historicos />} />
+            <Route path="/programacao" element={<Divulgacao />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

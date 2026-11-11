@@ -1553,7 +1553,7 @@ class Programacao:
     """Banner largo no topo da tela de apps com os cartazes da programação da
     biblioteca, um de cada vez (troca com fade). Os cartazes são em pé: cada um
     aparece inteiro à direita sobre ele mesmo ampliado e desfocado, com o
-    título à esquerda. Vêm do servidor (Configurações → Programação); sem
+    título à esquerda. Vêm do servidor (Programação e avisos → Programação); sem
     cartaz, o banner some e a grade de apps sobe."""
 
     def __init__(self, app, frame):
@@ -2383,7 +2383,7 @@ class MenuLateral:
 class PainelDireito:
     """Coluna da direita da Área do Cliente (9.11): o widget da sessão (tempo
     restante e a barra do quanto já usou) e os Avisos da biblioteca, que o
-    admin cadastra no painel (Configurações → Avisos)."""
+    admin cadastra no painel (Programação e avisos → Avisos)."""
     LARGURA = 300
 
     def __init__(self, app, frame):

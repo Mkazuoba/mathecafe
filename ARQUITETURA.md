@@ -81,7 +81,7 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 | `autorizacoes` | fila de espera: um registro por cliente, `usado=false` = está na fila |
 | `sessoes` | histórico de uso: início, fim, tempo total e consumido, motivo (`vscyber` = importada do VSCyber por `importar_historico.py`, em estações inativas "... (VS)"/"(VSI)") |
 | `apps_permitidos` | programas (processo, caminho, imagem de capa, `categoria_id`); `grupo_id`/`ativo` são do modelo antigo, só usados na conversão |
-| `avisos` | avisos da biblioteca (título, texto, ordem, ativo), cadastrados em Configurações → Avisos; o servidor manda `avisos_atualizados` às estações a cada mudança |
+| `avisos` | avisos da biblioteca (título, texto, ordem, ativo), cadastrados em Programação e avisos → Avisos (menu lateral, abaixo do Mapa); o servidor manda `avisos_atualizados` às estações a cada mudança |
 | `categorias_apps` | categorias dos apps (nome único, `ordem`, `cor` #rrggbb: a categoria nova ganha a próxima da paleta; sem cor gravada, uma pelo id), cadastradas em Configurações → Apps → Categorias; filtram a tela de apps do agente. Excluir uma deixa os apps dela sem categoria |
 | `apps_pisos` | em que piso cada app está ligado (`app_id`, `piso_id`); a estação recebe os apps do piso dela (`pisos.apps_do_piso`) |
 | `configuracoes` | chave/valor: `tempo_padrao_segundos` (tempo de uso por dia), `reiniciar_ao_encerrar` |

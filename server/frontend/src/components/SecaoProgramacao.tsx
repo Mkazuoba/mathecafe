@@ -21,7 +21,7 @@ interface Cartaz {
 // Cartazes costumam ser verticais e com texto: reduz menos que a foto
 const LADO_CARTAZ = 1280
 
-/** Configurações → Programação: os cartazes que o agente mostra ao lado dos apps. */
+/** Programação e avisos → Programação: os cartazes que o agente mostra ao lado dos apps. */
 export function SecaoProgramacao() {
   const avisar = useAvisos()
   const entrada = useRef<HTMLInputElement>(null)

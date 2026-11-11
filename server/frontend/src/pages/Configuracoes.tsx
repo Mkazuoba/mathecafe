@@ -14,8 +14,6 @@ import { SecaoBanco } from "@/components/SecaoBanco"
 import { SecaoPisos } from "@/components/SecaoPisos"
 import { SecaoApps } from "@/components/SecaoApps"
 import { SecaoHorario } from "@/components/SecaoHorario"
-import { SecaoProgramacao } from "@/components/SecaoProgramacao"
-import { SecaoAvisos } from "@/components/SecaoAvisos"
 import { SeloAtivo, Vazio } from "@/components/ui/status"
 
 const SECOES = [
@@ -25,8 +23,6 @@ const SECOES = [
   { id: "pisos", rotulo: "Pisos" },
   { id: "grupos", rotulo: "Mapas" },
   { id: "apps", rotulo: "Apps permitidos" },
-  { id: "programacao", rotulo: "Programação" },
-  { id: "avisos", rotulo: "Avisos" },
   { id: "servidor", rotulo: "Servidor" },
   { id: "conta", rotulo: "Minha conta" },
 ] as const
@@ -66,8 +62,6 @@ export default function Configuracoes() {
           {secao === "pisos" && <SecaoPisos />}
           {secao === "grupos" && <SecaoGrupos />}
           {secao === "apps" && <SecaoApps />}
-          {secao === "programacao" && <SecaoProgramacao />}
-          {secao === "avisos" && <SecaoAvisos />}
           {secao === "servidor" && <SecaoBanco />}
           {secao === "conta" && <SecaoConta />}
         </div>

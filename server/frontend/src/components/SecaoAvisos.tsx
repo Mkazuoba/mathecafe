@@ -18,7 +18,7 @@ interface Aviso {
 const CAMPO =
   "w-full rounded-md border border-borda bg-superficie px-2 py-1.5 text-sm outline-none focus:border-destaque"
 
-/** Configurações → Avisos: comunicados, regras do espaço e eventos do dia, à direita da tela de apps do PC. */
+/** Programação e avisos → Avisos: comunicados, regras do espaço e eventos do dia, à direita da tela de apps do PC. */
 export function SecaoAvisos() {
   const avisar = useAvisos()
   const [itens, setItens] = useState<Aviso[] | null>(null)

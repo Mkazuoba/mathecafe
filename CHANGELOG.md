@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-11 — Programação e avisos fora de Configurações
+
+- **Programação** e **Avisos** saíram de Configurações e viraram uma tela própria, **Programação e avisos**, no menu lateral logo abaixo do Mapa (com as duas abas; só admin).
+- Avisos "não funcionavam" na biblioteca porque o servidor ainda não tinha sido reiniciado depois da 9.11 (`/api/avisos` respondia 404). Conferido no servidor de teste: publicar um aviso chega à lista dos PCs.
+
 ## 2026-11-11 — Seletor de piso só onde ele vale
 
 - O seletor de piso do topo aparece só no **Painel**, em **Clientes** e no **Mapa**, as telas que mostram um piso por vez. Em Configurações e Históricos ele saiu.

@@ -11,6 +11,7 @@ import {
   IconMap,
   IconMoon,
   IconSettings,
+  IconSpeakerphone,
   IconSun,
   IconUsers,
 } from "@tabler/icons-react"
@@ -43,6 +44,17 @@ export const ITENS: {
   { para: "/clientes", rotulo: "Clientes", Icone: IconUsers, soAdmin: false },
   { para: "/mapa", rotulo: "Mapa", Icone: IconMap, soAdmin: false },
   {
+    // o que a biblioteca divulga nos PCs (saiu de Configuracoes)
+    para: "/programacao",
+    rotulo: "Programação e avisos",
+    Icone: IconSpeakerphone,
+    soAdmin: true,
+    filhos: [
+      { rotulo: "Programação", chave: "aba", valor: "programacao" },
+      { rotulo: "Avisos", chave: "aba", valor: "avisos" },
+    ],
+  },
+  {
     para: "/historicos",
     rotulo: "Históricos",
     Icone: IconHistory,
@@ -68,8 +80,6 @@ export const ITENS: {
       ["Pisos", "pisos"],
       ["Mapas", "grupos"],
       ["Apps permitidos", "apps"],
-      ["Programação", "programacao"],
-      ["Avisos", "avisos"],
       ["Servidor", "servidor"],
       ["Minha conta", "conta"],
     ].map(([rotulo, valor]) => ({ rotulo, chave: "secao", valor })),
@@ -243,8 +253,8 @@ export function Layout() {
         <div className="flex-1 overflow-y-auto px-3 py-2">
           {(
             [
-              ["Operação", ITENS.slice(0, 3)],
-              ["Gestão", ITENS.slice(3)],
+              ["Operação", ITENS.slice(0, 4)],
+              ["Gestão", ITENS.slice(4)],
             ] as const
           ).map(([grupo, itens]) => (
             <div key={grupo} className="mb-3">
