@@ -14,7 +14,7 @@ from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_d
 from app import horario, logs_estacoes
 from app.estacoes_novas import AGUARDANDO, estacao_do_agente, info_para_o_agente
 from app.tempo_diario import ESGOTADO_CLIENTE, fechar_tempo_da_sessao, reservar_tempo
-from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router, categorias
+from app.routers import auth, clientes, estacoes, sessoes, apps, operadores, config, relatorios, programacao, pisos as pisos_router, agente as agente_router, categorias, avisos
 
 app = FastAPI(title="MatheCafé", version="1.0.0")
 
@@ -35,6 +35,7 @@ app.include_router(programacao.router, prefix="/api")
 app.include_router(pisos_router.router, prefix="/api")
 app.include_router(agente_router.router, prefix="/api")
 app.include_router(categorias.router, prefix="/api")
+app.include_router(avisos.router, prefix="/api")
 
 # A cada minuto o servidor grava que esta vivo. Ao subir de novo, isso diz
 # quando ele caiu: as sessoes abertas ficam "sem conexao" desde ali (o cliente

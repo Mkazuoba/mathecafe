@@ -94,6 +94,11 @@ def apps_do_piso(db: Session, piso) -> list:
             .filter(AppPiso.piso_id == piso.id).order_by(AppPermitido.nome).all())
 
 
+def cor_da_categoria(c) -> str:
+    from app.routers.categorias import cor_da_categoria as cor
+    return cor(c)
+
+
 def whitelist_para_o_agente(apps) -> list:
     """Os apps como o agente recebe no inicio da sessao (login e liberar direto).
     categoria/categoria_ordem: o filtro da tela de apps (None = "Outros")."""
@@ -105,6 +110,7 @@ def whitelist_para_o_agente(apps) -> list:
             "imagem_url": a.imagem_url,
             "categoria": a.categoria.nome if a.categoria else None,
             "categoria_ordem": a.categoria.ordem if a.categoria else None,
+            "categoria_cor": cor_da_categoria(a.categoria) if a.categoria else None,
         }
         for a in apps
     ]

@@ -14,6 +14,8 @@ interface Cartaz {
   ativo: boolean
   ordem: number
   versao: number
+  /** botão "Ver no navegador / Inscrição" no banner do PC */
+  link: string | null
 }
 
 // Cartazes costumam ser verticais e com texto: reduz menos que a foto
@@ -61,7 +63,7 @@ export function SecaoProgramacao() {
     }
   }
 
-  async function salvar(id: number, dados: Partial<Pick<Cartaz, "titulo" | "ativo">>) {
+  async function salvar(id: number, dados: Partial<Pick<Cartaz, "titulo" | "ativo" | "link">>) {
     try {
       await Api.put(`/api/programacao/${id}`, dados)
       await carregar()
@@ -109,8 +111,9 @@ export function SecaoProgramacao() {
     <div>
       <h2 className="mb-2 text-lg font-semibold">Programação</h2>
       <p className="mb-5 text-sm text-texto-suave">
-        Cartazes da programação da biblioteca. Aparecem no computador do cliente, ao lado dos apps, durante a sessão,
-        um de cada vez. Iguais em todas as estações; os desativados não aparecem.
+        Cartazes da programação da biblioteca. Aparecem no computador do cliente, no login e no alto da tela de
+        apps, um de cada vez. Iguais em todas as estações; os desativados não aparecem. Com um link, o banner mostra o
+        botão "Ver no navegador / Inscrição".
       </p>
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
@@ -146,14 +149,25 @@ export function SecaoProgramacao() {
                 alt={c.titulo || "Cartaz"}
                 className="h-20 w-16 shrink-0 rounded border border-borda bg-superficie object-cover"
               />
-              <input
-                type="text"
-                defaultValue={c.titulo}
-                aria-label="Título do cartaz"
-                placeholder="Sem título"
-                onBlur={(e) => e.target.value.trim() !== c.titulo && salvar(c.id, { titulo: e.target.value })}
-                className="min-w-0 flex-1 rounded-md border border-borda bg-superficie px-2 py-1.5 text-sm outline-none focus:border-destaque"
-              />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <input
+                  type="text"
+                  defaultValue={c.titulo}
+                  aria-label="Título do cartaz"
+                  placeholder="Sem título"
+                  onBlur={(e) => e.target.value.trim() !== c.titulo && salvar(c.id, { titulo: e.target.value })}
+                  className="rounded-md border border-borda bg-superficie px-2 py-1.5 text-sm outline-none focus:border-destaque"
+                />
+                <input
+                  type="url"
+                  key={c.link ?? ""}
+                  defaultValue={c.link ?? ""}
+                  aria-label="Link do cartaz"
+                  placeholder="Link de inscrição ou da página (opcional)"
+                  onBlur={(e) => e.target.value.trim() !== (c.link ?? "") && salvar(c.id, { link: e.target.value.trim() })}
+                  className="rounded-md border border-borda bg-superficie px-2 py-1.5 text-xs text-texto-suave outline-none focus:border-destaque"
+                />
+              </div>
               <Interruptor id={`prog-ativo-${c.id}`} rotulo="Mostrar este cartaz" ligado={c.ativo} aoMudar={(v) => salvar(c.id, { ativo: v })} />
               <div className="flex flex-col">
                 <button type="button" title="Subir" disabled={i === 0} onClick={() => mover(i, -1)} className="rounded p-0.5 text-texto-fraco hover:text-texto disabled:opacity-25">

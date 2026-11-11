@@ -13,13 +13,25 @@ from app.security import requer_perfil
 router = APIRouter(prefix="/categorias", tags=["categorias"])
 
 
+# a cor que cada categoria nova ganha, em ordem (o admin troca no painel)
+CORES = ["#8b5cf6", "#3b82f6", "#22c55e", "#f59e0b", "#f43f5e", "#06b6d4", "#ec4899", "#84cc16"]
+COR = r"^#[0-9a-fA-F]{6}$"
+
+
+def cor_da_categoria(c) -> str:
+    """Categoria de antes da 9.11 (sem cor gravada) ganha uma da paleta pelo id."""
+    return c.cor or CORES[(c.id or 0) % len(CORES)]
+
+
 class CategoriaNova(BaseModel):
     nome: str = Field(min_length=1, max_length=40)
+    cor: Optional[str] = Field(default=None, pattern=COR)
 
 
 class CategoriaAlterada(BaseModel):
     nome: Optional[str] = Field(default=None, min_length=1, max_length=40)
     ordem: Optional[int] = None
+    cor: Optional[str] = Field(default=None, pattern=COR)
 
 
 def serial(db: Session, c: CategoriaApp) -> dict:
@@ -27,6 +39,7 @@ def serial(db: Session, c: CategoriaApp) -> dict:
         "id": c.id,
         "nome": c.nome,
         "ordem": c.ordem,
+        "cor": cor_da_categoria(c),
         "apps": db.query(AppPermitido).filter(AppPermitido.categoria_id == c.id).count(),
     }
 
@@ -48,7 +61,8 @@ def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "oper
 def criar(data: CategoriaNova, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     _nome_livre(db, data.nome)
     ultima = db.query(func.max(CategoriaApp.ordem)).scalar()
-    c = CategoriaApp(nome=data.nome.strip(), ordem=(ultima or 0) + 1)
+    cor = (data.cor or CORES[db.query(CategoriaApp).count() % len(CORES)]).lower()
+    c = CategoriaApp(nome=data.nome.strip(), ordem=(ultima or 0) + 1, cor=cor)
     db.add(c)
     db.commit()
     return serial(db, c)
@@ -65,6 +79,8 @@ def alterar(categoria_id: int, data: CategoriaAlterada, db: Session = Depends(ge
         c.nome = data.nome.strip()
     if data.ordem is not None:
         c.ordem = data.ordem
+    if data.cor is not None:
+        c.cor = data.cor.lower()
     db.commit()
     return serial(db, c)
 
