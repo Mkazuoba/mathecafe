@@ -7,6 +7,7 @@
 - **Barra de operações** (Painel): o seletor de piso em pílula, chips Livres/Ocupadas/Desligadas/Em manutenção nas cores do estado e **Restaurar layout** à direita. Em Clientes e Mapa o seletor de piso continua no cabeçalho.
 - **Colunas**: alça (⋮⋮) no cabeçalho para arrastar a coluna até outra (no lugar das setas); Clientes com **+ Novo** no alto da coluna (na cor do piso) e busca com ícone, e o documento na lista; Fila vazia com o aviso no meio da coluna; nome da estação em fonte mono; rodapé do Controle de sessões com as quatro contagens.
 - Botões e campos com cantos `rounded-xl`.
+- Clientes: a busca subiu para o cabeçalho da coluna, ao lado dos filtros e do **+ Novo** (a lista começa logo abaixo).
 
 ## 2026-11-11 — Área do Cliente, terceira versão (9.13; agente 1.23.0)
 

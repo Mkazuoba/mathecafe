@@ -173,7 +173,7 @@ function Coluna({
           {piso && <> · {piso.nome}</>}
         </h2>
         <span className="rounded-md border border-borda bg-superficie-3 px-1.5 text-[11px] font-medium text-texto-suave">{total}</span>
-        {acao && <span className="ml-auto">{acao}</span>}
+        {acao && <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">{acao}</div>}
       </div>
       {topo}
       <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2">{children}</div>
@@ -1354,34 +1354,30 @@ function ColunaClientes({ aoEditarCliente, aoNovoCliente, controles }: {
       total={lista.length}
       controles={controles}
       acao={
-        // cadastrar: na cor do piso, no alto da coluna
-        <Button
-          size="xs"
-          className="gap-1 px-3 shadow-md shadow-destaque/25"
-          title="Cadastrar um cliente novo"
-          onClick={aoNovoCliente}
-        >
-          <IconPlus size={14} />
-          Novo
-        </Button>
-      }
-      topo={
-        <div className="shrink-0 border-b border-borda p-2">
-          <div className="flex gap-1.5">
-            <label className="relative min-w-0 flex-1">
-              <IconSearch size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-texto-fraco" />
-              <input
-                type="search"
-                aria-label="Buscar cliente"
-                placeholder={dica}
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                className="w-full rounded-xl border border-borda bg-superficie-2 py-1.5 pr-3 pl-8 text-sm outline-none transition-colors focus:border-destaque"
-              />
-            </label>
-            <FiltrosBusca valor={filtros} padrao={FILTROS_PADRAO} campos={["campo", "modo", "saldo"]} aoMudar={mudarFiltros} />
-          </div>
-        </div>
+        // busca, filtros e cadastrar, tudo no alto da coluna
+        <>
+          <label className="relative min-w-0 flex-1">
+            <IconSearch size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-texto-fraco" />
+            <input
+              type="search"
+              aria-label="Buscar cliente"
+              placeholder={dica}
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-7 w-full rounded-xl border border-borda bg-superficie-2 pr-2.5 pl-7 text-xs outline-none transition-colors focus:border-destaque"
+            />
+          </label>
+          <FiltrosBusca valor={filtros} padrao={FILTROS_PADRAO} campos={["campo", "modo", "saldo"]} aoMudar={mudarFiltros} />
+          <Button
+            size="xs"
+            className="shrink-0 gap-1 px-3 shadow-md shadow-destaque/25"
+            title="Cadastrar um cliente novo"
+            onClick={aoNovoCliente}
+          >
+            <IconPlus size={14} />
+            Novo
+          </Button>
+        </>
       }
     >
       {lista.length ? (
