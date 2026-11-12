@@ -23,7 +23,7 @@ import { useDados } from "@/lib/dados"
 import { formatarTempo, restanteDaSessao } from "@/lib/tempo"
 import type { Estacao, Grupo, Piso, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
-import { CabecalhoTela } from "@/components/Layout"
+import { CabecalhoTela, SeletorPiso } from "@/components/Layout"
 import { SeletorCliente, type ClienteResumo } from "@/components/SeletorCliente"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, MensagemErro, Select, Textarea } from "@/components/ui/campos"
@@ -439,6 +439,7 @@ export default function Mapa() {
   return (
     <>
       <CabecalhoTela titulo="Mapa">
+        <SeletorPiso />
         {/* legenda dos estados, com a contagem do piso */}
         <div className="flex flex-wrap items-center gap-3 text-xs text-texto-suave">
           {(Object.keys(COR_LEGENDA) as StatusEstacao[]).map((s) => (

@@ -227,7 +227,7 @@ export function Layout() {
   const atual = ITENS.find((i) => (i.para === "/" ? pathname === "/" : pathname.startsWith(i.para)))
   // o piso so muda o que aparece no Painel, em Clientes e no Mapa; Historicos
   // tem o filtro dele e Configuracoes vale para todos os pisos
-  const comPiso = pathname.startsWith("/clientes") || pathname.startsWith("/mapa")  // no Painel, na barra de operações
+  // o seletor de piso fica dentro de cada tela que usa (Painel e Mapa; Clientes tem as abas de piso)
 
   // Ctrl+K (ou Cmd+K no Mac) abre a busca de qualquer tela
   useEffect(() => {
@@ -364,7 +364,6 @@ export function Layout() {
             <span className="font-medium">{pathname === "/" ? "Painel principal" : (atual?.rotulo ?? "")}</span>
           </nav>
 
-          {comPiso && <SeletorPiso className="ml-3" />}
 
           <div className="flex-1" />
           <button
