@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-13 — Atualizar a tela dos clientes (agente 1.25.0)
+
+- **Atualizar telas dos clientes** (Configurações → Apps permitidos, ao lado da contagem): depois de tirar ou pôr um app, os computadores ligados refazem a tela na hora com a lista de agora, **sem tirar ninguém da sessão**. O app retirado some dos cards (e a aba da categoria, se ficar vazia); se estiver aberto, o monitor o fecha. Também recarrega a cor do piso, os cartazes e os avisos.
+- **Atualizar tela** na barra de ações em massa do Painel: o mesmo só para as estações selecionadas.
+- Servidor: `POST /api/estacoes/atualizar_telas` (`{}` = todas as ligadas; `{"ids": [...]}` = só essas) manda o evento `atualizar_tela`; fica no registro de ações como "Atualizou a tela dos clientes". Agente anterior à 1.25 ignora o evento (pega a lista nova no próximo login).
+
 ## 2026-11-12 — Banner e abas com transição suave (agente 1.24.0)
 
 - A troca de cartaz no banner da Área do Cliente ficou suave: ~0,65 s com aceleração e desaceleração (ease-in-out), o cartaz novo entra deslizando da direita enquanto o antigo sai para a esquerda, os dois em fade, e o texto some e reaparece em vez de pular no meio (antes: fade linear de 0,3 s).

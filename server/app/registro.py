@@ -43,6 +43,7 @@ ROTULOS = {
     "duplicar_zona": "Duplicou zona do mapa",
     "excluir_zona": "Excluiu zona do mapa",
     "atualizar_agente": "Atualizou o agente",
+    "atualizar_telas": "Atualizou a tela dos clientes",
     "criar_operador": "Cadastrou operador",
     "editar_operador": "Editou operador",
     "excluir_operador": "Excluiu operador",

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { IconDownload, IconMessage, IconPlayerStop, IconPower, IconRefresh, IconWifi, IconX } from "@tabler/icons-react"
+import { IconDownload, IconLayoutGrid, IconMessage, IconPlayerStop, IconPower, IconRefresh, IconWifi, IconX } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
@@ -72,6 +72,24 @@ export function AcoesEmMassa({ estacoes, aoLimpar }: { estacoes: string[]; aoLim
     }
   }
 
+  // refaz a tela dos escolhidos com a lista de apps de agora (sem tirar ninguém)
+  async function atualizarTela() {
+    setEnviando(true)
+    try {
+      const ids = estacoes.map((n) => doPiso.find((e) => e.nome === n)?.id).filter((id) => id != null)
+      const r = await Api.post<{ enviadas: number }>("/api/estacoes/atualizar_telas", { ids })
+      const fora = estacoes.length - r.enviadas
+      avisar(
+        `Tela atualizada: ${nomesDe(r.enviadas)}` + (fora ? `. Desligada(s), ficou(aram) de fora: ${fora}` : ""),
+        r.enviadas ? undefined : "erro",
+      )
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setEnviando(false)
+    }
+  }
+
   async function enviarMensagem(ev: React.FormEvent) {
     ev.preventDefault()
     if (!texto.trim()) return setErro("Escreva a mensagem")
@@ -107,6 +125,15 @@ export function AcoesEmMassa({ estacoes, aoLimpar }: { estacoes: string[]; aoLim
       </Button>
       <Button size="xs" variant="outline" disabled={enviando} onClick={() => executar("reiniciar")}>
         <IconRefresh size={13} className="mr-1" /> Reiniciar
+      </Button>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={enviando}
+        onClick={atualizarTela}
+        title="Refaz a tela com a lista de apps de agora, sem tirar o cliente da sessão"
+      >
+        <IconLayoutGrid size={13} className="mr-1" /> Atualizar tela
       </Button>
       <Button size="xs" variant="outline" disabled={enviando} onClick={() => executar("atualizar")}>
         <IconDownload size={13} className="mr-1" /> Atualizar agente

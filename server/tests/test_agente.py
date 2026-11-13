@@ -1073,3 +1073,18 @@ def test_simulador_desliga_o_que_mexe_no_windows():
     assert '--navegador' in sim and 'DwmSetWindowAttribute' in sim and 'focus_force' in sim
     espelho = open(os.path.join(pasta, 'simulador_navegador.py'), encoding='utf-8').read()
     assert '127.0.0.1' in espelho and 'PrintWindow' in espelho and 'multipart/x-mixed-replace' in espelho
+
+
+def test_atualizar_tela_pelo_painel():
+    # 13/11 (pedido do Matheus): ao retirar um app no painel, o botao "Atualizar
+    # telas" manda a lista nova e o agente refaz a tela sem deslogar o cliente
+    ns = _carregar("normalizar_whitelist")
+    norm = ns["normalizar_whitelist"]
+    assert norm(["chrome.exe"]) == [{"nome": "chrome.exe", "processo": "chrome.exe", "caminho": None}]
+    apps = [{"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:/chrome.exe"}]
+    assert norm(apps) == apps and norm([]) == []
+    src = _fonte()
+    assert 'elif evento == "atualizar_tela":' in src
+    metodo = src[src.index("    def _atualizar_tela(self, dados):"):src.index("    def _montar_launcher(self):")]
+    assert "self.whitelist_procs = " in metodo and "self._montar_launcher()" in metodo
+    assert "if self.sessao_ativa" in metodo  # fora da sessao, so cartazes e avisos
