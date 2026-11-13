@@ -1049,3 +1049,27 @@ def test_busca_acha_pela_categoria():
     ns = _carregar("normalizar_busca", "categorias_da_tela", "filtrar_apps")
     apps = [{"nome": "Kindle", "categoria": "Estudo & Leitura"}, {"nome": "Chrome", "categoria": "Navegação"}]
     assert [a["nome"] for a in ns["filtrar_apps"](apps, "todos", "navegacao")] == ["Chrome"]
+
+
+def test_simulador_desliga_o_que_mexe_no_windows():
+    # 12/11: simulador da tela do cliente para desenvolver o visual neste PC.
+    # Tudo o que o agente faz no Windows tem de estar desligado nele, e os nomes
+    # que ele troca tem de existir no agente (renomear quebraria o simulador).
+    pasta = os.path.dirname(AGENTE)
+    sim = open(os.path.join(pasta, 'simular.py'), encoding='utf-8').read()
+    src = _fonte()
+    for nome in ('BloqueioTeclado', 'barra_do_windows', 'iniciar_vigia', 'limpar_pasta', 'CFG_FILE'):
+        assert f'ag.{nome} = ' in sim, nome
+        assert (f'class {nome}' in src) or (f'def {nome}(' in src) or (f'{nome} = ' in src), nome
+    for metodo in ('_verificar_processos', '_fechar_janelas_fora_da_whitelist', '_encerrar_apps_do_cliente',
+                   '_limpar_downloads', '_countdown_reinicio', '_aplicar_atualizacao'):
+        assert f'App.{metodo} = ' in sim, metodo
+        assert f'    def {metodo}(' in src, metodo
+    assert 'agente_simulacao.cfg' in sim and '-fullscreen' in sim
+    # nao vai para as estacoes
+    instalar = open(os.path.join(pasta, 'instalar.bat'), 'rb').read().decode('ascii')
+    assert 'simular' not in instalar
+    # --navegador: a pagina do espelho, com a janela escondida pelo DWM
+    assert '--navegador' in sim and 'DwmSetWindowAttribute' in sim and 'focus_force' in sim
+    espelho = open(os.path.join(pasta, 'simulador_navegador.py'), encoding='utf-8').read()
+    assert '127.0.0.1' in espelho and 'PrintWindow' in espelho and 'multipart/x-mixed-replace' in espelho

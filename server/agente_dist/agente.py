@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.23.0"
+VERSAO = "1.24.0"
 
 import asyncio
 import json
@@ -1723,19 +1723,34 @@ class Programacao:
         self.indice = i
         self._exibir()
 
-    def _animar(self, de, para, passo, i_de, i_para, passos=10):
-        """Fade entre dois cartazes (~0,3 s); o texto troca no meio."""
+    DESLIZE = 28  # px que o cartaz anda na troca
+
+    def _animar(self, de, para, passo, i_de, i_para, passos=22):
+        """Troca suave entre dois cartazes (~0,65 s, ease-in-out): o novo entra
+        deslizando da direita enquanto o antigo sai para a esquerda, os dois em
+        fade; o texto some e o do novo aparece (sem pulo)."""
         if self._fade:
             self.app.root.after_cancel(self._fade)
             self._fade = None
         if passo >= passos:
             self._desenhar(para, i_para)
             return
-        mistura = Image.blend(de, para[0], passo / passos)
-        self._desenhar((mistura, para[1]), i_para if passo >= passos // 2 else i_de, guardar=False)
+        t = passo / passos
+        e = t * t * (3 - 2 * t)  # smoothstep: começa e termina devagar
+        cor = de.getpixel((0, 0))
+        saindo = Image.new(de.mode, de.size, cor)
+        saindo.paste(de, (-round(e * self.DESLIZE), 0))
+        entrando = Image.new(de.mode, de.size, cor)
+        entrando.paste(para[0], (round((1 - e) * self.DESLIZE), 0))
+        mistura = Image.blend(saindo, entrando, e)
+        # texto: o antigo some na primeira metade, o novo aparece na segunda
+        if e < 0.5:
+            self._desenhar((mistura, para[1]), i_de, guardar=False, opacidade=1 - 2 * e)
+        else:
+            self._desenhar((mistura, para[1]), i_para, guardar=False, opacidade=2 * e - 1)
         self._fade = self.app.root.after(30, lambda: self._animar(de, para, passo + 1, i_de, i_para, passos))
 
-    def _desenhar(self, quadro, i, guardar=True):
+    def _desenhar(self, quadro, i, guardar=True, opacidade=1.0):
         c, p = self.canvas, self.app.paleta
         img, largura_cartaz = quadro
         self._foto = ImageTk.PhotoImage(img)
@@ -1750,6 +1765,12 @@ class Programacao:
         x = max(32, h // 8)
         livre = max(160, w - largura_cartaz - x - 32)
         dados = self.itens[i]
+        if opacidade < 1:
+            r, g, b = img.getpixel((min(w - 1, x + 4), h // 2))[:3]
+            base = "#%02x%02x%02x" % (r, g, b)
+            tom = lambda cor: misturar(cor, base, max(0.0, opacidade))
+        else:
+            tom = lambda cor: cor
         item = {"titulo": dados[0] or "", "link": dados[2] if len(dados) > 2 else None,
                 "descricao": dados[3] if len(dados) > 3 else "", "creditos": dados[4] if len(dados) > 4 else ""}
         # selo em pílula
@@ -1758,22 +1779,22 @@ class Programacao:
         y = max(24, h * 0.1)
         ls = fonte_selo.measure(texto_selo) + 22
         violeta = "#8b5cf6"
-        BarraSessao._retangulo(c, x, y, x + ls, y + 22, 11, fill=misturar(violeta, ZINC_950, 0.45), outline="")
-        BarraSessao._retangulo(c, x + 1, y + 1, x + ls - 1, y + 21, 10, fill=misturar(violeta, ZINC_950, 0.16), outline="")
-        c.create_text(x + ls / 2, y + 11, text=texto_selo, fill="#c4b5fd", font=fonte_selo)
+        BarraSessao._retangulo(c, x, y, x + ls, y + 22, 11, fill=tom(misturar(violeta, ZINC_950, 0.45)), outline="")
+        BarraSessao._retangulo(c, x + 1, y + 1, x + ls - 1, y + 21, 10, fill=tom(misturar(violeta, ZINC_950, 0.16)), outline="")
+        c.create_text(x + ls / 2, y + 11, text=texto_selo, fill=tom("#c4b5fd"), font=fonte_selo)
         y += 34
         # título (text-2xl font-extrabold), descrição e créditos
         tamanho = 20 if len(item["titulo"]) < 48 else 16
-        t = c.create_text(x, y, anchor="nw", text=item["titulo"], fill=TEXTO_CLARO, width=livre,
+        t = c.create_text(x, y, anchor="nw", text=item["titulo"], fill=tom(TEXTO_CLARO), width=livre,
                           font=(FONTE, tamanho, "bold"))
         y = (c.bbox(t) or (0, 0, 0, y + 30))[3] + 10
         if item["descricao"]:
             fonte_desc = tkfont.Font(family=FONTE, size=9)
             t = c.create_text(x, y, anchor="nw", text=cortar_linhas(item["descricao"], fonte_desc, livre, 3),
-                              fill="#d4d4d8", font=fonte_desc)
+                              fill=tom("#d4d4d8"), font=fonte_desc)
             y = (c.bbox(t) or (0, 0, 0, y + 20))[3] + 6
         if item["creditos"]:
-            t = c.create_text(x, y, anchor="nw", text=item["creditos"], fill="#a1a1aa", width=livre,
+            t = c.create_text(x, y, anchor="nw", text=item["creditos"], fill=tom("#a1a1aa"), width=livre,
                               font=(FONTE, 8, "italic"))
             y = (c.bbox(t) or (0, 0, 0, y + 14))[3]
         link = item.get("link")
@@ -1783,10 +1804,10 @@ class Programacao:
             texto = "\u2197  Abrir Inscrição / Programação"
             x1, alto = x + fonte.measure(texto) + 40, 38
             BarraSessao._retangulo(c, x - 2, y_botao + 3, x1 + 2, y_botao + alto + 6, 14,
-                                   fill=misturar(AZUL, ZINC_950, 0.3), outline="")
-            BarraSessao._retangulo(c, x, y_botao, x1, y_botao + alto, 12, fill=AZUL, outline="",
+                                   fill=tom(misturar(AZUL, ZINC_950, 0.3)), outline="")
+            BarraSessao._retangulo(c, x, y_botao, x1, y_botao + alto, 12, fill=tom(AZUL), outline="",
                                    tags=("link", "link_fundo"))
-            c.create_text((x + x1) / 2, y_botao + alto / 2, text=texto, fill=TEXTO_CLARO, font=fonte, tags="link")
+            c.create_text((x + x1) / 2, y_botao + alto / 2, text=texto, fill=tom(TEXTO_CLARO), font=fonte, tags="link")
             c.tag_bind("link", "<Button-1>", lambda e, u=link: self._abrir_link(u))
             c.tag_bind("link", "<Enter>", lambda e: (c.config(cursor="hand2"), c.itemconfig("link_fundo", fill=AZUL_CLARO)))
             c.tag_bind("link", "<Leave>", lambda e: (c.config(cursor="arrow"), c.itemconfig("link_fundo", fill=AZUL)))
@@ -2047,6 +2068,7 @@ class TelaApps:
             dados = None
         cv = c["canvas"]
         cv.delete("all")
+        c["desloc"] = 0  # a animação de entrada recomeça daqui
         cv.config(bg=p["fundo"])
         M, W, H, CH = self.MARGEM, self.CARD_W, self.CARD_H, self.CAPA_H
         if PIL_AVAILABLE:
@@ -2180,6 +2202,50 @@ class TelaApps:
         self._pintar_pilulas()
         self._filtrar()
         self.canvas.yview_moveto(0)
+        self.animar_entrada()
+
+    # ── entrada suave dos cards (troca de aba e de página) ──
+    # cada card sobe 12 px e aparece em ~0,2 s (ease-out), um depois do outro;
+    # o "véu" com pontilhado do Tk (stipple) faz o papel do fade
+    DESLOC_ENTRADA = (12, 7, 4, 2, 1, 0)
+    VEU_ENTRADA = ("gray75", "gray50", "gray25", "gray12", "gray12", None)
+    CASCATA_MS, PASSO_MS, MAX_ANIMADOS = 35, 35, 16
+
+    def animar_entrada(self):
+        self._gen_entrada = getattr(self, "_gen_entrada", 0) + 1
+        gen = self._gen_entrada
+        fundo = self.app.paleta["fundo"]
+        for c in self.cartoes.values():  # desfaz uma animação que ficou no meio
+            cv = c["canvas"]
+            if c.get("desloc"):
+                cv.move("all", 0, -c["desloc"])
+                c["desloc"] = 0
+            cv.delete("veu")
+        for n, i in enumerate(getattr(self, "_visiveis", [])[:self.MAX_ANIMADOS]):
+            c = self.cartoes[i]
+            cv = c["canvas"]
+            w, h = int(cv.cget("width")), int(cv.cget("height"))
+            cv.create_rectangle(-4, -30, w + 4, h + 30, fill=fundo, outline="", stipple=self.VEU_ENTRADA[0], tags="veu")
+            cv.move("all", 0, self.DESLOC_ENTRADA[0])
+            c["desloc"] = self.DESLOC_ENTRADA[0]
+            self.app.root.after(n * self.CASCATA_MS, lambda i=i: self._passo_entrada(i, gen, 1))
+
+    def _passo_entrada(self, i, gen, k):
+        if gen != getattr(self, "_gen_entrada", 0):
+            return
+        c = self.cartoes.get(i)
+        if not c or not c["canvas"].winfo_exists():
+            return
+        cv = c["canvas"]
+        alvo = self.DESLOC_ENTRADA[k]
+        cv.move("all", 0, alvo - c.get("desloc", 0))
+        c["desloc"] = alvo
+        if self.VEU_ENTRADA[k]:
+            cv.itemconfig("veu", stipple=self.VEU_ENTRADA[k])
+        else:
+            cv.delete("veu")
+        if k < len(self.DESLOC_ENTRADA) - 1:
+            self.app.root.after(self.PASSO_MS, lambda: self._passo_entrada(i, gen, k + 1))
 
     def _ao_digitar(self):
         texto = self.var_busca.get()
@@ -3606,6 +3672,7 @@ class AgenteApp:
         if not self.frame_launcher.winfo_manager():
             self.frame_launcher.pack(side="bottom", expand=True, fill="both")
         self._programacao.ajustar_pagina()
+        self.root.after(40, self._tela_apps.animar_entrada)
 
     def _abrir_app(self, app):
         caminho = app.get("caminho")

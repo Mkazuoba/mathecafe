@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-12 — Banner e abas com transição suave (agente 1.24.0)
+
+- A troca de cartaz no banner da Área do Cliente ficou suave: ~0,65 s com aceleração e desaceleração (ease-in-out), o cartaz novo entra deslizando da direita enquanto o antigo sai para a esquerda, os dois em fade, e o texto some e reaparece em vez de pular no meio (antes: fade linear de 0,3 s).
+- Troca de aba (Todos, Internet, Estudo...) e de página (Início, Meus Apps): os cards entram em cascata, subindo 12 px e aparecendo em ~0,2 s cada (o pontilhado do Tk faz o fade), em vez de surgirem de uma vez.
+- Simulador no navegador: sem a barra de cima (a página é só a tela) e com ~20 quadros por segundo, para ver as animações.
+
+## 2026-11-12 — Simulador da tela do cliente
+
+- `agente/simular.bat` (`simular.py`): abre o agente de verdade numa janela comum deste PC, ligado ao servidor de teste, para desenvolver e conferir o visual da tela do cliente sem uma estação (como o servidor de teste faz com o painel).
+- **No navegador**: `simular.py --navegador` serve a tela do cliente em `http://127.0.0.1:5190` (imagem ao vivo; cliques, rodinha e teclado voltam para a tela), para abrir no navegador do Claude como o servidor de teste. A janela de verdade fica escondida pelo Windows (cloak), sem aparecer nem pegar cliques.
+- Desligado no simulador: tela cheia/por cima, bloqueio de teclas, esconder a barra do Windows, fechar programas, esvaziar Downloads e o vigia do Explorador, desligar/reiniciar o PC e a atualização pelo painel. Configuração própria (`agente_simulacao.cfg`); o X fecha. Não vai para as estações.
+
 ## 2026-11-11 — Painel principal novo (cor do piso, barra de operações, colunas arrastáveis)
 
 - **Cor do piso**: o fundo, as bordas e os botões principais tomam a cor cadastrada do piso escolhido (Configurações → Pisos), com transição suave ao trocar; vale nos dois temas.

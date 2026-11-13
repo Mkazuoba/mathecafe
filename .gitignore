@@ -21,3 +21,5 @@ capturas/
 # pedido do reiniciar_servidor.bat (o servidor apaga ao atender)
 server/reiniciar.pedido
 server/restaurar.pedido
+# configuracao do simulador da tela do cliente (agente/simular.py)
+agente/agente_simulacao.cfg
