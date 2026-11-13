@@ -2702,7 +2702,7 @@ def test_apps_mudados_no_painel_chegam_na_hora_ao_pc_em_sessao(c, admin, cenario
         dados = _logar_no_pc(ws, cenario["cliente"])
 
         r = c.post("/api/apps/", headers=admin, json={"nome": "Navegador Ao Vivo", "processo": "aovivo.exe",
-                                                       "caminho": "C:\aovivo.exe"})
+                                                       "caminho": "C:/aovivo.exe"})
         assert r.status_code == 200, r.text
         app = r.json()
         msg = ws.receive_json()
@@ -2731,3 +2731,29 @@ def test_apps_mudados_nao_vao_ao_pc_sem_sessao(c, admin, cenario):
         ws.send_json({"evento": "ping"})
         assert ws.receive_json()["evento"] == "pong"  # nada de apps_atualizados antes
         c.delete(f"/api/apps/{r.json()['id']}", headers=admin)
+
+
+# ── Atualizar a tela dos clientes (apps retirados sem esperar o próximo login) ──
+
+def test_atualizar_tela_manda_a_lista_de_apps_atual(c, admin, operador, cenario):
+    nome = cenario["estacao"]
+    eid = _id_da_estacao(nome)
+    with c.websocket_connect(f"/ws/estacao/{nome}") as ws:
+        ws.send_json({"evento": "estado", "sessao_id": None, "versao": "1.25.0"})
+        ws.receive_json()  # pong
+        ws.receive_json()  # piso_estacao
+        # todas as estações conectadas
+        r = c.post("/api/estacoes/atualizar_telas", headers=operador, json={})
+        assert r.status_code == 200, r.text
+        assert r.json()["enviadas"] >= 1
+        msg = ws.receive_json()
+        assert msg["evento"] == "atualizar_tela"
+        assert isinstance(msg["dados"]["whitelist"], list) and "piso" in msg["dados"]
+        # só as escolhidas (ações em massa)
+        r = c.post("/api/estacoes/atualizar_telas", headers=admin, json={"ids": [eid]})
+        assert r.json()["enviadas"] == 1
+        assert ws.receive_json()["evento"] == "atualizar_tela"
+    r = c.post("/api/estacoes/atualizar_telas", headers=admin, json={"ids": [eid]})
+    assert r.json()["enviadas"] == 0  # desconectada: nada a mandar
+    acoes = [a["acao"] for a in c.get("/api/relatorios/acoes", headers=admin).json()]
+    assert "atualizar_telas" in acoes

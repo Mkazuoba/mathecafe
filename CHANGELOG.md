@@ -8,12 +8,19 @@
 
 - Ligar, desligar, editar ou excluir um app (ou mudar uma categoria) no painel agora vale na hora para quem está usando o computador: a tela de apps se refaz sozinha, sem botão. Antes a lista só mudava no próximo login.
 - O app desligado que estiver aberto no PC é fechado, como qualquer programa não permitido.
+- O botão **Atualizar telas dos clientes** (1.25.0) continua: serve para a cor do piso, os cartazes e os avisos, e para PCs com agente anterior a este (que ignoram o envio automático). Os dois usam o mesmo código no agente.
 
 ## 2026-11-13 — Login do PC no visual da Área do Cliente
 
 - A tela de login do computador ganhou a tipografia e as cores da Área do Cliente: marca MatheCafé no canto, situação do PC em verde esmeralda (online), rosa (offline) ou âmbar (conectando), rótulos em caixa alta, campos com cantos arredondados (borda azul ao digitar, olho dentro da senha) e botão **Entrar** azul.
 - Tema e versão no canto de baixo no mesmo estilo do dock; mensagens de erro em rosa (sem o vermelho vivo).
 - Sem cartaz da Programação, a metade direita fica num degradê azul → índigo.
+
+## 2026-11-13 — Atualizar a tela dos clientes (agente 1.25.0)
+
+- **Atualizar telas dos clientes** (Configurações → Apps permitidos, ao lado da contagem): depois de tirar ou pôr um app, os computadores ligados refazem a tela na hora com a lista de agora, **sem tirar ninguém da sessão**. O app retirado some dos cards (e a aba da categoria, se ficar vazia); se estiver aberto, o monitor o fecha. Também recarrega a cor do piso, os cartazes e os avisos.
+- **Atualizar tela** na barra de ações em massa do Painel: o mesmo só para as estações selecionadas.
+- Servidor: `POST /api/estacoes/atualizar_telas` (`{}` = todas as ligadas; `{"ids": [...]}` = só essas) manda o evento `atualizar_tela`; fica no registro de ações como "Atualizou a tela dos clientes". Agente anterior à 1.25 ignora o evento (pega a lista nova no próximo login).
 
 ## 2026-11-12 — Banner e abas com transição suave (agente 1.24.0)
 

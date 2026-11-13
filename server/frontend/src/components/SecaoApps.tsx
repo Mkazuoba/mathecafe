@@ -6,6 +6,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconPlus,
+  IconRefresh,
   IconSearch,
   IconTags,
   IconTrash,
@@ -49,6 +50,7 @@ export function SecaoApps() {
   const [marcados, setMarcados] = useState<Set<number>>(() => new Set())
   const [acao, setAcao] = useState<AcaoMassa>("")
   const [aplicando, setAplicando] = useState(false)
+  const [atualizandoTelas, setAtualizandoTelas] = useState(false)
   // null: fechado; "novo": cadastro; app: edição
   const [editando, setEditando] = useState<AppPermitido | "novo" | null>(null)
 
@@ -154,6 +156,24 @@ export function SecaoApps() {
     await carregar()
   }
 
+  // depois de tirar ou pôr um app: os computadores ligados refazem a tela sem
+  // tirar o cliente da sessão (um app retirado que estiver aberto é fechado)
+  async function atualizarTelas() {
+    setAtualizandoTelas(true)
+    try {
+      const r = await Api.post<{ enviadas: number }>("/api/estacoes/atualizar_telas", {})
+      avisar(
+        r.enviadas
+          ? `Tela atualizada em ${r.enviadas === 1 ? "1 computador" : `${r.enviadas} computadores`}`
+          : "Nenhum computador ligado agora",
+      )
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setAtualizandoTelas(false)
+    }
+  }
+
   return (
     <div>
       <h2 className="mb-2 text-lg font-semibold">Apps permitidos</h2>
@@ -167,12 +187,25 @@ export function SecaoApps() {
       <div className="mb-4 border-b border-borda">
         <AbasPiso pisos={pisos} piso={piso} aoTrocar={trocarPiso} rotulo="Apps" />
       </div>
-      {piso && (
-        <p className="mb-3 text-sm text-texto-suave">
-          {ligadosNoPiso} de {apps?.length ?? 0} {apps?.length === 1 ? "app ligado" : "apps ligados"} no piso{" "}
-          {piso.nome}.
-        </p>
-      )}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        {piso && (
+          <p className="text-sm text-texto-suave">
+            {ligadosNoPiso} de {apps?.length ?? 0} {apps?.length === 1 ? "app ligado" : "apps ligados"} no piso{" "}
+            {piso.nome}.
+          </p>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={atualizandoTelas}
+          onClick={atualizarTelas}
+          title="Manda a lista de apps de agora para os computadores ligados, sem tirar ninguém da sessão"
+        >
+          <IconRefresh size={14} className="mr-1" />
+          {atualizandoTelas ? "Atualizando..." : "Atualizar telas dos clientes"}
+        </Button>
+      </div>
 
       {/* filtros numa linha */}
       <div className="mb-4 flex flex-wrap items-center gap-2">

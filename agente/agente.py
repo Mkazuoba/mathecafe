@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.24.0"
+VERSAO = "1.25.0"
 
 import asyncio
 import json
@@ -3580,8 +3580,14 @@ class AgenteApp:
             self._painel_direito.recarregar_avisos()
 
         elif evento == "apps_atualizados":
+            # app mudado no painel (9.15): chega sozinho, sem o botão
             self._log("<- apps_atualizados")
             self._apps_atualizados(dados)
+
+        elif evento == "atualizar_tela":
+            # botão "Atualizar telas" do painel (1.25): apps, cartazes e avisos de novo
+            self._log("<- atualizar_tela")
+            self._atualizar_tela(dados)
 
         elif evento == "parar_streaming":
             self._log("<- parar_streaming")
@@ -3804,10 +3810,8 @@ class AgenteApp:
             self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | sem restricao")
 
     def _definir_whitelist(self, whitelist_apps):
-        if whitelist_apps and isinstance(whitelist_apps[0], str):
-            whitelist_apps = [{"nome": p, "processo": p, "caminho": None} for p in whitelist_apps]
-        self.whitelist_apps = whitelist_apps
-        self.whitelist_procs = {a["processo"].strip().lower() for a in whitelist_apps if a.get("processo")}
+        self.whitelist_apps = normalizar_whitelist(whitelist_apps or [])
+        self.whitelist_procs = {a["processo"].strip().lower() for a in self.whitelist_apps if a.get("processo")}
 
     def _apps_atualizados(self, dados):
         """Os apps mudaram no painel no meio da sessão (9.15): troca a lista e
@@ -3818,6 +3822,17 @@ class AgenteApp:
         self._definir_whitelist(dados.get("whitelist", []))
         self._montar_launcher()
         self._log(f"Apps atualizados pelo painel: {len(self.whitelist_procs)} app(s)")
+
+    def _atualizar_tela(self, dados):
+        """Refaz a tela com o que o painel mandou, sem deslogar o cliente: a lista
+        de apps nova (um app retirado some da tela e, se estiver aberto, o
+        monitor o fecha), a cor do piso, os cartazes e os avisos."""
+        if dados.get("piso"):
+            self._aplicar_cor_piso(dados["piso"])
+        if "whitelist" in dados:
+            self._apps_atualizados(dados)
+        self._programacao.recarregar()
+        self._painel_direito.recarregar_avisos()
 
     def _montar_launcher(self):
         """A tela de apps da sessão (TelaApps): só os apps com caminho abrem."""
@@ -4589,6 +4604,13 @@ def identificador_da_estacao():
     novo = uuid.uuid4().hex
     gravar_cfg(ID=novo)
     return novo
+
+
+def normalizar_whitelist(apps):
+    """A lista de apps do servidor; a antiga era so com o nome do processo."""
+    if apps and isinstance(apps[0], str):
+        return [{"nome": p, "processo": p, "caminho": None} for p in apps]
+    return list(apps)
 
 
 def piso_da_instalacao():

@@ -703,6 +703,37 @@ class AcaoEmMassa(BaseModel):
     texto: Optional[str] = None
 
 
+class AtualizarTelas(BaseModel):
+    # vazio: todas as estacoes conectadas
+    ids: List[int] = Field(default_factory=list, max_length=500)
+
+
+@router.post("/atualizar_telas")
+async def atualizar_telas(body: AtualizarTelas, db: Session = Depends(get_db),
+                          quem=Depends(requer_perfil("admin", "operador"))):
+    """Manda a cada PC conectado a lista de apps de agora (e a cor do piso): o
+    agente 1.25+ refaz a tela na hora, sem esperar o proximo login. Um app
+    retirado some da tela e, se estiver aberto, o agente o fecha."""
+    from app.pisos import apps_do_piso, whitelist_para_o_agente
+    alvos = set(body.ids) if body.ids else None
+    enviadas = 0
+    for estacao_id in list(manager.estacoes_online()):
+        if alvos is not None and estacao_id not in alvos:
+            continue
+        e = db.get(Estacao, estacao_id)
+        if not e or not e.ativa:
+            continue
+        piso = piso_da_estacao(e)
+        await manager.enviar_estacao(e.id, "atualizar_tela", {
+            "whitelist": whitelist_para_o_agente(apps_do_piso(db, piso)),
+            "piso": cor_para_o_agente(e),
+        })
+        enviadas += 1
+    registrar(db, quem, "atualizar_telas",
+              detalhe=f"{enviadas} computador(es)" + ("" if alvos is None else " escolhidos"))
+    return {"enviadas": enviadas}
+
+
 @router.post("/acoes")
 async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
                          quem=Depends(requer_perfil("admin", "operador"))):

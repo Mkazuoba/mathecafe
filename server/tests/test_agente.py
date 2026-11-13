@@ -1099,7 +1099,7 @@ def test_apps_atualizados_no_meio_da_sessao():
     # 13/11 (9.15): desligar o Chrome no painel nao tirava o app da tela do
     # cliente (a lista so vinha no login). Agora o servidor manda
     # apps_atualizados e o agente troca a whitelist e refaz a tela de apps
-    ns = _carregar(metodos=("_definir_whitelist", "_apps_atualizados"))
+    ns = _carregar("normalizar_whitelist", metodos=("_definir_whitelist", "_apps_atualizados"))
 
     class Falso:
         sessao_ativa = True
@@ -1112,7 +1112,7 @@ def test_apps_atualizados_no_meio_da_sessao():
     pc = Falso()
     pc._definir_whitelist = ns["_definir_whitelist"].__get__(pc)
     ns["_apps_atualizados"](pc, {"whitelist": [
-        {"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:\chrome.exe"},
+        {"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:/chrome.exe"},
         {"nome": "Word", "processo": " WINWORD.exe ", "caminho": None}]})
     assert pc.whitelist_procs == {"chrome.exe", "winword.exe"}
     assert pc.montou == 1
@@ -1139,3 +1139,19 @@ def test_menu_lateral_tem_as_categorias():
     escolher = tela[tela.index("    def escolher("):tela.index("    # ── entrada suave")]
     assert "_menu" in escolher  # a pilula escolhida acende tambem no menu
     assert "def _filtrar_categoria(" in src
+
+
+def test_atualizar_tela_pelo_painel():
+    # 13/11 (pedido do Matheus): ao retirar um app no painel, o botao "Atualizar
+    # telas" manda a lista nova e o agente refaz a tela sem deslogar o cliente
+    ns = _carregar("normalizar_whitelist")
+    norm = ns["normalizar_whitelist"]
+    assert norm(["chrome.exe"]) == [{"nome": "chrome.exe", "processo": "chrome.exe", "caminho": None}]
+    apps = [{"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:/chrome.exe"}]
+    assert norm(apps) == apps and norm([]) == []
+    src = _fonte()
+    assert 'elif evento == "atualizar_tela":' in src
+    metodo = src[src.index("    def _atualizar_tela(self, dados):"):src.index("    def _montar_launcher(self):")]
+    # a lista vai pelo mesmo caminho do envio automatico (9.15), que fora da
+    # sessao nao mexe nos apps: so cartazes e avisos
+    assert "self._apps_atualizados(dados)" in metodo
