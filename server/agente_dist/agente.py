@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.25.0"
+VERSAO = "1.26.0"
 
 import asyncio
 import json
@@ -446,7 +446,7 @@ PALETAS = {
 }
 ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
 # o computador acima do login: conectando, online, offline
-COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f97316", "#22c55e", "#ef4444"
+COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f59e0b", "#10b981", "#f43f5e"  # âmbar, esmeralda, rosa
 # acabamento da Área do Cliente (9.12, padrão shadcn): sem branco puro nem vermelho vivo
 ZINC_950, ZINC_900 = "#09090b", "#18181b"
 AZUL, AZUL_CLARO = "#2563eb", "#3b82f6"  # blue-600 / blue-500: Abrir, banner, contador
@@ -616,6 +616,54 @@ class Pilula:
         BarraSessao._retangulo(c, 0, 0, largura - 1, self.altura - 1, self.raio, fill=borda, outline="")
         BarraSessao._retangulo(c, 1, 1, largura - 2, self.altura - 2, self.raio - 1, fill=fundo, outline="")
         c.create_text(largura / 2, self.altura / 2, text=self.texto, font=self.fonte, fill=self.fg or cor_texto)
+
+
+class BotaoPrimario:
+    """Botão principal (Entrar): azul, rounded-xl, com sombra azul embaixo
+    (bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/30). Desenhado num
+    Canvas; config(state=...) desliga como num Button (fica cinza e não clica)."""
+
+    def __init__(self, app, pai, texto, comando, altura=46, state="normal"):
+        self.app, self.texto, self.comando, self.altura, self.state = app, texto, comando, altura, state
+        self.sobre = False
+        self.canvas = tk.Canvas(pai, height=altura + 5, highlightthickness=0, bd=0, cursor="hand2")
+        self.canvas.bind("<Configure>", lambda e: self.desenhar())
+        self.canvas.bind("<Enter>", lambda e: self._mouse(True))
+        self.canvas.bind("<Leave>", lambda e: self._mouse(False))
+        self.canvas.bind("<Button-1>", lambda e: self.comando() if self.state == "normal" else None)
+        self.desenhar()
+
+    def pack(self, **opcoes):
+        self.canvas.pack(**opcoes)
+
+    def config(self, state=None, text=None, **_):
+        if state is not None:
+            self.state = state
+        if text is not None:
+            self.texto = text
+        self.desenhar()
+
+    configure = config
+
+    def cget(self, opcao):
+        return {"state": self.state, "text": self.texto}.get(opcao)
+
+    def _mouse(self, sim):
+        self.sobre = sim
+        self.desenhar()
+
+    def desenhar(self):
+        p, c = self.app.paleta, self.canvas
+        w, h = max(60, c.winfo_width()), self.altura
+        c.delete("all")
+        c.config(bg=p["fundo"], cursor="hand2" if self.state == "normal" else "arrow")
+        ativo = self.state == "normal"
+        if ativo:
+            BarraSessao._retangulo(c, 6, 4, w - 6, h + 3, 12, fill=misturar(AZUL, p["fundo"], 0.18), outline="")
+        fundo = (AZUL_CLARO if self.sobre else AZUL) if ativo else p["superficie2"]
+        BarraSessao._retangulo(c, 0, 0, w - 1, h - 1, 12, fill=fundo, outline="")
+        c.create_text(w / 2, h / 2, text=self.texto, fill=TEXTO_CLARO if ativo else p["fraco"],
+                      font=(FONTE, 11, "bold"))
 
 
 class BarraSessao:
@@ -2043,6 +2091,7 @@ class TelaApps:
         menu = getattr(self.app, "_menu", None)
         if menu:
             menu.definir_quantidade(len(self.apps))
+            menu.definir_categorias(categorias_da_tela(self.apps)[1:])
 
     def _baixar_capa(self, url):
         dados = baixar_imagem(url)  # thread: nada de Tkinter aqui
@@ -2200,6 +2249,9 @@ class TelaApps:
     def escolher(self, chave):
         self.chave = chave
         self._pintar_pilulas()
+        menu = getattr(self.app, "_menu", None)
+        if menu:
+            menu.pintar()  # a categoria acende também no menu da esquerda
         self._filtrar()
         self.canvas.yview_moveto(0)
         self.animar_entrada()
@@ -2366,11 +2418,12 @@ class TelaLogin:
             peca = cartaz.resize((largo, alto), Image.LANCZOS)
             mascara = _cantos(Image.new("RGB", (largo, alto), (255, 255, 255)), 10, "#000000").convert("L")
             img.paste(peca, (x, y), mascara)
-        else:  # sem cartaz: degradê da cor do piso para o fundo
-            img = Image.new("RGB", (w, h), _cor_rgb(p["destaque"]))
+        else:  # sem cartaz: degradê azul -> índigo para o fundo (cores da Área do Cliente)
+            img = Image.composite(Image.new("RGB", (w, h), _cor_rgb("#4f46e5")), Image.new("RGB", (w, h), _cor_rgb(AZUL)),
+                                  degrade_diagonal(w, h))
             vertical = Image.linear_gradient("L").resize((w, h))
             horizontal = Image.linear_gradient("L").rotate(90).resize((w, h))  # 0 à esquerda
-            diagonal = Image.blend(vertical, horizontal, 0.5)  # cor do piso no canto de cima, à esquerda
+            diagonal = Image.blend(vertical, horizontal, 0.5)  # a cor no canto de cima, à esquerda
             img.paste(fundo, (0, 0), diagonal)
         embaixo = Image.linear_gradient("L").resize((w, h))  # 0 em cima, 255 embaixo
         # degradê para o fundo só na faixa da frase, embaixo
@@ -2451,17 +2504,24 @@ class TelaLogin:
         self._mostrar(reiniciar_texto=False)
 
 
+def degrade_diagonal(largura, altura):
+    """Máscara L de 0 (canto de cima, à esquerda) a 255 (canto de baixo, à direita)."""
+    vertical = Image.linear_gradient("L").resize((largura, altura))
+    horizontal = Image.linear_gradient("L").rotate(90).resize((largura, altura))  # 0 à esquerda
+    return Image.blend(vertical, horizontal, 0.5)
+
+
 def avatar_degrade(lado, raio, fundo):
     """Quadrado arredondado em degradê azul -> índigo (bg-gradient-to-tr from-blue-600 to-indigo-600)."""
     a = Image.new("RGB", (lado, lado), _cor_rgb(AZUL))
     b = Image.new("RGB", (lado, lado), _cor_rgb("#4f46e5"))
-    mascara = Image.linear_gradient("L").rotate(45, expand=True).resize((lado, lado))
-    img = Image.composite(b, a, mascara)
+    img = Image.composite(b, a, degrade_diagonal(lado, lado))
     return _cantos(img, raio, fundo)
 
 
-def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None):
-    """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido."""
+def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None, cor=None):
+    """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido.
+    cor: o ícone na cor da categoria (as linhas de CATEGORIAS)."""
     p = paleta
     cv.delete("all")
     cv.config(width=largura, bg=p["fundo"])
@@ -2470,7 +2530,7 @@ def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, pa
         BarraSessao._retangulo(cv, 1, 1, largura - 2, altura - 2, 11, fill=misturar(AZUL, p["fundo"], 0.14), outline="")
     elif sobre:
         BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=p["superficie"], outline="")
-    cor_icone = AZUL_CLARO if escolhido else p["texto2"]
+    cor_icone = AZUL_CLARO if escolhido else (cor or p["texto2"])
     cor_texto = p["texto"] if (escolhido or sobre) else p["texto2"]
     x_icone = 22 if aberto else largura / 2
     cv.create_text(x_icone, altura / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
@@ -2518,15 +2578,21 @@ class MenuLateral:
         self.lbl_menu.pack(anchor="w", padx=20, pady=(18, 8))
         for chave, rotulo, icone in self.ITENS:
             self._linha(chave, rotulo, icone).pack(fill="x", padx=10, pady=2)
+        # as categorias da tela de apps (os mesmos filtros das pílulas), 9.16
+        self.lbl_categorias = tk.Label(f, text="", font=(FONTE, 7, "bold"), fg=p["fraco"], bg=p["fundo"])
+        self.lbl_categorias.pack(anchor="w", padx=20, pady=(16, 6))
+        self.frame_categorias = tk.Frame(f, bg=p["fundo"])
+        self.frame_categorias.pack(fill="x")
+        self._categorias = []  # [(chave, rótulo, quantidade)]
         chave, rotulo, icone = self.RODAPE
         rodape = tk.Frame(f, bg=p["fundo"])
         rodape.pack(side="bottom", fill="x", pady=(0, 12))
         self._linha(chave, rotulo, icone, rodape).pack(fill="x", padx=10)
         self.pintar()
 
-    def _linha(self, chave, rotulo, icone, pai=None):
+    def _linha(self, chave, rotulo, icone, pai=None, acao=None):
         cv = tk.Canvas(pai or self.frame, height=self.ALTURA_LINHA, highlightthickness=0, cursor="hand2")
-        cv.bind("<Button-1>", lambda e, k=chave: self.app._mostrar_pagina(k))
+        cv.bind("<Button-1>", lambda e, k=chave: (acao or self.app._mostrar_pagina)(k))
         cv.bind("<Enter>", lambda e, k=chave: self.pintar(sobre=k))
         cv.bind("<Leave>", lambda e: self.pintar())
         cv.bind("<Configure>", lambda e: self.pintar())
@@ -2555,11 +2621,38 @@ class MenuLateral:
         self.quantidade = n
         self.pintar()
 
+    def definir_categorias(self, categorias):
+        """As linhas de CATEGORIAS: [(chave, rótulo, quantidade)] de
+        categorias_da_tela, sem o "Todos" (é o Meus Apps). Clicar filtra a
+        grade como a pílula; sem categorias no piso, a seção some."""
+        for chave, _, _ in self._categorias:
+            cv = self._linhas.pop(chave, (None,))[0]
+            if cv is not None:
+                cv.destroy()
+        self._categorias = list(categorias)
+        for chave, rotulo, _ in self._categorias:
+            icone = "" if chave == "outros" else (icone_da_categoria(rotulo) or "")
+            self._linha(chave, rotulo, icone, self.frame_categorias,
+                        acao=self.app._filtrar_categoria).pack(fill="x", padx=10, pady=2)
+        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and self.aberto else "")
+        self.pintar()
+
+    def _cor_da_categoria(self, chave):
+        tela = getattr(self.app, "_tela_apps", None)
+        return tela._cor_da_chave(chave) if tela and chave.startswith("cat:") else None
+
     def pintar(self, sobre=None):
         p = self.app.paleta
         pagina = getattr(self.app, "_pagina", "inicio")
+        tela = getattr(self.app, "_tela_apps", None)
+        filtro = getattr(tela, "chave", "todos") if pagina != "config" else None
+        quantidades = {chave: n for chave, _, n in self._categorias}
         for chave, (cv, rotulo, icone) in self._linhas.items():
             largura = max(40, cv.winfo_width())
+            if chave in quantidades:
+                _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == filtro,
+                            chave == sobre, p, contagem=quantidades[chave], cor=self._cor_da_categoria(chave))
+                continue
             _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == pagina, chave == sobre, p,
                         contagem=self.quantidade if chave == "apps" else None)
 
@@ -2571,10 +2664,13 @@ class MenuLateral:
             self.lbl_menu.config(text="NAVEGAÇÃO")
         else:
             self.lbl_menu.config(text="")
+        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and self.aberto else "")
         self.app.root.after(10, lambda: (self._desenhar_topo(), self.pintar()))
 
     def redesenhar(self):
         self.frame.config(bg=self.app.paleta["fundo"], highlightbackground=self.app.paleta["borda"])
+        self.lbl_categorias.config(bg=self.app.paleta["fundo"], fg=self.app.paleta["fraco"])
+        self.frame_categorias.config(bg=self.app.paleta["fundo"])
         self._desenhar_topo()
         self.pintar()
 
@@ -2938,6 +3034,7 @@ class AgenteApp:
         self._tela_apps.redesenhar()
         self._programacao.redesenhar()
         self._tela_login.redesenhar()
+        self._redesenhar_login()
         self._menu.redesenhar()
         self._painel_direito.redesenhar()
         self._preferencias.redesenhar()
@@ -2955,6 +3052,7 @@ class AgenteApp:
         self._tela_apps.redesenhar()
         self._programacao.redesenhar()
         self._tela_login.redesenhar()
+        self._redesenhar_login()
         self._menu.redesenhar()
         self._painel_direito.redesenhar()
         self._preferencias.redesenhar()
@@ -3015,6 +3113,11 @@ class AgenteApp:
         direita.place(relx=0.5, rely=0, relwidth=0.5, relheight=1)
         self._tela_login = TelaLogin(self, direita)
 
+        # marca no canto, como no menu da Área do Cliente
+        self._marca_login = tk.Canvas(esquerda, width=240, height=40, bg=bg, highlightthickness=0)
+        self._marca_login.place(x=24, y=22)
+        self._desenhar_marca_login()
+
         _form = tk.Frame(esquerda, bg=bg)
         _form.pack(expand=True)
         # espacador fixa a largura; pack_propagate(False) sem height colapsava o form em 1px
@@ -3025,60 +3128,51 @@ class AgenteApp:
         self._icone_pc = tk.Canvas(_form, width=120, height=100, bg=bg, highlightthickness=0)
         self._icone_pc.pack()
         self._desenhar_icone_pc(COR_CONECTANDO)
-        self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family=FONTE, size=40, weight="bold"),
+        self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family=FONTE, size=38, weight="bold"),
                                     fg=text, bg=bg, wraplength=520)
         self.lbl_estacao.pack(pady=(2, 0))
-        self.lbl_status = tk.Label(_form, text="conectando...", font=tkfont.Font(family=FONTE, size=11, weight="bold"),
+        self.lbl_status = tk.Label(_form, text="● Conectando...", font=tkfont.Font(family=FONTE, size=9, weight="bold"),
                                    fg=COR_CONECTANDO, bg=bg)
-        self.lbl_status.pack(pady=(0, 30))
+        self.lbl_status.pack(pady=(2, 30))
 
-        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family=FONTE, size=18, weight="bold"),
+        tk.Label(_form, text="Entre na sua conta", font=tkfont.Font(family=FONTE, size=17, weight="bold"),
                  fg=text, bg=bg).pack()
         tk.Label(_form, text="Use o login e a senha do seu cadastro na biblioteca",
-                 font=tkfont.Font(family=FONTE, size=10), fg=text2, bg=bg).pack(pady=(4, 22))
+                 font=tkfont.Font(family=FONTE, size=9), fg=text2, bg=bg).pack(pady=(4, 24))
 
-        f_rotulo = tkfont.Font(family=FONTE, size=10, weight="bold")
-        campo = dict(font=normal_font, bg=bg3, fg=text, insertbackground=text, relief="flat",
-                     highlightthickness=1, highlightbackground=p["superficie3"], highlightcolor=accent)
-        tk.Label(_form, text="Login", font=f_rotulo, fg=text, bg=bg).pack(anchor="w")
-        self.entry_login = tk.Entry(_form, **campo)
-        self.entry_login.pack(fill="x", pady=(6, 16), ipady=8)
+        # rótulos em caixa alta (text-[10px] font-semibold tracking-wider) e campos rounded-xl
+        f_rotulo = tkfont.Font(family=FONTE, size=7, weight="bold")
+        self._campos_login = []
+        tk.Label(_form, text="LOGIN", font=f_rotulo, fg=p["fraco"], bg=bg).pack(anchor="w")
+        caixa, self.entry_login = self._campo_arredondado(_form)
+        caixa.pack(fill="x", pady=(6, 16))
 
-        tk.Label(_form, text="Senha", font=f_rotulo, fg=text, bg=bg).pack(anchor="w")
-        caixa_senha = tk.Frame(_form, bg=bg3, highlightthickness=1, highlightbackground=p["superficie3"],
-                               highlightcolor=accent)
-        caixa_senha.pack(fill="x", pady=(6, 22))
-        self.entry_senha = tk.Entry(caixa_senha, show="•", **{**campo, "highlightthickness": 0})
-        self.entry_senha.pack(side="left", fill="x", expand=True, ipady=8)
+        tk.Label(_form, text="SENHA", font=f_rotulo, fg=p["fraco"], bg=bg).pack(anchor="w")
+        caixa, self.entry_senha = self._campo_arredondado(_form, senha=True)
+        caixa.pack(fill="x", pady=(6, 24))
         self.entry_senha.bind("<Return>", lambda e: self._fazer_login())
-        # o olho mostra/esconde a senha
-        self.lbl_olho = tk.Label(caixa_senha, text="👁", font=("Segoe UI Symbol", 12), fg=text2, bg=bg3,
-                                 cursor="hand2", padx=10)
-        self.lbl_olho.pack(side="right", fill="y")
-        self.lbl_olho.bind("<Button-1>", self._alternar_senha)
 
-        self.btn_login = tk.Button(_form, text="Entrar", font=tkfont.Font(family=FONTE, size=11, weight="bold"),
-                                   bg=accent, fg="white", relief="flat", activebackground=p["destaque_forte"],
-                                   activeforeground="white", cursor="hand2",
-                                   command=self._fazer_login, state="disabled")
-        self.btn_login.pack(fill="x", ipady=9)
+        self.btn_login = BotaoPrimario(self, _form, "Entrar", self._fazer_login, state="disabled")
+        self.btn_login.pack(fill="x")
 
-        self.lbl_login_erro = tk.Label(_form, text="", font=small_font, fg="#ef4444", bg=bg)
+        self.lbl_login_erro = tk.Label(_form, text="", font=tkfont.Font(family=FONTE, size=9), fg=ROSA_TEXTO, bg=bg)
         self.lbl_login_erro.pack(pady=8)
 
-        tk.Frame(_form, bg=p["superficie3"], height=1).pack(fill="x", pady=(6, 14))
+        self._divisor_login = tk.Frame(_form, bg=p["borda"], height=1)
+        self._divisor_login.pack(fill="x", pady=(6, 14))
         tk.Label(_form, text="Não tem cadastro? Fale com um funcionário da biblioteca.",
-                 font=tkfont.Font(family=FONTE, size=10), fg=text2, bg=bg).pack()
+                 font=tkfont.Font(family=FONTE, size=9), fg=text2, bg=bg).pack()
 
-        # canto de baixo: tema e versão (ficavam na barra de cima)
+        # canto de baixo: tema e versão
         rodape = tk.Frame(esquerda, bg=bg)
-        rodape.place(x=20, rely=1, y=-16, anchor="sw")
-        self.btn_tema = tk.Button(rodape, text=ROTULO_TEMA[self.tema], font=small_font, bg=bg3, fg=text2,
-                                  activebackground=p["superficie3"], relief="flat", padx=10, cursor="hand2",
-                                  command=self.alternar_tema)
+        rodape.place(x=24, rely=1, y=-18, anchor="sw")
+        neutro = lambda sobre: (self.paleta["superficie2" if sobre else "superficie"], self.paleta["borda"],
+                                self.paleta["texto2"])
+        self.btn_tema = Pilula(rodape, ROTULO_TEMA[self.tema], tkfont.Font(family=FONTE, size=8, weight="bold"),
+                               neutro, lambda: self.paleta["fundo"], comando=self.alternar_tema, altura=30)
         self.btn_tema.pack(side="left")
-        tk.Label(rodape, text=f"MatheCafé v{VERSAO}", font=tkfont.Font(family=FONTE, size=9),
-                 fg=p["fraco"], bg=bg).pack(side="left", padx=10)
+        tk.Label(rodape, text=f"MatheCafé v{VERSAO}", font=("Consolas", 8), fg=p["fraco"], bg=bg).pack(
+            side="left", padx=12)
 
         # ── Frame de sessão (launcher) ──
         self.frame_sessao = tk.Frame(self.root, bg=bg)
@@ -3158,6 +3252,62 @@ class AgenteApp:
             linha = self._logs_offline.popleft()
             asyncio.run_coroutine_threadsafe(
                 self.ws.send(json.dumps({"evento": "log_agente", "dados": linha})), self.loop)
+
+    def _campo_arredondado(self, pai, senha=False):
+        """Campo do login (rounded-xl): borda zinc, azul com o foco. Na senha, o
+        olho (mostrar/esconder) fica dentro do campo. Devolve (canvas, entry)."""
+        p = self.paleta
+        cv = tk.Canvas(pai, height=44, bg=p["fundo"], highlightthickness=0)
+        entry = tk.Entry(cv, font=(FONTE, 11), bg=p["superficie"], fg=p["texto"], insertbackground=p["texto"],
+                         relief="flat", highlightthickness=0, show="•" if senha else "")
+        janela = cv.create_window(16, 22, window=entry, anchor="w")
+        olho = None
+        if senha:
+            self.lbl_olho = tk.Label(cv, text="\uE7B3", font=("Segoe MDL2 Assets", 11), fg=p["texto2"],
+                                     bg=p["superficie"], cursor="hand2")
+            self.lbl_olho.bind("<Button-1>", self._alternar_senha)
+            olho = cv.create_window(0, 22, window=self.lbl_olho, anchor="e")
+        estado = {"foco": False}
+
+        def desenhar(_e=None):
+            p = self.paleta
+            w = max(80, cv.winfo_width())
+            cv.delete("fundo")
+            cv.config(bg=p["fundo"])
+            borda = misturar(AZUL, p["fundo"], 0.75) if estado["foco"] else p["borda"]
+            BarraSessao._retangulo(cv, 0, 0, w - 1, 43, 12, fill=borda, outline="", tags="fundo")
+            BarraSessao._retangulo(cv, 1, 1, w - 2, 42, 11, fill=p["superficie"], outline="", tags="fundo")
+            cv.tag_lower("fundo")
+            cv.itemconfig(janela, width=w - 32 - (32 if senha else 0))
+            if olho:
+                cv.coords(olho, w - 14, 22)
+
+        def foco(sim):
+            estado["foco"] = sim
+            desenhar()
+
+        cv.bind("<Configure>", desenhar)
+        entry.bind("<FocusIn>", lambda e: foco(True), add="+")
+        entry.bind("<FocusOut>", lambda e: foco(False), add="+")
+        self._campos_login.append(desenhar)
+        return cv, entry
+
+    def _desenhar_marca_login(self):
+        p, c = self.paleta, self._marca_login
+        c.delete("all")
+        c.config(bg=p["fundo"])
+        BarraSessao._retangulo(c, 0, 4, 32, 36, 10, fill=AZUL, outline="")
+        c.create_text(16, 20, text="M", fill=TEXTO_CLARO, font=(FONTE, 12, "bold"))
+        c.create_text(44, 13, anchor="w", text="MatheCafé", fill=p["texto"], font=(FONTE, 10, "bold"))
+        c.create_text(44, 29, anchor="w", text="Sistema de Estações", fill=p["texto2"], font=(FONTE, 8))
+
+    def _redesenhar_login(self):
+        """Tema ou cor do piso trocados: o que é desenhado no login."""
+        self._desenhar_marca_login()
+        for desenhar in self._campos_login:
+            desenhar()
+        self.btn_login.desenhar()
+        self.btn_tema.desenhar()
 
     def _desenhar_icone_pc(self, cor):
         """O computador acima do nome do PC, na cor da conexão."""
@@ -3252,7 +3402,7 @@ class AgenteApp:
         dados = msg.get("dados", {})
 
         if evento == "_conectado":
-            self.lbl_status.config(text="online", fg=COR_ONLINE)
+            self.lbl_status.config(text="● Online", fg=COR_ONLINE)
             self._desenhar_icone_pc(COR_ONLINE)
             self._painel_direito.definir_status(True)
             self.btn_login.config(state="normal")
@@ -3269,7 +3419,7 @@ class AgenteApp:
                 self._enviar({"evento": "status_estacao", "status": "manutencao"})
 
         elif evento == "_desconectado":
-            self.lbl_status.config(text="offline", fg=COR_OFFLINE)
+            self.lbl_status.config(text="● Offline", fg=COR_OFFLINE)
             self._desenhar_icone_pc(COR_OFFLINE)
             self._painel_direito.definir_status(False)
             self.btn_login.config(state="disabled")
@@ -3303,7 +3453,7 @@ class AgenteApp:
             else:
                 motivo = dados.get("motivo", "Erro desconhecido")
                 pendente = motivo.startswith("Este computador aguarda")
-                self.lbl_login_erro.config(text=motivo, fg="#f59e0b" if pendente else "#ef4444", wraplength=340)
+                self.lbl_login_erro.config(text=motivo, fg="#f59e0b" if pendente else ROSA_TEXTO, wraplength=340)
 
         elif evento == "pong":
             pass
@@ -3429,6 +3579,11 @@ class AgenteApp:
             self._log("<- avisos_atualizados")
             self._painel_direito.recarregar_avisos()
 
+        elif evento == "apps_atualizados":
+            # app mudado no painel (9.15): chega sozinho, sem o botão
+            self._log("<- apps_atualizados")
+            self._apps_atualizados(dados)
+
         elif evento == "atualizar_tela":
             # botão "Atualizar telas" do painel (1.25): apps, cartazes e avisos de novo
             self._log("<- atualizar_tela")
@@ -3453,7 +3608,7 @@ class AgenteApp:
         if not aprovada:
             self.lbl_login_erro.config(text=AGUARDANDO_APROVACAO, fg="#f59e0b", wraplength=340)
         elif not self.aprovada:
-            self.lbl_login_erro.config(text="", fg="#ef4444")
+            self.lbl_login_erro.config(text="", fg=ROSA_TEXTO)
             self._log("Estacao aprovada no painel")
         self.aprovada = aprovada
 
@@ -3604,7 +3759,7 @@ class AgenteApp:
         """O olho do campo de senha: mostra ou esconde o que foi digitado."""
         mostrando = self.entry_senha.cget("show") == ""
         self.entry_senha.config(show="•" if mostrando else "")
-        self.lbl_olho.config(fg=self.paleta["texto2"] if mostrando else self.paleta["destaque"])
+        self.lbl_olho.config(fg=self.paleta["texto2"] if mostrando else AZUL_CLARO)
 
     def _iniciar_sessao(self, dados):
         if dados.get("piso"):
@@ -3620,10 +3775,7 @@ class AgenteApp:
         self.tempo_total = dados["tempo_segundos"]
         self.inicio_sessao = time.time()
 
-        whitelist_apps = normalizar_whitelist(dados.get("whitelist", []))
-
-        self.whitelist_apps = whitelist_apps
-        self.whitelist_procs = {a["processo"].strip().lower() for a in whitelist_apps if a.get("processo")}
+        self._definir_whitelist(dados.get("whitelist", []))
         self.reiniciar_ao_encerrar = dados.get("reiniciar_ao_encerrar", False)
 
         self._painel_direito.definir_cliente(self.cliente_nome, dados.get("cliente_login"))
@@ -3657,17 +3809,28 @@ class AgenteApp:
         else:
             self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | sem restricao")
 
+    def _definir_whitelist(self, whitelist_apps):
+        self.whitelist_apps = normalizar_whitelist(whitelist_apps or [])
+        self.whitelist_procs = {a["processo"].strip().lower() for a in self.whitelist_apps if a.get("processo")}
+
+    def _apps_atualizados(self, dados):
+        """Os apps mudaram no painel no meio da sessão (9.15): troca a lista e
+        refaz a tela de apps. O app que saiu e estiver aberto, a vigia da
+        whitelist fecha como qualquer app não permitido."""
+        if not self.sessao_ativa:
+            return
+        self._definir_whitelist(dados.get("whitelist", []))
+        self._montar_launcher()
+        self._log(f"Apps atualizados pelo painel: {len(self.whitelist_procs)} app(s)")
+
     def _atualizar_tela(self, dados):
         """Refaz a tela com o que o painel mandou, sem deslogar o cliente: a lista
         de apps nova (um app retirado some da tela e, se estiver aberto, o
         monitor o fecha), a cor do piso, os cartazes e os avisos."""
         if dados.get("piso"):
             self._aplicar_cor_piso(dados["piso"])
-        if self.sessao_ativa and "whitelist" in dados:
-            self.whitelist_apps = normalizar_whitelist(dados.get("whitelist") or [])
-            self.whitelist_procs = {a["processo"].strip().lower() for a in self.whitelist_apps if a.get("processo")}
-            self._montar_launcher()
-            self._log(f"Tela atualizada pelo painel: {len(self.whitelist_procs)} app(s)")
+        if "whitelist" in dados:
+            self._apps_atualizados(dados)
         self._programacao.recarregar()
         self._painel_direito.recarregar_avisos()
 
@@ -3690,6 +3853,15 @@ class AgenteApp:
             self.frame_launcher.pack(side="bottom", expand=True, fill="both")
         self._programacao.ajustar_pagina()
         self.root.after(40, self._tela_apps.animar_entrada)
+
+    def _filtrar_categoria(self, chave):
+        """Categoria clicada no menu da esquerda (9.16): fica na página em que
+        está (Início ou Meus Apps; de Configurações vai para Meus Apps) e
+        filtra a grade como a pílula."""
+        if getattr(self, "_pagina", "inicio") == "config":
+            self._mostrar_pagina("apps")
+        if self._tela_apps.chave != chave:
+            self._tela_apps.escolher(chave)
 
     def _abrir_app(self, app):
         caminho = app.get("caminho")
@@ -3763,7 +3935,7 @@ class AgenteApp:
             )
             self.root.after(1000, self._countdown_reinicio, segundos - 1, desligar)
         else:
-            self.lbl_login_erro.config(text=f"{verbo} agora...", fg="#ef4444")
+            self.lbl_login_erro.config(text=f"{verbo} agora...", fg=ROSA_TEXTO)
             self._log(f"{verbo} o PC...")
             try:
                 resultado = subprocess.run(

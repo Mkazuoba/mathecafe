@@ -1,16 +1,16 @@
 # Changelog
 
-## 2026-11-13 — Categorias no menu da esquerda
+## 2026-11-13 — Categorias no menu da esquerda (agente 1.26.0)
 
 - O menu da Área do Cliente ganhou a seção **Categorias** (Jogos, Internet, Estudo...), abaixo de Início e Meus Apps, com o ícone na cor da categoria e quantos apps tem. Clicar filtra a grade, igual às pílulas; a categoria escolhida fica acesa no menu e na pílula.
 
-## 2026-11-13 — Apps mudados no painel chegam na hora ao PC
+## 2026-11-13 — Apps mudados no painel chegam na hora ao PC (agente 1.26.0)
 
 - Ligar, desligar, editar ou excluir um app (ou mudar uma categoria) no painel agora vale na hora para quem está usando o computador: a tela de apps se refaz sozinha, sem botão. Antes a lista só mudava no próximo login.
 - O app desligado que estiver aberto no PC é fechado, como qualquer programa não permitido.
 - O botão **Atualizar telas dos clientes** (1.25.0) continua: serve para a cor do piso, os cartazes e os avisos, e para PCs com agente anterior a este (que ignoram o envio automático). Os dois usam o mesmo código no agente.
 
-## 2026-11-13 — Login do PC no visual da Área do Cliente
+## 2026-11-13 — Login do PC no visual da Área do Cliente (agente 1.26.0)
 
 - A tela de login do computador ganhou a tipografia e as cores da Área do Cliente: marca MatheCafé no canto, situação do PC em verde esmeralda (online), rosa (offline) ou âmbar (conectando), rótulos em caixa alta, campos com cantos arredondados (borda azul ao digitar, olho dentro da senha) e botão **Entrar** azul.
 - Tema e versão no canto de baixo no mesmo estilo do dock; mensagens de erro em rosa (sem o vermelho vivo).
