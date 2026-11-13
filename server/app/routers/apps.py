@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from app.database import get_db
 from app.models import AppPermitido, AppPiso, CategoriaApp, GrupoEstacao, Piso
-from app.pisos import piso_padrao
+from app.pisos import enviar_apps_as_estacoes, piso_padrao
 from app.security import requer_perfil
 
 router = APIRouter(prefix="/apps", tags=["apps"])
@@ -65,7 +65,7 @@ def listar(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "oper
     return [serial(a) for a in db.query(AppPermitido).order_by(AppPermitido.nome).all()]
 
 @router.post("/")
-def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     processo = data.processo.strip().lower()
     if not processo.endswith(".exe"):
         processo += ".exe"
@@ -87,11 +87,12 @@ def criar(data: AppCreate, db: Session = Depends(get_db), _=Depends(requer_perfi
     )
     app_p.pisos_ligados.append(AppPiso(piso_id=piso.id))
     db.add(app_p); db.commit(); db.refresh(app_p)
+    await enviar_apps_as_estacoes(db)
     return serial(app_p)
 
 
 @router.put("/{id}/pisos/{piso_id}")
-def ligar_no_piso(id: int, piso_id: int, data: PisoLigado, db: Session = Depends(get_db),
+async def ligar_no_piso(id: int, piso_id: int, data: PisoLigado, db: Session = Depends(get_db),
                   _=Depends(requer_perfil("admin"))):
     """Liga ou desliga o app num piso (o interruptor do cartao)."""
     app_p = db.get(AppPermitido, id)
@@ -106,10 +107,11 @@ def ligar_no_piso(id: int, piso_id: int, data: PisoLigado, db: Session = Depends
         db.delete(linha)
     db.commit()
     db.refresh(app_p)
+    await enviar_apps_as_estacoes(db)
     return serial(app_p)
 
 @router.put("/{id}")
-def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     app_p = db.query(AppPermitido).filter(AppPermitido.id == id).first()
     if not app_p:
         raise HTTPException(404, "App não encontrado")
@@ -134,12 +136,14 @@ def atualizar(id: int, data: AppUpdate, db: Session = Depends(get_db), _=Depends
         app_p.categoria_id = data.categoria_id
     db.commit()
     db.refresh(app_p)
+    await enviar_apps_as_estacoes(db)
     return serial(app_p)
 
 @router.delete("/{id}")
-def remover(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def remover(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     app_p = db.query(AppPermitido).filter(AppPermitido.id == id).first()
     if not app_p:
         raise HTTPException(404, "App não encontrado")
     db.delete(app_p); db.commit()
+    await enviar_apps_as_estacoes(db)
     return {"ok": True}

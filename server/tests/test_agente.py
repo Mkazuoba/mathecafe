@@ -770,7 +770,9 @@ def test_login_em_duas_metades_com_os_cartazes():
     assert "TelaLogin(self" in login
     assert "self.entry_login" in login and "self.entry_senha" in login and "self.btn_login" in login
     assert "Fale com um funcionário" in login
-    assert "self._alternar_senha" in login  # o olho mostra/esconde a senha
+    # o olho mostra/esconde a senha (13/11: dentro do campo arredondado da senha)
+    campo = src[src.index("    def _campo_arredondado("):src.index("    def _desenhar_marca_login(")]
+    assert "self._alternar_senha" in campo and "senha=True" in login
     tela = src[src.index("class TelaLogin:"):src.index("class AgenteApp:")]
     assert "def _digitar(" in tela and "root.after(" in tela  # frase digitando
     # os cartazes chegam ao login mesmo sem sessao, e ja ao conectar
@@ -1073,3 +1075,51 @@ def test_simulador_desliga_o_que_mexe_no_windows():
     assert '--navegador' in sim and 'DwmSetWindowAttribute' in sim and 'focus_force' in sim
     espelho = open(os.path.join(pasta, 'simulador_navegador.py'), encoding='utf-8').read()
     assert '127.0.0.1' in espelho and 'PrintWindow' in espelho and 'multipart/x-mixed-replace' in espelho
+
+
+def test_login_no_visual_da_area_do_cliente():
+    # 13/11: o login do PC com a tipografia e as cores da Area do Cliente:
+    # marca no canto, rotulos em caixa alta, campos arredondados, Entrar azul
+    src = _fonte()
+    login = src[src.index("        # ── Frame de login ──"):src.index("        # ── Frame de sessão (launcher) ──")]
+    assert "self._desenhar_marca_login()" in login
+    marca = src[src.index("    def _desenhar_marca_login("):src.index("    def _redesenhar_login(")]
+    assert "Sistema de Estações" in marca
+    assert '"LOGIN"' in login and '"SENHA"' in login
+    assert login.count("self._campo_arredondado(") == 2
+    assert "BotaoPrimario(" in login and "tk.Button(" not in login
+    assert '"#ef4444"' not in login and 'fg="white"' not in login
+    botao = src[src.index("class BotaoPrimario:"):]
+    botao = botao[:botao.index("\nclass ")]
+    assert "AZUL" in botao and 'state="disabled"' not in botao and "def config(" in botao
+    assert 'COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f59e0b", "#10b981", "#f43f5e"' in src
+
+
+def test_apps_atualizados_no_meio_da_sessao():
+    # 13/11 (9.15): desligar o Chrome no painel nao tirava o app da tela do
+    # cliente (a lista so vinha no login). Agora o servidor manda
+    # apps_atualizados e o agente troca a whitelist e refaz a tela de apps
+    ns = _carregar(metodos=("_definir_whitelist", "_apps_atualizados"))
+
+    class Falso:
+        sessao_ativa = True
+        montou = 0
+        _log = staticmethod(lambda *a: None)
+
+        def _montar_launcher(self):
+            self.montou += 1
+
+    pc = Falso()
+    pc._definir_whitelist = ns["_definir_whitelist"].__get__(pc)
+    ns["_apps_atualizados"](pc, {"whitelist": [
+        {"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:\chrome.exe"},
+        {"nome": "Word", "processo": " WINWORD.exe ", "caminho": None}]})
+    assert pc.whitelist_procs == {"chrome.exe", "winword.exe"}
+    assert pc.montou == 1
+    ns["_apps_atualizados"](pc, {"whitelist": [{"nome": "Word", "processo": "winword.exe", "caminho": None}]})
+    assert pc.whitelist_procs == {"winword.exe"}  # o Chrome aberto passa a ser fechado
+    pc.sessao_ativa = False
+    ns["_apps_atualizados"](pc, {"whitelist": []})
+    assert pc.whitelist_procs == {"winword.exe"} and pc.montou == 2  # sem sessao: ignora
+    src = _fonte()
+    assert 'evento == "apps_atualizados"' in src

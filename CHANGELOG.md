@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-13 — Apps mudados no painel chegam na hora ao PC
+
+- Ligar, desligar, editar ou excluir um app (ou mudar uma categoria) no painel agora vale na hora para quem está usando o computador: a tela de apps se refaz sozinha, sem botão. Antes a lista só mudava no próximo login.
+- O app desligado que estiver aberto no PC é fechado, como qualquer programa não permitido.
+
+## 2026-11-13 — Login do PC no visual da Área do Cliente
+
+- A tela de login do computador ganhou a tipografia e as cores da Área do Cliente: marca MatheCafé no canto, situação do PC em verde esmeralda (online), rosa (offline) ou âmbar (conectando), rótulos em caixa alta, campos com cantos arredondados (borda azul ao digitar, olho dentro da senha) e botão **Entrar** azul.
+- Tema e versão no canto de baixo no mesmo estilo do dock; mensagens de erro em rosa (sem o vermelho vivo).
+- Sem cartaz da Programação, a metade direita fica num degradê azul → índigo.
+
 ## 2026-11-12 — Banner e abas com transição suave (agente 1.24.0)
 
 - A troca de cartaz no banner da Área do Cliente ficou suave: ~0,65 s com aceleração e desaceleração (ease-in-out), o cartaz novo entra deslizando da direita enquanto o antigo sai para a esquerda, os dois em fade, e o texto some e reaparece em vez de pular no meio (antes: fade linear de 0,3 s).

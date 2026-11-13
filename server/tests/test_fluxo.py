@@ -2691,3 +2691,43 @@ def test_login_do_pc_leva_o_login_do_cliente(c, admin, cenario):
         dados = _logar_no_pc(ws, cenario["cliente"])
         assert dados["cliente_login"] == cenario["cliente"]["login"]
         _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+
+
+def test_apps_mudados_no_painel_chegam_na_hora_ao_pc_em_sessao(c, admin, cenario):
+    """Ligar/desligar/editar um app no painel manda a lista nova ao PC com
+    sessao aberta (antes so chegava no proximo login)."""
+    c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin)
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        dados = _logar_no_pc(ws, cenario["cliente"])
+
+        r = c.post("/api/apps/", headers=admin, json={"nome": "Navegador Ao Vivo", "processo": "aovivo.exe",
+                                                       "caminho": "C:\aovivo.exe"})
+        assert r.status_code == 200, r.text
+        app = r.json()
+        msg = ws.receive_json()
+        assert msg["evento"] == "apps_atualizados"
+        assert "aovivo.exe" in [a["processo"] for a in msg["dados"]["whitelist"]]
+
+        c.put(f"/api/apps/{app['id']}", headers=admin, json={"descricao": "Navega"})
+        msg = ws.receive_json()
+        assert next(a for a in msg["dados"]["whitelist"] if a["processo"] == "aovivo.exe")["descricao"] == "Navega"
+
+        c.put(f"/api/apps/{app['id']}/pisos/{app['pisos'][0]}", headers=admin, json={"ligado": False})
+        msg = ws.receive_json()
+        assert msg["evento"] == "apps_atualizados"
+        assert "aovivo.exe" not in [a["processo"] for a in msg["dados"]["whitelist"]]
+
+        c.delete(f"/api/apps/{app['id']}", headers=admin)
+        assert ws.receive_json()["evento"] == "apps_atualizados"
+        _encerrar_pelo_pc(ws, dados["sessao_id"], 60)
+
+
+def test_apps_mudados_nao_vao_ao_pc_sem_sessao(c, admin, cenario):
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        _estado(ws)
+        r = c.post("/api/apps/", headers=admin, json={"nome": "Sem Sessao", "processo": "semsessao.exe"})
+        assert r.status_code == 200, r.text
+        ws.send_json({"evento": "ping"})
+        assert ws.receive_json()["evento"] == "pong"  # nada de apps_atualizados antes
+        c.delete(f"/api/apps/{r.json()['id']}", headers=admin)

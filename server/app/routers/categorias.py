@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AppPermitido, CategoriaApp
+from app.pisos import enviar_apps_as_estacoes
 from app.security import requer_perfil
 
 router = APIRouter(prefix="/categorias", tags=["categorias"])
@@ -70,7 +71,7 @@ def criar(data: CategoriaNova, db: Session = Depends(get_db), _=Depends(requer_p
 
 
 @router.put("/{categoria_id}")
-def alterar(categoria_id: int, data: CategoriaAlterada, db: Session = Depends(get_db),
+async def alterar(categoria_id: int, data: CategoriaAlterada, db: Session = Depends(get_db),
             _=Depends(requer_perfil("admin"))):
     c = db.get(CategoriaApp, categoria_id)
     if not c:
@@ -83,11 +84,12 @@ def alterar(categoria_id: int, data: CategoriaAlterada, db: Session = Depends(ge
     if data.cor is not None:
         c.cor = data.cor.lower()
     db.commit()
+    await enviar_apps_as_estacoes(db)  # nome, ordem e cor aparecem no PC
     return serial(db, c)
 
 
 @router.delete("/{categoria_id}")
-def excluir(categoria_id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def excluir(categoria_id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
     """Os apps dela ficam sem categoria (no agente, em "Outros")."""
     c = db.get(CategoriaApp, categoria_id)
     if not c:
@@ -95,4 +97,5 @@ def excluir(categoria_id: int, db: Session = Depends(get_db), _=Depends(requer_p
     db.query(AppPermitido).filter(AppPermitido.categoria_id == c.id).update({AppPermitido.categoria_id: None})
     db.delete(c)
     db.commit()
+    await enviar_apps_as_estacoes(db)
     return {"ok": True}

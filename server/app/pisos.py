@@ -117,6 +117,21 @@ def whitelist_para_o_agente(apps) -> list:
     ]
 
 
+async def enviar_apps_as_estacoes(db: Session):
+    """Os apps mudaram no painel (9.15): cada estacao online com sessao aberta
+    recebe a lista nova do seu piso na hora (o agente refaz a tela de apps e a
+    whitelist fecha o que saiu). Sem sessao, a lista vai no proximo login."""
+    from app.models import Estacao, Sessao
+    from app.websocket_manager import manager
+    for estacao_id in manager.estacoes_online():
+        aberta = db.query(Sessao).filter(Sessao.estacao_id == estacao_id, Sessao.encerrada_em == None).first()
+        estacao = db.get(Estacao, estacao_id)
+        if aberta is None or estacao is None:
+            continue
+        whitelist = whitelist_para_o_agente(apps_do_piso(db, piso_da_estacao(estacao)))
+        await manager.enviar_estacao(estacao_id, "apps_atualizados", {"whitelist": whitelist})
+
+
 def migrar_apps_para_pisos(db: Session, forcar: bool = False):
     """Uma vez so: o app que valia em todos os mapas fica ligado em todos os
     pisos; o de um mapa, no piso desse mapa; o desligado, em nenhum. Depois
