@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-13 — Categorias no menu da esquerda
+
+- O menu da Área do Cliente ganhou a seção **Categorias** (Jogos, Internet, Estudo...), abaixo de Início e Meus Apps, com o ícone na cor da categoria e quantos apps tem. Clicar filtra a grade, igual às pílulas; a categoria escolhida fica acesa no menu e na pílula.
+
 ## 2026-11-13 — Apps mudados no painel chegam na hora ao PC
 
 - Ligar, desligar, editar ou excluir um app (ou mudar uma categoria) no painel agora vale na hora para quem está usando o computador: a tela de apps se refaz sozinha, sem botão. Antes a lista só mudava no próximo login.

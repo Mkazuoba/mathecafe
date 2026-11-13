@@ -2091,6 +2091,7 @@ class TelaApps:
         menu = getattr(self.app, "_menu", None)
         if menu:
             menu.definir_quantidade(len(self.apps))
+            menu.definir_categorias(categorias_da_tela(self.apps)[1:])
 
     def _baixar_capa(self, url):
         dados = baixar_imagem(url)  # thread: nada de Tkinter aqui
@@ -2248,6 +2249,9 @@ class TelaApps:
     def escolher(self, chave):
         self.chave = chave
         self._pintar_pilulas()
+        menu = getattr(self.app, "_menu", None)
+        if menu:
+            menu.pintar()  # a categoria acende também no menu da esquerda
         self._filtrar()
         self.canvas.yview_moveto(0)
         self.animar_entrada()
@@ -2515,8 +2519,9 @@ def avatar_degrade(lado, raio, fundo):
     return _cantos(img, raio, fundo)
 
 
-def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None):
-    """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido."""
+def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None, cor=None):
+    """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido.
+    cor: o ícone na cor da categoria (as linhas de CATEGORIAS)."""
     p = paleta
     cv.delete("all")
     cv.config(width=largura, bg=p["fundo"])
@@ -2525,7 +2530,7 @@ def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, pa
         BarraSessao._retangulo(cv, 1, 1, largura - 2, altura - 2, 11, fill=misturar(AZUL, p["fundo"], 0.14), outline="")
     elif sobre:
         BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=p["superficie"], outline="")
-    cor_icone = AZUL_CLARO if escolhido else p["texto2"]
+    cor_icone = AZUL_CLARO if escolhido else (cor or p["texto2"])
     cor_texto = p["texto"] if (escolhido or sobre) else p["texto2"]
     x_icone = 22 if aberto else largura / 2
     cv.create_text(x_icone, altura / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
@@ -2573,15 +2578,21 @@ class MenuLateral:
         self.lbl_menu.pack(anchor="w", padx=20, pady=(18, 8))
         for chave, rotulo, icone in self.ITENS:
             self._linha(chave, rotulo, icone).pack(fill="x", padx=10, pady=2)
+        # as categorias da tela de apps (os mesmos filtros das pílulas), 9.16
+        self.lbl_categorias = tk.Label(f, text="", font=(FONTE, 7, "bold"), fg=p["fraco"], bg=p["fundo"])
+        self.lbl_categorias.pack(anchor="w", padx=20, pady=(16, 6))
+        self.frame_categorias = tk.Frame(f, bg=p["fundo"])
+        self.frame_categorias.pack(fill="x")
+        self._categorias = []  # [(chave, rótulo, quantidade)]
         chave, rotulo, icone = self.RODAPE
         rodape = tk.Frame(f, bg=p["fundo"])
         rodape.pack(side="bottom", fill="x", pady=(0, 12))
         self._linha(chave, rotulo, icone, rodape).pack(fill="x", padx=10)
         self.pintar()
 
-    def _linha(self, chave, rotulo, icone, pai=None):
+    def _linha(self, chave, rotulo, icone, pai=None, acao=None):
         cv = tk.Canvas(pai or self.frame, height=self.ALTURA_LINHA, highlightthickness=0, cursor="hand2")
-        cv.bind("<Button-1>", lambda e, k=chave: self.app._mostrar_pagina(k))
+        cv.bind("<Button-1>", lambda e, k=chave: (acao or self.app._mostrar_pagina)(k))
         cv.bind("<Enter>", lambda e, k=chave: self.pintar(sobre=k))
         cv.bind("<Leave>", lambda e: self.pintar())
         cv.bind("<Configure>", lambda e: self.pintar())
@@ -2610,11 +2621,38 @@ class MenuLateral:
         self.quantidade = n
         self.pintar()
 
+    def definir_categorias(self, categorias):
+        """As linhas de CATEGORIAS: [(chave, rótulo, quantidade)] de
+        categorias_da_tela, sem o "Todos" (é o Meus Apps). Clicar filtra a
+        grade como a pílula; sem categorias no piso, a seção some."""
+        for chave, _, _ in self._categorias:
+            cv = self._linhas.pop(chave, (None,))[0]
+            if cv is not None:
+                cv.destroy()
+        self._categorias = list(categorias)
+        for chave, rotulo, _ in self._categorias:
+            icone = "" if chave == "outros" else (icone_da_categoria(rotulo) or "")
+            self._linha(chave, rotulo, icone, self.frame_categorias,
+                        acao=self.app._filtrar_categoria).pack(fill="x", padx=10, pady=2)
+        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and self.aberto else "")
+        self.pintar()
+
+    def _cor_da_categoria(self, chave):
+        tela = getattr(self.app, "_tela_apps", None)
+        return tela._cor_da_chave(chave) if tela and chave.startswith("cat:") else None
+
     def pintar(self, sobre=None):
         p = self.app.paleta
         pagina = getattr(self.app, "_pagina", "inicio")
+        tela = getattr(self.app, "_tela_apps", None)
+        filtro = getattr(tela, "chave", "todos") if pagina != "config" else None
+        quantidades = {chave: n for chave, _, n in self._categorias}
         for chave, (cv, rotulo, icone) in self._linhas.items():
             largura = max(40, cv.winfo_width())
+            if chave in quantidades:
+                _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == filtro,
+                            chave == sobre, p, contagem=quantidades[chave], cor=self._cor_da_categoria(chave))
+                continue
             _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == pagina, chave == sobre, p,
                         contagem=self.quantidade if chave == "apps" else None)
 
@@ -2626,10 +2664,13 @@ class MenuLateral:
             self.lbl_menu.config(text="NAVEGAÇÃO")
         else:
             self.lbl_menu.config(text="")
+        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and self.aberto else "")
         self.app.root.after(10, lambda: (self._desenhar_topo(), self.pintar()))
 
     def redesenhar(self):
         self.frame.config(bg=self.app.paleta["fundo"], highlightbackground=self.app.paleta["borda"])
+        self.lbl_categorias.config(bg=self.app.paleta["fundo"], fg=self.app.paleta["fraco"])
+        self.frame_categorias.config(bg=self.app.paleta["fundo"])
         self._desenhar_topo()
         self.pintar()
 
@@ -3797,6 +3838,15 @@ class AgenteApp:
             self.frame_launcher.pack(side="bottom", expand=True, fill="both")
         self._programacao.ajustar_pagina()
         self.root.after(40, self._tela_apps.animar_entrada)
+
+    def _filtrar_categoria(self, chave):
+        """Categoria clicada no menu da esquerda (9.16): fica na página em que
+        está (Início ou Meus Apps; de Configurações vai para Meus Apps) e
+        filtra a grade como a pílula."""
+        if getattr(self, "_pagina", "inicio") == "config":
+            self._mostrar_pagina("apps")
+        if self._tela_apps.chave != chave:
+            self._tela_apps.escolher(chave)
 
     def _abrir_app(self, app):
         caminho = app.get("caminho")

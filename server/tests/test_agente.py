@@ -1123,3 +1123,19 @@ def test_apps_atualizados_no_meio_da_sessao():
     assert pc.whitelist_procs == {"winword.exe"} and pc.montou == 2  # sem sessao: ignora
     src = _fonte()
     assert 'evento == "apps_atualizados"' in src
+
+
+def test_menu_lateral_tem_as_categorias():
+    # 13/11 (9.16): pedido do Matheus: os filtros (Jogos, Internet, Estudos...)
+    # tambem no menu da esquerda, abaixo de Inicio e Meus Apps
+    src = _fonte()
+    menu = src[src.index("class MenuLateral:"):src.index("class PainelDireito:")]
+    assert '"CATEGORIAS"' in menu
+    assert "def definir_categorias(" in menu
+    assert "icone_da_categoria(" in menu
+    assert "acao=self.app._filtrar_categoria" in menu
+    tela = src[src.index("class TelaApps:"):src.index("class TelaLogin:")]
+    assert "definir_categorias(categorias_da_tela(self.apps)[1:])" in tela  # sem o "Todos"
+    escolher = tela[tela.index("    def escolher("):tela.index("    # ── entrada suave")]
+    assert "_menu" in escolher  # a pilula escolhida acende tambem no menu
+    assert "def _filtrar_categoria(" in src
