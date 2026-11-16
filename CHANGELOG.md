@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16 — Instalador com tela (MatheCafe-Instalador.exe)
+
+- Novo **MatheCafe-Instalador.exe**: instala e desinstala o agente em telas passo a passo, no visual da Área do Cliente, no lugar das perguntas no prompt do `instalar.bat`. Servidor testado na hora com os pisos em botões; senha do cliente digitada duas vezes; cada passo da instalação marcado, com barra de progresso e a porcentagem do download do Python; se algo falhar, o motivo aparece e dá para tentar de novo; no fim, **Reiniciar agora**.
+- Num PC já instalado ele oferece **Reinstalar** (mantém a estação) ou **Desinstalar** (com confirmação).
+- Um arquivo só, que pede administrador sozinho. Gerado por `agente\gerar_instalador.bat`. O `instalar.bat` e o `desinstalar.bat` continuam valendo até o `.exe` ser aprovado numa estação.
+
 ## 2026-11-13 — Categorias no menu da esquerda (agente 1.26.0)
 
 - O menu da Área do Cliente ganhou a seção **Categorias** (Jogos, Internet, Estudo...), abaixo de Início e Meus Apps, com o ícone na cor da categoria e quantos apps tem. Clicar filtra a grade, igual às pílulas; a categoria escolhida fica acesa no menu e na pílula.
