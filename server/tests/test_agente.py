@@ -1109,7 +1109,16 @@ def test_apps_atualizados_no_meio_da_sessao():
         def _montar_launcher(self):
             self.montou += 1
 
+        # 1.27: a troca vai com fade no centro (o veu); aqui troca na hora
+        frame_centro = "centro"
+        _tela_apps = type("Tela", (), {"animar_entrada": lambda self: None})()
+
+        def _transicao(self, trocar, area=None, **_):
+            self.areas.append(area)
+            trocar()
+
     pc = Falso()
+    pc.areas = []
     pc._definir_whitelist = ns["_definir_whitelist"].__get__(pc)
     ns["_apps_atualizados"](pc, {"whitelist": [
         {"nome": "Chrome", "processo": "chrome.exe", "caminho": "C:/chrome.exe"},
@@ -1121,6 +1130,7 @@ def test_apps_atualizados_no_meio_da_sessao():
     pc.sessao_ativa = False
     ns["_apps_atualizados"](pc, {"whitelist": []})
     assert pc.whitelist_procs == {"winword.exe"} and pc.montou == 2  # sem sessao: ignora
+    assert pc.areas == ["centro", "centro"]  # com fade so no centro, nao na tela toda
     src = _fonte()
     assert 'evento == "apps_atualizados"' in src
 
@@ -1155,3 +1165,164 @@ def test_atualizar_tela_pelo_painel():
     # a lista vai pelo mesmo caminho do envio automatico (9.15), que fora da
     # sessao nao mexe nos apps: so cartazes e avisos
     assert "self._apps_atualizados(dados)" in metodo
+
+
+def test_transicao_com_veu():
+    # 13/11 (pedido do Matheus): login <-> sessao, secoes do menu e Atualizar tela
+    # trocam com fade. O veu (janela por cima) entra, a tela troca uma vez por
+    # baixo dele e ele some; nunca fica preso, mesmo com erro na troca.
+    import time as _time
+    import tkinter as tk
+    nomes = ("_suave", "_transicao", "_passo_veu", "_trocar_sob_veu", "_fim_veu")
+    ns = _carregar(metodos=nomes)
+    ns.update(tk=tk, time=_time)
+    App = type("App", (), {n: ns[n] for n in nomes} | {
+        "VEU_ENTRA_MS": 60, "VEU_SAI_MS": 80, "VEU_QUADRO_MS": 10, "_log": lambda self, m: self.logs.append(m)})
+    app = App()
+    app.logs, app.paleta = [], {"fundo": "#09090b"}
+    app.root = _tk_raiz()
+    try:
+        # fora da tela e transparente: nada aparece para quem roda os testes
+        app.root.geometry("200x120+-4000+-4000")
+        app.root.attributes("-alpha", 0.0)
+        app.root.update()
+
+        def esperar_veu(limite=2.0):
+            fim = _time.monotonic() + limite
+            while getattr(app, "_veu", None) and _time.monotonic() < fim:
+                app.root.update()
+                _time.sleep(0.005)
+
+        trocas = []
+        app._transicao(lambda: trocas.append(1))
+        assert trocas == [] and app._veu["top"].winfo_exists()  # primeiro o veu entra
+        esperar_veu()
+        assert trocas == [1] and app._veu is None
+        assert not [w for w in app.root.winfo_children() if isinstance(w, tk.Toplevel)]
+
+        # uma no meio da outra: a primeira troca na hora, a segunda segue com fade
+        app._transicao(lambda: trocas.append(2))
+        app._transicao(lambda: trocas.append(3))
+        assert trocas == [1, 2]
+        esperar_veu()
+        assert trocas == [1, 2, 3]
+
+        # erro na troca: o veu some do mesmo jeito
+        app._transicao(lambda: 1 / 0)
+        esperar_veu()
+        assert app._veu is None and any("troca de tela" in m for m in app.logs)
+        assert not [w for w in app.root.winfo_children() if isinstance(w, tk.Toplevel)]
+
+        # area escondida: troca direto, sem veu
+        escondido = tk.Frame(app.root)
+        app._transicao(lambda: trocas.append(4), area=escondido)
+        assert trocas[-1] == 4 and getattr(app, "_veu", None) is None
+    finally:
+        import gc
+        gc.collect()  # os objetos do Tk somem aqui, com a janela viva (noutra thread derrubam o Python)
+        app.root.destroy()
+
+    src = _fonte()
+    assert "self._transicao(mostrar_sessao)" in src and "self._transicao(mostrar_login)" in src
+    assert "self._transicao(mostrar_encerramento)" in src
+    assert "self._transicao(refazer, area=self.frame_centro)" in src
+
+
+def test_menu_lateral_com_fade():
+    # 13/11 (pedido do Matheus): o menu da esquerda com fade suave. O destaque
+    # (mouse em cima, pagina escolhida) passa por cores do meio ate chegar; recolher
+    # anda a largura aos poucos e termina em 64 px (abrir volta a 240)
+    import time as _time
+    import tkinter as tk
+    import tkinter.font as tkfont
+    arvore = ast.parse(_fonte())
+    corpo = [no for no in arvore.body if
+             (isinstance(no, ast.FunctionDef) and no.name in ("misturar", "_linha_menu")) or
+             (isinstance(no, ast.ClassDef) and no.name == "MenuLateral")]
+    desenhos = []
+
+    class BarraSessao:
+        @staticmethod
+        def _retangulo(c, x0, y0, x1, y1, r, **k):
+            desenhos.append(k.get("fill"))
+            return c.create_rectangle(x0, y0, x1, y1, fill=k.get("fill"), outline="")
+
+    ns = {"tk": tk, "tkfont": tkfont, "time": _time, "BarraSessao": BarraSessao, "FONTE": "Segoe UI",
+          "AZUL": "#3b82f6", "AZUL_CLARO": "#60a5fa", "TEXTO_CLARO": "#ffffff"}
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+
+    root = _tk_raiz()
+    try:
+        root.geometry("400x500+-4000+-4000")  # fora da tela e transparente
+        root.attributes("-alpha", 0.0)
+        app = type("App", (), {})()
+        app.root, app._pagina = root, "inicio"
+        app.paleta = {"fundo": "#09090b", "borda": "#27272a", "superficie": "#18181b", "texto": "#fafafa",
+                      "texto2": "#a1a1aa", "fraco": "#71717a"}
+        frame = tk.Frame(root)
+        frame.pack(side="left", fill="y")
+        menu = ns["MenuLateral"](app, frame)
+        root.update()
+
+        def rodar(seg):
+            fim = _time.monotonic() + seg
+            while _time.monotonic() < fim:
+                root.update()
+                _time.sleep(0.005)
+
+        rodar(0.1)
+        assert menu._nivel["inicio"] == [1.0, 0.0] and menu._nivel["apps"] == [0.0, 0.0]
+
+        # mouse em cima de Meus Apps: o nivel passa pelo meio antes de chegar a 1
+        menu.pintar(sobre="apps")
+        root.update()
+        rodar(0.02)
+        meio = menu._nivel["apps"][1]
+        assert 0 < meio < 1
+        rodar(0.5)
+        assert menu._nivel["apps"][1] == 1.0
+        menu._saiu("apps")
+        rodar(0.5)
+        assert menu._nivel["apps"][1] == 0.0
+
+        # trocar de pagina: o destaque azul sai de um e entra no outro em fade
+        app._pagina = "apps"
+        menu.pintar()
+        rodar(0.03)
+        assert 0 < menu._nivel["apps"][0] < 1 and 0 < menu._nivel["inicio"][0] < 1
+        rodar(0.5)
+        assert menu._nivel["apps"][0] == 1.0 and menu._nivel["inicio"][0] == 0.0
+
+        # recolher: larguras do meio, termina em 64 e sem o texto NAVEGACAO
+        menu.alternar()
+        larguras = set()
+        fim = _time.monotonic() + 0.6
+        while _time.monotonic() < fim:
+            root.update()
+            larguras.add(int(frame.cget("width")))
+            _time.sleep(0.005)
+        assert int(frame.cget("width")) == 64 and menu.abertura == 0.0 and menu.lbl_menu.cget("text") == ""
+        assert any(64 < w < 240 for w in larguras)
+        menu.alternar()
+        rodar(0.6)
+        assert int(frame.cget("width")) == 240 and menu.abertura == 1.0
+        assert menu.lbl_menu.cget("text") == "NAVEGAÇÃO"
+    finally:
+        import gc
+        menu = app = frame = None
+        gc.collect()  # os objetos do Tk somem aqui, com a janela viva (noutra thread derrubam o Python)
+        root.destroy()
+
+
+def _tk_raiz():
+    # Neste PC o Windows as vezes nao deixa ler os .tcl do Tk na hora de abrir
+    # (antivirus olhando o arquivo): tenta de novo antes de dar erro
+    import time as _time
+    import tkinter as tk
+    for tentativa in range(3):
+        try:
+            return tk.Tk()
+        except tk.TclError:
+            if tentativa == 2:
+                raise
+            _time.sleep(0.5)

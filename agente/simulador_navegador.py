@@ -115,6 +115,7 @@ class Espelho:
                     vis.append(t)
             except tk.TclError:
                 pass
+        vis.sort(key=lambda t: getattr(t, "_por_cima", False))  # o véu das transições por último
         return vis  # a raiz primeiro; as outras por cima
 
     def _quadro(self):

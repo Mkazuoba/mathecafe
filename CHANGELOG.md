@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16 — Fade nas trocas de tela e no menu da esquerda (agente 1.27.0)
+
+- A tela do cliente troca com **fade** em vez de pular: do login para a Área do Cliente, da sessão para a tela de encerramento e dela para o login (tela inteira), e no centro ao trocar de seção no menu (Início, Meus Apps, Configurações) e quando os apps mudam pelo painel (envio automático ou **Atualizar tela**): os cards novos entram em cascata.
+- **Menu da esquerda** com fade: o destaque de cada item (mouse em cima, a página escolhida e a categoria filtrada) muda de cor aos poucos (~0,2 s) em vez de piscar, e o azul passa de um item para o outro ao trocar de página. Recolher e abrir anda a largura (~0,24 s, ease-in-out) enquanto os textos (marca, NAVEGAÇÃO, CATEGORIAS, nomes e as contagens) somem ou aparecem em fade; o ícone fica parado. O banner da Programação só é refeito quando a largura para de mudar.
+- Como funciona: um "véu" da cor do fundo (janela sem borda, por cima) aparece em ~0,17 s, a tela troca por baixo dele e ele some em ~0,26 s (ease-in-out). Nunca fica preso: some sozinho em 3 s e, com erro na troca, some do mesmo jeito.
+
 ## 2026-11-13 — Categorias no menu da esquerda (agente 1.26.0)
 
 - O menu da Área do Cliente ganhou a seção **Categorias** (Jogos, Internet, Estudo...), abaixo de Início e Meus Apps, com o ícone na cor da categoria e quantos apps tem. Clicar filtra a grade, igual às pílulas; a categoria escolhida fica acesa no menu e na pílula.

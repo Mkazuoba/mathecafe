@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.26.0"
+VERSAO = "1.27.0"
 
 import asyncio
 import json
@@ -1733,7 +1733,14 @@ class Programacao:
         self.app.root.after(30, lambda: self._exibir(fade=False))
 
     def _ao_mudar_tamanho(self, event):
-        tam = (event.width, event.height)
+        # o menu da esquerda recolhendo/abrindo muda a largura a cada quadro: o
+        # banner (imagem montada para o tamanho, cara) só é refeito quando parar
+        if getattr(self, "_refazer_tam", None):
+            self.app.root.after_cancel(self._refazer_tam)
+        self._refazer_tam = self.app.root.after(80, lambda t=(event.width, event.height): self._no_tamanho(t))
+
+    def _no_tamanho(self, tam):
+        self._refazer_tam = None
         if tam != self._tam and self.itens:
             self._tam = tam
             self._atual = None
@@ -2521,37 +2528,53 @@ def avatar_degrade(lado, raio, fundo):
 
 def _linha_menu(cv, largura, altura, rotulo, icone, aberto, escolhido, sobre, paleta, contagem=None, cor=None):
     """Um botão do menu (rounded-xl, ícone 16 px): escolhido em azul translúcido.
-    cor: o ícone na cor da categoria (as linhas de CATEGORIAS)."""
+    cor: o ícone na cor da categoria (as linhas de CATEGORIAS).
+    aberto, escolhido e sobre vão de 0 a 1 (True/False também valem): os
+    valores do meio são os quadros do fade (MenuLateral anima)."""
     p = paleta
+    aberto, escolhido, sobre = float(aberto), float(escolhido), float(sobre)
     cv.delete("all")
     cv.config(width=largura, bg=p["fundo"])
-    if escolhido:
-        BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=misturar(AZUL, p["fundo"], 0.45), outline="")
-        BarraSessao._retangulo(cv, 1, 1, largura - 2, altura - 2, 11, fill=misturar(AZUL, p["fundo"], 0.14), outline="")
-    elif sobre:
-        BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12, fill=p["superficie"], outline="")
-    cor_icone = AZUL_CLARO if escolhido else (cor or p["texto2"])
-    cor_texto = p["texto"] if (escolhido or sobre) else p["texto2"]
-    x_icone = 22 if aberto else largura / 2
-    cv.create_text(x_icone, altura / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
-    if aberto:
-        cv.create_text(44, altura / 2, anchor="w", text=rotulo, font=(FONTE, 9, "bold" if escolhido else "normal"),
-                       fill=cor_texto)
-        if contagem is not None:
+    base = misturar(p["superficie"], p["fundo"], sobre * (1 - escolhido))  # o hover some sob o azul
+    if escolhido > 0.01 or sobre > 0.01:
+        BarraSessao._retangulo(cv, 0, 0, largura - 1, altura - 1, 12,
+                               fill=misturar(AZUL, base, 0.45 * escolhido), outline="")
+        BarraSessao._retangulo(cv, 1, 1, largura - 2, altura - 2, 11,
+                               fill=misturar(AZUL, base, 0.14 * escolhido), outline="")
+    fundo_item = misturar(AZUL, base, 0.14 * escolhido)
+    cor_icone = misturar(AZUL_CLARO, cor or p["texto2"], escolhido)
+    cor_texto = misturar(p["texto"], p["texto2"], max(escolhido, sobre))
+    # aberto (240 px) e fechado (64 px, sem a margem = 44) deixam o ícone no x 22: não pula
+    cv.create_text(22, altura / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
+    if aberto > 0.01:
+        # recolhendo, o texto some em fade (e o canvas corta o que não cabe)
+        cv.create_text(44, altura / 2, anchor="w", text=rotulo, font=(FONTE, 9, "bold" if escolhido >= 0.5 else "normal"),
+                       fill=misturar(cor_texto, fundo_item, aberto))
+        if contagem is not None and aberto > 0.6:
+            t = (aberto - 0.6) / 0.4
             texto = str(contagem)
-            larg = tkfont.Font(family="Consolas", size=7).measure(texto) + 12
+            # mede sem criar um Font a cada quadro da animação
+            larg = int(cv.tk.call("font", "measure", ("Consolas", 7), texto)) + 12
             BarraSessao._retangulo(cv, largura - 12 - larg, altura / 2 - 9, largura - 12, altura / 2 + 9, 6,
-                                   fill=p["borda"], outline="")
+                                   fill=misturar(p["borda"], fundo_item, t), outline="")
             BarraSessao._retangulo(cv, largura - 11 - larg, altura / 2 - 8, largura - 13, altura / 2 + 8, 5,
-                                   fill=p["superficie"], outline="")
-            cv.create_text(largura - 12 - larg / 2, altura / 2, text=texto, font=("Consolas", 7), fill=p["texto2"])
+                                   fill=misturar(p["superficie"], fundo_item, t), outline="")
+            cv.create_text(largura - 12 - larg / 2, altura / 2, text=texto, font=("Consolas", 7),
+                           fill=misturar(p["texto2"], fundo_item, t))
 
 
 class MenuLateral:
     """Menu da esquerda da Área do Cliente (9.13): só a marca no topo, os links
     (Início e Meus Apps) e Configurações no rodapé. Recolhe de 240 para 64 px.
-    O cliente aparece no card da sessão, à direita (sem repetir aqui)."""
+    O cliente aparece no card da sessão, à direita (sem repetir aqui).
+
+    Movimento: o destaque de cada item (mouse em cima e página escolhida) muda
+    de cor em fade (~0,2 s); recolher e abrir anda a largura (~0,24 s,
+    ease-in-out) enquanto os textos somem ou aparecem em fade."""
     LARGURA_ABERTO, LARGURA_FECHADO = 240, 64
+    QUADRO_MS = 16
+    SUAVIDADE = 0.25      # fração do caminho por quadro no fade do destaque
+    RECOLHER_MS = 240
     ITENS = [("inicio", "Início", ""), ("apps", "Meus Apps", "")]
     RODAPE = ("config", "Configurações", "")
     ALTURA_LINHA = 38
@@ -2560,8 +2583,13 @@ class MenuLateral:
         self.app = app
         self.frame = frame
         self.aberto = True
+        self.abertura = 1.0   # 0 = recolhido, 1 = aberto (os quadros do meio animam)
         self.quantidade = 0
         self._linhas = {}  # chave -> (canvas, rótulo, ícone)
+        self._nivel = {}   # chave -> [escolhido, sobre], de 0 a 1 (o que está na tela)
+        self._sobre = None
+        self._anim = None
+        self._anim_largura = None
         self._montar()
 
     def _montar(self):
@@ -2594,8 +2622,8 @@ class MenuLateral:
         cv = tk.Canvas(pai or self.frame, height=self.ALTURA_LINHA, highlightthickness=0, cursor="hand2")
         cv.bind("<Button-1>", lambda e, k=chave: (acao or self.app._mostrar_pagina)(k))
         cv.bind("<Enter>", lambda e, k=chave: self.pintar(sobre=k))
-        cv.bind("<Leave>", lambda e: self.pintar())
-        cv.bind("<Configure>", lambda e: self.pintar())
+        cv.bind("<Leave>", lambda e, k=chave: self._saiu(k))
+        cv.bind("<Configure>", lambda e: self._desenhar_linhas())
         self._linhas[chave] = (cv, rotulo, icone)
         return cv
 
@@ -2606,14 +2634,19 @@ class MenuLateral:
         c.config(bg=p["fundo"])
         w = c.winfo_width() or self.LARGURA_ABERTO
         c.create_line(0, 59, w, 59, fill=p["borda"])
-        x = 16 if self.aberto else (w - 30) / 2
+        a = self.abertura
+        x = 16 if a >= 1 else 17 * (1 - a) + 16 * a  # (64 - 30) / 2 = 17 recolhido
         BarraSessao._retangulo(c, x, 15, x + 30, 45, 9, fill=AZUL, outline="", tags="recolher" if not self.aberto else "")
         c.create_text(x + 15, 30, text="M", fill=TEXTO_CLARO, font=(FONTE, 11, "bold"),
                       tags="recolher" if not self.aberto else "")
-        if self.aberto:
-            c.create_text(x + 42, 23, anchor="w", text="MatheCafé", fill=p["texto"], font=(FONTE, 9, "bold"))
-            c.create_text(x + 42, 38, anchor="w", text="Sistema de Estações", fill=p["texto2"], font=(FONTE, 7))
-            c.create_text(w - 22, 30, text="", font=("Segoe MDL2 Assets", 9), fill=p["texto2"], tags="recolher")
+        if a > 0.01:
+            c.create_text(x + 42, 23, anchor="w", text="MatheCafé", fill=misturar(p["texto"], p["fundo"], a),
+                          font=(FONTE, 9, "bold"))
+            c.create_text(x + 42, 38, anchor="w", text="Sistema de Estações", fill=misturar(p["texto2"], p["fundo"], a),
+                          font=(FONTE, 7))
+        if self.aberto and a > 0.01:
+            c.create_text(w - 22, 30, text="", font=("Segoe MDL2 Assets", 9),
+                          fill=misturar(p["texto2"], p["fundo"], a), tags="recolher")
             c.tag_bind("recolher", "<Enter>", lambda e: c.config(cursor="hand2"))
             c.tag_bind("recolher", "<Leave>", lambda e: c.config(cursor=""))
 
@@ -2642,37 +2675,99 @@ class MenuLateral:
         return tela._cor_da_chave(chave) if tela and chave.startswith("cat:") else None
 
     def pintar(self, sobre=None):
-        p = self.app.paleta
+        """Marca o item sob o mouse (sobre) e a página atual; as cores chegam lá em fade."""
+        if sobre is not None:
+            self._sobre = sobre
+        if self._anim is None:
+            self._anim = self.app.root.after(0, self._passo_destaque)
+
+    def _saiu(self, chave):
+        if self._sobre == chave:
+            self._sobre = None
+        self.pintar()
+
+    def _alvos(self):
         pagina = getattr(self.app, "_pagina", "inicio")
         tela = getattr(self.app, "_tela_apps", None)
         filtro = getattr(tela, "chave", "todos") if pagina != "config" else None
+        categorias = {chave for chave, _, _ in self._categorias}
+        alvos = {}
+        for k in self._linhas:
+            escolhido = (k == filtro) if k in categorias else (k == pagina)
+            alvos[k] = (1.0 if escolhido else 0.0, 1.0 if k == self._sobre else 0.0)
+        return alvos
+
+    def _passo_destaque(self):
+        """Um quadro do fade: cada nível anda uma fração do que falta (ease-out)."""
+        self._anim = None
+        andando = False
+        for chave, (alvo_e, alvo_s) in self._alvos().items():
+            atual = self._nivel.setdefault(chave, [alvo_e, alvo_s])  # o primeiro desenho já vem pronto
+            for i, alvo in ((0, alvo_e), (1, alvo_s)):
+                falta = alvo - atual[i]
+                if abs(falta) < 0.02:
+                    atual[i] = alvo
+                else:
+                    atual[i] += falta * self.SUAVIDADE
+                    andando = True
+        self._desenhar_linhas()
+        if andando:
+            self._anim = self.app.root.after(self.QUADRO_MS, self._passo_destaque)
+
+    def _desenhar_linhas(self):
+        p = self.app.paleta
         quantidades = {chave: n for chave, _, n in self._categorias}
-        for chave, (cv, rotulo, icone) in self._linhas.items():
-            largura = max(40, cv.winfo_width())
-            if chave in quantidades:
-                _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == filtro,
-                            chave == sobre, p, contagem=quantidades[chave], cor=self._cor_da_categoria(chave))
+        for chave, (cv, rotulo, icone) in list(self._linhas.items()):
+            try:
+                largura = max(40, cv.winfo_width())
+            except tk.TclError:
                 continue
-            _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.aberto, chave == pagina, chave == sobre, p,
+            escolhido, sobre = self._nivel.get(chave, (0.0, 0.0))
+            if chave in quantidades:
+                _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.abertura, escolhido, sobre, p,
+                            contagem=quantidades[chave], cor=self._cor_da_categoria(chave))
+                continue
+            _linha_menu(cv, largura, self.ALTURA_LINHA, rotulo, icone, self.abertura, escolhido, sobre, p,
                         contagem=self.quantidade if chave == "apps" else None)
 
     def alternar(self):
-        """Recolhe (só os ícones) ou abre de novo."""
+        """Recolhe (só os ícones) ou abre de novo: a largura anda com ease-in-out
+        e os textos somem/aparecem em fade."""
         self.aberto = not self.aberto
-        self.frame.config(width=self.LARGURA_ABERTO if self.aberto else self.LARGURA_FECHADO)
-        if self.aberto:
-            self.lbl_menu.config(text="NAVEGAÇÃO")
-        else:
-            self.lbl_menu.config(text="")
-        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and self.aberto else "")
-        self.app.root.after(10, lambda: (self._desenhar_topo(), self.pintar()))
+        if self._anim_largura:
+            self.app.root.after_cancel(self._anim_largura)
+        self._anim_largura = None
+        de, inicio = self.abertura, time.monotonic()
+        para = 1.0 if self.aberto else 0.0
+        duracao = self.RECOLHER_MS / 1000 * max(0.2, abs(para - de))  # no meio, só o que falta
+
+        def passo():
+            t = min(1.0, (time.monotonic() - inicio) / duracao)
+            e = t * t * (3 - 2 * t)  # smoothstep
+            self._aplicar_abertura(de + (para - de) * e)
+            self._anim_largura = self.app.root.after(self.QUADRO_MS, passo) if t < 1 else None
+        passo()
+
+    def _aplicar_abertura(self, a):
+        self.abertura = a
+        p = self.app.paleta
+        largura = round(self.LARGURA_FECHADO + (self.LARGURA_ABERTO - self.LARGURA_FECHADO) * a)
+        self.frame.config(width=largura)
+        cor = misturar(p["fraco"], p["fundo"], a)
+        self.lbl_menu.config(text="NAVEGAÇÃO" if a > 0.01 else "", fg=cor)
+        self.lbl_categorias.config(text="CATEGORIAS" if self._categorias and a > 0.01 else "", fg=cor)
+        self._desenhar_topo()
+        self._desenhar_linhas()
 
     def redesenhar(self):
-        self.frame.config(bg=self.app.paleta["fundo"], highlightbackground=self.app.paleta["borda"])
-        self.lbl_categorias.config(bg=self.app.paleta["fundo"], fg=self.app.paleta["fraco"])
-        self.frame_categorias.config(bg=self.app.paleta["fundo"])
+        p = self.app.paleta
+        self.frame.config(bg=p["fundo"], highlightbackground=p["borda"])
+        cor = misturar(p["fraco"], p["fundo"], self.abertura)
+        self.lbl_menu.config(bg=p["fundo"], fg=cor)
+        self.lbl_categorias.config(bg=p["fundo"], fg=cor)
+        self.frame_categorias.config(bg=p["fundo"])
         self._desenhar_topo()
-        self.pintar()
+        self._desenhar_linhas()
 
 
 class PainelDireito:
@@ -3779,7 +3874,7 @@ class AgenteApp:
         self.reiniciar_ao_encerrar = dados.get("reiniciar_ao_encerrar", False)
 
         self._painel_direito.definir_cliente(self.cliente_nome, dados.get("cliente_login"))
-        self._mostrar_pagina("inicio")
+        self._mostrar_pagina("inicio", animar=False)
         self._painel_direito.atualizar_tempo(self.tempo_total, self.tempo_total)
         self.entry_login.delete(0, "end")
         self.entry_senha.delete(0, "end")
@@ -3787,21 +3882,27 @@ class AgenteApp:
         self.lbl_olho.config(fg=self.paleta["texto2"])
         self.lbl_login_erro.config(text="")
 
-        self._montar_launcher()
+        def mostrar_sessao():
+            self._montar_launcher()
+            self.frame_login.pack_forget()
+            self.frame_sessao.pack(fill="both", expand=True)
 
-        self.frame_login.pack_forget()
-        self.frame_sessao.pack(fill="both", expand=True)
+            # Tela cheia sem "sempre por cima": os apps abrem na frente, e não há
+            # barra de título para arrastar ou diminuir. A barra do MatheCafé
+            # (Início, apps, tempo) fica no lugar da do Windows.
+            self.root.attributes("-topmost", False)
+            self.root.attributes("-fullscreen", True)
+            self.barra.mostrar()
+            self._programacao.recarregar()
+            self._painel_direito.recarregar_avisos()
+            self.root.lift()
+            self.root.focus_force()
 
-        # Tela cheia sem "sempre por cima": os apps abrem na frente, e não há
-        # barra de título para arrastar ou diminuir. A barra do MatheCafé
-        # (Início, apps, tempo) fica no lugar da do Windows.
-        self.root.attributes("-topmost", False)
-        self.root.attributes("-fullscreen", True)
-        self.barra.mostrar()
-        self._programacao.recarregar()
-        self._painel_direito.recarregar_avisos()
-        self.root.lift()
-        self.root.focus_force()
+        # do login para a Área do Cliente com fade (retomada já na sessão: direto)
+        if self.frame_login.winfo_ismapped():
+            self._transicao(mostrar_sessao)
+        else:
+            mostrar_sessao()
 
         if self.whitelist_procs:
             self._log(f"Sessao iniciada - {self._fmt(self.tempo_total)} | "
@@ -3820,7 +3921,12 @@ class AgenteApp:
         if not self.sessao_ativa:
             return
         self._definir_whitelist(dados.get("whitelist", []))
-        self._montar_launcher()
+
+        def refazer():
+            self._montar_launcher()
+            self._tela_apps.animar_entrada()
+        # fade no centro (o menu e o widget da sessão ficam): sem o pulo dos cards
+        self._transicao(refazer, area=self.frame_centro)
         self._log(f"Apps atualizados pelo painel: {len(self.whitelist_procs)} app(s)")
 
     def _atualizar_tela(self, dados):
@@ -3834,12 +3940,126 @@ class AgenteApp:
         self._programacao.recarregar()
         self._painel_direito.recarregar_avisos()
 
+    # ── transições com fade ──────────────────────────────────────────────────
+    # O Tk não tem transparência por widget, só por janela: um "véu" da cor do
+    # fundo (janela sem borda, por cima) aparece em fade, a tela troca por baixo
+    # dele e ele some em fade. Assim a troca não pula.
+    VEU_ENTRA_MS, VEU_SAI_MS, VEU_QUADRO_MS = 170, 260, 16
+
+    @staticmethod
+    def _suave(t):
+        t = max(0.0, min(1.0, t))
+        return t * t * (3 - 2 * t)  # smoothstep: começa e termina devagar
+
+    def _transicao(self, trocar, area=None, entra_ms=None, sai_ms=None):
+        """Faz trocar() com fade. area: o widget a cobrir (padrão: a janela toda).
+        Uma transição no meio termina na hora (troca e some) antes da nova."""
+        anterior = getattr(self, "_veu", None)
+        if anterior:
+            self._fim_veu(anterior)
+        try:
+            alvo = area or self.root
+            self.root.update_idletasks()
+            if not alvo.winfo_ismapped():
+                raise ValueError("área escondida")
+            x, y, w, h = alvo.winfo_rootx(), alvo.winfo_rooty(), alvo.winfo_width(), alvo.winfo_height()
+            if w < 2 or h < 2:
+                raise ValueError("área sem tamanho")
+            top = tk.Toplevel(self.root)
+            top.withdraw()
+            top.overrideredirect(True)
+            top.configure(bg=self.paleta["fundo"])
+            top.attributes("-alpha", 0.0)
+            top.attributes("-topmost", True)
+            top.geometry(f"{w}x{h}+{x}+{y}")
+            top._por_cima = True  # o simulador desenha por último
+            tinha_foco = self.root.focus_get() is not None
+            top.deiconify()
+        except Exception:
+            trocar()  # sem fade, mas troca
+            return
+        veu = {"top": top, "trocar": trocar, "trocou": False, "fim": False, "foco": tinha_foco,
+               "inicio": time.monotonic(), "entra": (entra_ms or self.VEU_ENTRA_MS) / 1000,
+               "sai": (sai_ms or self.VEU_SAI_MS) / 1000}
+        self._veu = veu
+        veu["seguranca"] = self.root.after(3000, lambda: self._fim_veu(veu))  # nunca fica preso
+        self._passo_veu(veu)
+
+    def _passo_veu(self, veu):
+        if veu["fim"]:
+            return
+        try:
+            agora = time.monotonic()
+            if not veu["trocou"] and agora - veu["inicio"] < veu["entra"]:
+                alfa = self._suave((agora - veu["inicio"]) / veu["entra"])
+            else:
+                if not veu["trocou"]:
+                    self._trocar_sob_veu(veu)
+                    veu["saida"] = agora = time.monotonic()
+                t = (agora - veu["saida"]) / veu["sai"]
+                if t >= 1:
+                    self._fim_veu(veu)
+                    return
+                alfa = 1 - self._suave(t)
+            veu["top"].attributes("-alpha", alfa)
+        except tk.TclError:
+            self._fim_veu(veu)
+            return
+        veu["passo"] = self.root.after(self.VEU_QUADRO_MS, lambda: self._passo_veu(veu))
+
+    def _trocar_sob_veu(self, veu):
+        veu["trocou"] = True
+        try:
+            veu["top"].attributes("-alpha", 1.0)
+        except tk.TclError:
+            pass
+        try:
+            veu["trocar"]()
+        except Exception as ex:
+            self._log(f"Erro na troca de tela: {ex}")
+        try:
+            self.root.update_idletasks()
+            veu["top"].lift()  # a troca pode ter subido a janela principal
+        except tk.TclError:
+            pass
+
+    def _fim_veu(self, veu):
+        if veu["fim"]:
+            return
+        veu["fim"] = True
+        for chave in ("passo", "seguranca"):
+            if veu.get(chave):
+                try:
+                    self.root.after_cancel(veu[chave])
+                except Exception:
+                    pass
+        if not veu["trocou"]:
+            self._trocar_sob_veu(veu)
+        try:
+            veu["top"].destroy()
+        except tk.TclError:
+            pass
+        if getattr(self, "_veu", None) is veu:
+            self._veu = None
+        if veu["foco"]:
+            try:
+                self.root.focus_force()  # o véu pode ter ficado com o foco do teclado
+            except tk.TclError:
+                pass
+
     def _montar_launcher(self):
         """A tela de apps da sessão (TelaApps): só os apps com caminho abrem."""
         self._tela_apps.mostrar([a for a in self.whitelist_apps if a.get("caminho")])
 
-    def _mostrar_pagina(self, pagina):
-        """Menu da esquerda: Início (banner + apps) ou Meus Apps (só a grade)."""
+    def _mostrar_pagina(self, pagina, animar=True):
+        """Menu da esquerda: Início (banner + apps), Meus Apps (só a grade) ou
+        Configurações. Com a sessão na tela, a troca é com fade no centro."""
+        if animar and pagina != getattr(self, "_pagina", None) and self.frame_sessao.winfo_ismapped():
+            self._transicao(lambda: self._trocar_pagina(pagina), area=self.frame_centro, entra_ms=120, sai_ms=220)
+        else:
+            self._trocar_pagina(pagina)
+
+    def _trocar_pagina(self, pagina):
         self._pagina = pagina
         self._menu.pintar()
         if pagina == "config":
@@ -3998,9 +4218,12 @@ class AgenteApp:
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
         self.root.lift()
-        self.frame_sessao.pack_forget()
-        self.frame_login.pack_forget()
-        self.frame_encerramento.pack(fill="both", expand=True)
+
+        def mostrar_encerramento():
+            self.frame_sessao.pack_forget()
+            self.frame_login.pack_forget()
+            self.frame_encerramento.pack(fill="both", expand=True)
+        self._transicao(mostrar_encerramento)
         self._countdown_encerramento(6)
 
     def _countdown_encerramento(self, restante):
@@ -4012,11 +4235,13 @@ class AgenteApp:
             self._ir_para_login()
 
     def _ir_para_login(self):
-        """Exibe a tela de login apos o encerramento."""
-        self.frame_encerramento.pack_forget()
-        self.root.attributes("-fullscreen", True)
-        self.root.attributes("-topmost", True)
-        self.frame_login.pack(fill="both", expand=True)
+        """Exibe a tela de login apos o encerramento (com fade)."""
+        def mostrar_login():
+            self.frame_encerramento.pack_forget()
+            self.root.attributes("-fullscreen", True)
+            self.root.attributes("-topmost", True)
+            self.frame_login.pack(fill="both", expand=True)
+        self._transicao(mostrar_login)
 
     # ── Manutenção admin ─────────────────────────────────────────────────────
     def _abrir_prompt_admin(self, event=None):
