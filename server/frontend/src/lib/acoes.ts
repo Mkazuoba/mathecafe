@@ -41,6 +41,18 @@ export function useAcoes() {
     [avisar, recarregarFila, recarregarClientes],
   )
 
+  /** Esvazia a fila do piso mostrado: um DELETE por cliente (cada um fica no registro). */
+  const removerTodosDaFila = useCallback(
+    async (clienteIds: number[]) => {
+      const resultados = await Promise.allSettled(clienteIds.map((id) => Api.del(`/api/estacoes/fila/${id}`)))
+      const falhas = resultados.filter((r) => r.status === "rejected").length
+      if (falhas) avisar(`${falhas} de ${clienteIds.length} não saíram da fila`, "erro")
+      else avisar(clienteIds.length === 1 ? "Removido da fila" : `${clienteIds.length} clientes removidos da fila`)
+      await Promise.all([recarregarFila(), recarregarClientes()])
+    },
+    [avisar, recarregarFila, recarregarClientes],
+  )
+
   const encerrarSessao = useCallback(
     async (sessaoId: number, estacao: string) => {
       if (!window.confirm(`Encerrar a sessão da estação ${estacao}?`)) return false
@@ -128,5 +140,5 @@ export function useAcoes() {
     [avisar, recarregar, estacoes],
   )
 
-  return { liberar, removerDaFila, encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, alternarManutencao, liberarDireto }
+  return { liberar, removerDaFila, removerTodosDaFila, encerrarSessao, reiniciarPc, desligarPc, enviarMensagem, alternarManutencao, liberarDireto }
 }

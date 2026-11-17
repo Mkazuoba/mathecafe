@@ -23,3 +23,11 @@ def test_nenhuma_tela_usa_lista_de_clientes_do_contexto():
     assert usam == [], f"use useBuscaClientes em vez da lista do contexto: {usam}"
     dados = dict(_arquivos())[os.path.join("lib", "dados.tsx")]
     assert not re.search(r"^\s*clientes: Cliente\[\]", dados, re.M)
+
+
+def test_historico_por_estacao_nao_repete_o_interrogacao():
+    # Por estação o caminho já vem com ?piso_id=N; o hook dos históricos
+    # acrescentava "?de=...", e a API recebia piso_id="1?" (erro 422 na tela).
+    hist = dict(_arquivos())[os.path.join("pages", "Historicos.tsx")]
+    assert "`${caminho}?${" not in hist
+    assert "?piso_id=" in hist  # o caso que pede o "&"

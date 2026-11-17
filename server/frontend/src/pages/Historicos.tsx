@@ -205,7 +205,10 @@ function useHistorico<T>(caminho: string | null, de: string, ate: string) {
     if (de) p.set("de", de)
     if (ate) p.set("ate", ate)
     setCarregando(true)
-    Api.get<T>(`${caminho}?${p}`)
+    // o caminho pode já ter consulta (por estação vem com ?piso_id=N)
+    const junta = caminho.includes("?") ? "&" : "?"
+    const q = p.toString()
+    Api.get<T>(q ? `${caminho}${junta}${q}` : caminho)
       .then((d) => !cancelado && setDados(d))
       .catch((e) => !cancelado && setErro((e as Error).message))
       .finally(() => !cancelado && setCarregando(false))

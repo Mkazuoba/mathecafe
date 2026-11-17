@@ -11,6 +11,7 @@ import { dataDoServidor, formatarTempo, haQuantoTempo, restanteDaSessao } from "
 import type { Cliente, Estacao, Grupo, Piso, Sessao, StatusEstacao } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Select } from "@/components/ui/campos"
+import { Modal } from "@/components/ui/modal"
 import { AlcaColuna, ColunasAjustaveis, useLayoutColunas, type LayoutColunas } from "@/components/ColunasAjustaveis"
 import { SeletorPiso } from "@/components/Layout"
 import { FichaCliente } from "@/components/FichaCliente"
@@ -61,6 +62,9 @@ export default function Painel() {
   const [ficha, setFicha] = useState<number | null>(null)
   const [novoCliente, setNovoCliente] = useState(false)
   const { layout, setLayout, restaurar, alterado } = useLayoutColunas("painel.layout", LAYOUT_PADRAO)
+  // clicar num chip de estado filtra o Controle de sessões; clicar de novo tira o filtro
+  const [filtroStatus, setFiltroStatus] = useState<StatusEstacao | null>(null)
+  const alternarFiltro = (s: StatusEstacao) => setFiltroStatus((atual) => (atual === s ? null : s))
   const [params, setParams] = useSearchParams()
   useEffect(() => {
     const id = Number(params.get("cliente"))
@@ -88,10 +92,10 @@ export default function Painel() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-3 text-sm">
         <SeletorPiso />
         <span className="mx-1 hidden h-6 w-px bg-borda sm:block" />
-        <Chip status="livre" valor={contagem.livre} rotulo="Livres" />
-        <Chip status="ocupada" valor={contagem.ocupada} rotulo="Ocupadas" />
-        <Chip status="desligada" valor={contagem.desligada} rotulo="Desligadas" />
-        <Chip status="manutencao" valor={contagem.manutencao} rotulo="Em manutenção" />
+        <Chip status="livre" valor={contagem.livre} rotulo="Livres" filtro={filtroStatus} aoClicar={alternarFiltro} />
+        <Chip status="ocupada" valor={contagem.ocupada} rotulo="Ocupadas" filtro={filtroStatus} aoClicar={alternarFiltro} />
+        <Chip status="desligada" valor={contagem.desligada} rotulo="Desligadas" filtro={filtroStatus} aoClicar={alternarFiltro} />
+        <Chip status="manutencao" valor={contagem.manutencao} rotulo="Em manutenção" filtro={filtroStatus} aoClicar={alternarFiltro} />
         <button
           type="button"
           onClick={restaurar}
@@ -106,7 +110,7 @@ export default function Painel() {
         {(id, posicao) => {
           void posicao
           const controles = <AlcaColuna id={id} />
-          if (id === "estacoes") return <ColunaEstacoes controles={controles} />
+          if (id === "estacoes") return <ColunaEstacoes controles={controles} filtroStatus={filtroStatus} aoLimparFiltro={() => setFiltroStatus(null)} />
           if (id === "clientes")
             return <ColunaClientes controles={controles} aoEditarCliente={(c) => setFicha(c.id)} aoNovoCliente={() => setNovoCliente(true)} />
           return <ColunaFila controles={controles} total={fila.length} aoSoltarCliente={liberar} />
@@ -132,14 +136,34 @@ const CORES_CHIP: Record<StatusEstacao, string> = {
   manutencao: "border-manutencao-borda bg-manutencao-fundo text-manutencao",
 }
 
-/** Chip do estado das estações (Livres, Ocupadas...), na cor do estado. */
-function Chip({ status, valor, rotulo }: { status: StatusEstacao; valor: number; rotulo: string }) {
+/** Chip do estado das estações (Livres, Ocupadas...), na cor do estado.
+ *  Clicar filtra o Controle de sessões por esse estado; os outros chips ficam apagados. */
+function Chip({ status, valor, rotulo, filtro, aoClicar }: {
+  status: StatusEstacao
+  valor: number
+  rotulo: string
+  filtro: StatusEstacao | null
+  aoClicar: (s: StatusEstacao) => void
+}) {
+  const ativo = filtro === status
   return (
-    <span className={cn("flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs", CORES_CHIP[status])}>
+    <button
+      type="button"
+      onClick={() => aoClicar(status)}
+      aria-pressed={ativo}
+      title={ativo ? "Mostrar todas as estações" : `Mostrar só as ${rotulo.toLowerCase()} no Controle de sessões`}
+      className={cn(
+        "flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs transition-all hover:brightness-125",
+        CORES_CHIP[status],
+        ativo && "ring-1 ring-current",
+        filtro && !ativo && "opacity-45 hover:opacity-80",
+      )}
+    >
       <span className="size-1.5 rounded-full bg-current" />
       <strong className="font-semibold tabular-nums">{valor}</strong>
       <span className="opacity-80">{rotulo}</span>
-    </span>
+      {ativo && <IconX size={12} className="-mr-0.5 opacity-80" />}
+    </button>
   )
 }
 
@@ -210,6 +234,13 @@ const ROTULO_PLURAL: Record<StatusEstacao, string> = {
   manutencao: "Em manutenção",
 }
 
+const ROTULO_SINGULAR: Record<StatusEstacao, string> = {
+  desligada: "desligada",
+  livre: "livre",
+  ocupada: "ocupada",
+  manutencao: "em manutenção",
+}
+
 // Preferências do operador neste navegador (o storage pode estar bloqueado)
 function lerPreferencia(chave: string): string | null {
   try {
@@ -255,7 +286,12 @@ function compararLinhas(a: LinhaTabela, b: LinhaTabela, coluna: ColunaOrdem): nu
   }
 }
 
-function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
+function ColunaEstacoes({ controles, filtroStatus = null, aoLimparFiltro }: {
+  controles?: React.ReactNode
+  /** chip de estado escolhido na barra de cima (null = todos) */
+  filtroStatus?: StatusEstacao | null
+  aoLimparFiltro?: () => void
+}) {
   const { estacoes, grupos, sessaoDaEstacao, agora, carregado, piso } = useDados()
   const [grupo, setGrupo] = useState(() => lerPreferencia("painel.grupo") ?? "")
   const [ordem, setOrdem] = useState<Ordem>(lerOrdem)
@@ -277,9 +313,10 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
   const grupoEfetivo = grupo === SEM_GRUPO || grupos.some((g) => String(g.id) === grupo) ? grupo : ""
 
   const linhas = useMemo(() => {
-    const filtradas = estacoes.filter((e) =>
+    const doGrupo = estacoes.filter((e) =>
       grupoEfetivo === "" ? true : grupoEfetivo === SEM_GRUPO ? e.grupo_id == null : String(e.grupo_id) === grupoEfetivo,
     )
+    const filtradas = filtroStatus ? doGrupo.filter((e) => e.status === filtroStatus) : doGrupo
     const resultado: LinhaTabela[] = filtradas.map((e) => {
       const sessao = e.status !== "manutencao" ? sessaoDaEstacao(e.nome) : undefined
       const restante = sessao ? restanteDaSessao(sessao, agora) : 0
@@ -289,13 +326,17 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
     return resultado.sort(
       (a, b) => sinal * compararLinhas(a, b, ordem.coluna) || sinal * compararNome(a.estacao.nome, b.estacao.nome),
     )
-  }, [estacoes, grupoEfetivo, ordem, sessaoDaEstacao, agora])
+  }, [estacoes, grupoEfetivo, filtroStatus, ordem, sessaoDaEstacao, agora])
 
+  // o rodapé conta o grupo inteiro, mesmo com um chip de estado filtrando
   const contagem = useMemo(() => {
     const c: Record<StatusEstacao, number> = { desligada: 0, livre: 0, ocupada: 0, manutencao: 0 }
-    for (const l of linhas) c[l.estacao.status]++
+    for (const e of estacoes) {
+      const doGrupo = grupoEfetivo === "" ? true : grupoEfetivo === SEM_GRUPO ? e.grupo_id == null : String(e.grupo_id) === grupoEfetivo
+      if (doGrupo) c[e.status]++
+    }
     return c
-  }, [linhas])
+  }, [estacoes, grupoEfetivo])
 
   function escolherGrupo(valor: string) {
     setGrupo(valor)
@@ -360,6 +401,14 @@ function ColunaEstacoes({ controles }: { controles?: React.ReactNode }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!carregado ? null : estacoes.length === 0 ? (
           <Vazio>Nenhuma estação cadastrada. Cadastre em Mapa → Modo configuração.</Vazio>
+        ) : linhas.length === 0 && filtroStatus ? (
+          <Vazio>
+            Nenhuma estação {ROTULO_SINGULAR[filtroStatus]}
+            {grupoEfetivo ? " neste grupo" : ""}.{" "}
+            <button type="button" onClick={aoLimparFiltro} className="text-texto underline-offset-2 hover:underline">
+              Mostrar todas
+            </button>
+          </Vazio>
         ) : linhas.length === 0 ? (
           <Vazio>Nenhuma estação neste grupo.</Vazio>
         ) : (
@@ -1452,7 +1501,22 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
   controles?: React.ReactNode
 }) {
   const { fila, agora, piso } = useDados()
-  const { removerDaFila } = useAcoes()
+  const { removerDaFila, removerTodosDaFila } = useAcoes()
+  // tirar da fila sempre pede confirmação: um cliente ou a fila inteira do piso
+  const [confirmando, setConfirmando] = useState<{ id: number; nome: string } | "todos" | null>(null)
+  const [removendo, setRemovendo] = useState(false)
+
+  async function confirmarRemocao() {
+    if (!confirmando) return
+    setRemovendo(true)
+    try {
+      if (confirmando === "todos") await removerTodosDaFila(fila.map((f) => f.cliente_id))
+      else await removerDaFila(confirmando.id)
+    } finally {
+      setRemovendo(false)
+      setConfirmando(null)
+    }
+  }
 
   return (
     <Coluna
@@ -1460,6 +1524,13 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
       piso={piso}
       total={total}
       controles={controles}
+      acao={
+        fila.length > 0 && (
+          <Button variant="perigo" size="xs" onClick={() => setConfirmando("todos")} title="Tira todos os clientes desta fila">
+            Remover todos
+          </Button>
+        )
+      }
       onDragOver={(ev) => ev.dataTransfer.types.includes(TIPO_ARRASTO) && ev.preventDefault()}
       onDrop={(ev) => {
         ev.preventDefault()
@@ -1475,7 +1546,7 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
                 {i + 1}
               </span>
               <span className="flex-1 text-sm font-semibold">{f.cliente_nome}</span>
-              <Button variant="perigo" size="xs" onClick={() => removerDaFila(f.cliente_id)}>
+              <Button variant="perigo" size="xs" onClick={() => setConfirmando({ id: f.cliente_id, nome: f.cliente_nome })}>
                 Remover
               </Button>
             </div>
@@ -1497,6 +1568,35 @@ function ColunaFila({ total, aoSoltarCliente, controles }: {
           <p className="text-xs text-texto-fraco">Clique em Liberar ou arraste um cliente para cá.</p>
         </div>
       )}
+      <Modal
+        titulo={confirmando === "todos" ? "Esvaziar a fila?" : "Tirar da fila?"}
+        aberto={confirmando != null}
+        aoFechar={() => !removendo && setConfirmando(null)}
+      >
+        <p className="mb-6 text-sm text-texto-suave">
+          {confirmando === "todos" ? (
+            <>
+              Os <strong className="text-texto">{fila.length}</strong> clientes da fila{piso && <> do {piso.nome}</>} saem dela e
+              não poderão entrar num computador até serem liberados de novo.
+            </>
+          ) : (
+            confirmando && (
+              <>
+                <strong className="text-texto">{confirmando.nome}</strong> sai da fila e não poderá entrar num computador até
+                ser liberado de novo.
+              </>
+            )
+          )}
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setConfirmando(null)} disabled={removendo}>
+            Cancelar
+          </Button>
+          <Button variant="perigo" onClick={confirmarRemocao} disabled={removendo} autoFocus>
+            {removendo ? "Removendo..." : confirmando === "todos" ? "Remover todos" : "Remover"}
+          </Button>
+        </div>
+      </Modal>
     </Coluna>
   )
 }

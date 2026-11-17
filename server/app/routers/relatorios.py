@@ -256,31 +256,50 @@ def acoes_csv(
 
 # ── Relatorio de uso (8.2) ───────────────────────────────────────────────────
 
-@router.get("/uso")
-def relatorio_de_uso(
-    de: Optional[str] = None, ate: Optional[str] = None, piso_id: Optional[int] = None,
-    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
-):
-    """Uso no periodo (datas de Brasilia, padrao: ultimos 30 dias), so sessoes
-    encerradas: resumo, por dia, pico (dia da semana x hora) e estacoes."""
+def _utc(dia):
+    """Meia-noite de Brasilia do dia -> UTC sem fuso, como o banco guarda."""
+    return datetime.combine(dia, datetime.min.time()).replace(tzinfo=FUSO).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _segundos_abertos(inicio_local, fim_local, db):
+    """Horas em que a biblioteca abriu no periodo (horario de funcionamento
+    configurado, ligado ou nao), ate agora: um dia futuro nao conta e o de hoje
+    conta so ate este momento. Devolve (segundos, dias abertos)."""
+    from app import horario as hor
+    dias_cfg = hor.carregar(db)["dias"]
+    agora = datetime.now(FUSO).replace(tzinfo=None)
+    total, dias = 0, 0
+    dia = inicio_local
+    while dia <= fim_local and dia <= agora.date():
+        cfg = dias_cfg[dia.weekday()]
+        if cfg.get("aberto"):
+            abre = datetime.combine(dia, datetime.strptime(cfg["abre"], "%H:%M").time())
+            fecha = min(datetime.combine(dia, datetime.strptime(cfg["fecha"], "%H:%M").time()), agora)
+            if fecha > abre:
+                total += int((fecha - abre).total_seconds())
+                dias += 1
+        dia += timedelta(days=1)
+    return total, dias
+
+
+def _calcular_uso(db: Session, inicio_local, fim_local, piso_id: Optional[int]):
+    """Os numeros da aba Uso (e da planilha): so sessoes encerradas, datas de Brasilia."""
     from collections import defaultdict
     from app.pisos import piso_da_estacao
 
-    hoje = datetime.now(FUSO).date()
-    fim_local = datetime.strptime(ate, "%Y-%m-%d").date() if ate else hoje
-    inicio_local = datetime.strptime(de, "%Y-%m-%d").date() if de else fim_local - timedelta(days=29)
-
-    def utc(dia):
-        return datetime.combine(dia, datetime.min.time()).replace(tzinfo=FUSO).astimezone(timezone.utc).replace(tzinfo=None)
+    todas = db.query(Estacao).all()
+    piso_de = {e.id: piso_da_estacao(e) for e in todas}
+    nomes = {e.id: e.nome for e in todas}
+    nome_piso = {i: (p.nome if p else "") for i, p in piso_de.items()}
 
     # so os campos usados (com o historico do VSCyber sao centenas de milhares)
     q = db.query(Sessao.cliente_id, Sessao.estacao_id, Sessao.iniciada_em, Sessao.tempo_consumido_segundos).filter(
                                 Sessao.encerrada_em != None,
-                                Sessao.iniciada_em >= utc(inicio_local),
-                                Sessao.iniciada_em < utc(fim_local + timedelta(days=1)))
+                                Sessao.iniciada_em >= _utc(inicio_local),
+                                Sessao.iniciada_em < _utc(fim_local + timedelta(days=1)))
     q = so_visiveis(q, db)
     if piso_id:
-        do_piso = [e.id for e in db.query(Estacao).all() if (p := piso_da_estacao(e)) and p.id == piso_id]
+        do_piso = [i for i, p in piso_de.items() if p and p.id == piso_id]
         q = q.filter(Sessao.estacao_id.in_(do_piso or [-1]))
 
     total = {"sessoes": 0, "segundos": 0}
@@ -288,7 +307,7 @@ def relatorio_de_uso(
     dias = defaultdict(lambda: {"sessoes": 0, "segundos": 0, "clientes": set()})
     pico = defaultdict(int)
     estacoes = defaultdict(lambda: {"sessoes": 0, "segundos": 0})
-    nomes = dict(db.query(Estacao.id, Estacao.nome).all())
+    pisos = defaultdict(lambda: {"sessoes": 0, "segundos": 0, "clientes": set()})
     for s in q.all():
         uso = max(0, s.tempo_consumido_segundos or 0)
         inicio = s.iniciada_em.replace(tzinfo=timezone.utc).astimezone(FUSO).replace(tzinfo=None)
@@ -299,9 +318,13 @@ def relatorio_de_uso(
         d["sessoes"] += 1
         d["segundos"] += uso
         d["clientes"].add(s.cliente_id)
-        e = estacoes[nomes.get(s.estacao_id, "?")]
+        e = estacoes[s.estacao_id]
         e["sessoes"] += 1
         e["segundos"] += uso
+        p = pisos[nome_piso.get(s.estacao_id, "")]
+        p["sessoes"] += 1
+        p["segundos"] += uso
+        p["clientes"].add(s.cliente_id)
         # o uso espalhado pelas horas em que aconteceu
         momento, resta = inicio, uso
         while resta > 0:
@@ -311,13 +334,133 @@ def relatorio_de_uso(
             resta -= pedaco
             momento += timedelta(seconds=pedaco)
 
+    # ocupacao: uso / (estacoes cadastradas x horas em que a biblioteca abriu)
+    abertas_seg, dias_abertos = _segundos_abertos(inicio_local, fim_local, db)
+    n_estacoes = sum(1 for e in todas if e.ativa and e.aprovada
+                     and (not piso_id or (piso_de[e.id] and piso_de[e.id].id == piso_id)))
+    disponivel = abertas_seg * n_estacoes
+
+    def pct(usado, de):
+        return round(usado / de * 100, 1) if de else None
+
     return {
         "periodo": {"de": inicio_local.isoformat(), "ate": fim_local.isoformat()},
         "resumo": {**total, "clientes": len(clientes),
-                   "media_segundos": total["segundos"] // total["sessoes"] if total["sessoes"] else 0},
+                   "media_segundos": total["segundos"] // total["sessoes"] if total["sessoes"] else 0,
+                   "ocupacao": {"percentual": pct(total["segundos"], disponivel), "estacoes": n_estacoes,
+                                "dias_abertos": dias_abertos, "disponivel_segundos": disponivel}},
         "por_dia": [{"dia": dia, "sessoes": v["sessoes"], "segundos": v["segundos"], "clientes": len(v["clientes"])}
                     for dia, v in sorted(dias.items())],
+        "por_piso": sorted(({"piso": nome, "sessoes": v["sessoes"], "segundos": v["segundos"],
+                             "clientes": len(v["clientes"])} for nome, v in pisos.items()),
+                           key=lambda x: (-x["segundos"], x["piso"])),
         "pico": [{"dia_semana": k[0], "hora": k[1], "segundos": v} for k, v in sorted(pico.items())],
-        "estacoes": sorted(({"estacao": nome, **v} for nome, v in estacoes.items()),
+        "estacoes": sorted(({"estacao": nomes.get(i, "?"), "piso": nome_piso.get(i, ""), **v,
+                             "ocupacao": pct(v["segundos"], abertas_seg)} for i, v in estacoes.items()),
                            key=lambda x: (-x["segundos"], x["estacao"])),
     }
+
+
+@router.get("/uso")
+def relatorio_de_uso(
+    de: Optional[str] = None, ate: Optional[str] = None, piso_id: Optional[int] = None,
+    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+):
+    """Uso no periodo (datas de Brasilia, padrao: ultimos 30 dias), so sessoes
+    encerradas: resumo (com a ocupacao), por dia, por piso, pico (dia da semana
+    x hora) e estacoes."""
+    hoje = datetime.now(FUSO).date()
+    fim_local = datetime.strptime(ate, "%Y-%m-%d").date() if ate else hoje
+    inicio_local = datetime.strptime(de, "%Y-%m-%d").date() if de else fim_local - timedelta(days=29)
+    return _calcular_uso(db, inicio_local, fim_local, piso_id)
+
+
+DIAS_SEMANA = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+
+
+@router.get("/uso.xlsx")
+def exportar_uso_do_mes(
+    mes: str, piso_id: Optional[int] = None,
+    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+):
+    """O uso de um mes (AAAA-MM) numa planilha: Resumo, Por dia, Por estacao e Sessoes."""
+    import calendar
+    from app import planilha as pl
+    from app.models import Piso
+    from app.pisos import piso_da_estacao
+    try:
+        primeiro = datetime.strptime(mes, "%Y-%m").date()
+    except ValueError:
+        raise HTTPException(400, "Mês no formato AAAA-MM")
+    ultimo = primeiro.replace(day=calendar.monthrange(primeiro.year, primeiro.month)[1])
+    u = _calcular_uso(db, primeiro, ultimo, piso_id)
+    piso = db.query(Piso).filter(Piso.id == piso_id).first() if piso_id else None
+    r, oc = u["resumo"], u["resumo"]["ocupacao"]
+
+    def br(d):
+        return d.strftime("%d/%m/%Y")
+
+    resumo = [
+        [pl.Negrito("Relatório de uso dos computadores"), ""],
+        ["Período", f"{br(primeiro)} a {br(ultimo)}"],
+        ["Piso", piso.nome if piso else "Todos os pisos"],
+        ["Gerado em", datetime.now(FUSO).replace(tzinfo=None)],
+        [],
+        [pl.Negrito("Uso total no período"), pl.Duracao(r["segundos"])],
+        ["Sessões", r["sessoes"]],
+        ["Clientes diferentes", r["clientes"]],
+        ["Média por sessão", pl.Duracao(r["media_segundos"])],
+        ["Dias de funcionamento", oc["dias_abertos"]],
+        ["Média de uso por dia aberto", pl.Duracao(r["segundos"] // oc["dias_abertos"] if oc["dias_abertos"] else 0)],
+        ["Estações", oc["estacoes"]],
+        ["Horas disponíveis (estações x horário)", pl.Duracao(oc["disponivel_segundos"])],
+        ["Ocupação das estações", pl.Porcentagem(oc["percentual"])],
+    ]
+    if not piso and u["por_piso"]:
+        resumo += [[], [pl.Negrito("Piso"), pl.Negrito("Sessões"), pl.Negrito("Uso"), pl.Negrito("Clientes")]]
+        resumo += [[p["piso"] or "(sem piso)", p["sessoes"], pl.Duracao(p["segundos"]), p["clientes"]]
+                   for p in u["por_piso"]]
+
+    por_dia = {d["dia"]: d for d in u["por_dia"]}
+    dias = [["Dia", "Dia da semana", "Sessões", "Uso", "Clientes"]]
+    d = primeiro
+    while d <= ultimo:
+        v = por_dia.get(d.isoformat(), {"sessoes": 0, "segundos": 0, "clientes": 0})
+        dias.append([d, DIAS_SEMANA[d.weekday()], v["sessoes"], pl.Duracao(v["segundos"]), v["clientes"]])
+        d += timedelta(days=1)
+    dias.append([pl.Negrito("Total"), "", r["sessoes"], pl.Duracao(r["segundos"]), r["clientes"]])
+
+    estacoes = [["Estação", "Piso", "Sessões", "Uso", "Ocupação"]]
+    estacoes += [[e["estacao"], e["piso"], e["sessoes"], pl.Duracao(e["segundos"]), pl.Porcentagem(e["ocupacao"])]
+                 for e in u["estacoes"]]
+
+    # cada sessao do mes, da mais antiga para a mais nova
+    q = (db.query(Sessao).filter(Sessao.encerrada_em != None, Sessao.iniciada_em >= _utc(primeiro),
+                                 Sessao.iniciada_em < _utc(ultimo + timedelta(days=1))))
+    q = so_visiveis(q, db).order_by(Sessao.iniciada_em)
+
+    def local(t):
+        return t.replace(tzinfo=timezone.utc).astimezone(FUSO).replace(tzinfo=None) if t else None
+
+    sessoes = [["Início", "Fim", "Login", "Cliente", "Estação", "Piso", "Uso", "Encerramento"]]
+    for s in q.all():
+        p = piso_da_estacao(s.estacao) if s.estacao else None
+        if piso_id and (not p or p.id != piso_id):
+            continue
+        sessoes.append([local(s.iniciada_em), local(s.encerrada_em), s.cliente.login if s.cliente else "",
+                        s.cliente.nome if s.cliente else "", s.estacao.nome if s.estacao else "",
+                        p.nome if p else "", pl.Duracao(s.tempo_consumido_segundos or 0),
+                        s.motivo_encerramento or ""])
+
+    conteudo = pl.gerar([
+        pl.Aba("Resumo", resumo, larguras=[38, 24, 12, 12], cabecalho=False),
+        pl.Aba("Por dia", dias, larguras=[12, 14, 10, 12, 10]),
+        pl.Aba("Por estação", estacoes, larguras=[16, 12, 10, 12, 11]),
+        pl.Aba("Sessões", sessoes, larguras=[17, 17, 14, 30, 12, 12, 10, 16]),
+    ])
+    sufixo = f"_{piso.nome.lower()}" if piso else ""
+    return StreamingResponse(
+        iter([conteudo]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=uso_{mes}{sufixo}.xlsx"},
+    )

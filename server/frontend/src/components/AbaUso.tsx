@@ -1,20 +1,29 @@
 import { useEffect, useMemo, useState } from "react"
+import { IconDownload } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo } from "@/lib/tempo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Campo, INICIO_RELATORIOS, InputData, Select, hojeIso } from "@/components/ui/campos"
+import { Campo, INICIO_RELATORIOS, Input, InputData, Select, hojeIso } from "@/components/ui/campos"
 import { Vazio } from "@/components/ui/status"
 
 // Resposta de GET /api/relatorios/uso
 interface Uso {
   periodo: { de: string; ate: string }
-  resumo: { sessoes: number; segundos: number; clientes: number; media_segundos: number }
+  resumo: {
+    sessoes: number
+    segundos: number
+    clientes: number
+    media_segundos: number
+    /** uso / (estações × horas em que a biblioteca abriu no período, até agora) */
+    ocupacao: { percentual: number | null; estacoes: number; dias_abertos: number; disponivel_segundos: number }
+  }
   por_dia: { dia: string; sessoes: number; segundos: number; clientes: number }[]
+  por_piso: { piso: string; sessoes: number; segundos: number; clientes: number }[]
   pico: { dia_semana: number; hora: number; segundos: number }[]
-  estacoes: { estacao: string; sessoes: number; segundos: number }[]
+  estacoes: { estacao: string; piso: string; sessoes: number; segundos: number; ocupacao: number | null }[]
 }
 
 export interface FiltrosUso {
@@ -34,6 +43,7 @@ const deIso = (s: string) => {
   const [a, m, d] = s.split("-").map(Number)
   return new Date(a, m - 1, d)
 }
+const porcento = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`)
 const curto = (s: string) => deIso(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
 /** Dica que acompanha o mouse (valores ao passar sobre barras e células). */
 function useDica() {
@@ -65,6 +75,23 @@ export function AbaUso({ filtros, mudar }: { filtros: FiltrosUso; mudar: (novos:
   const [uso, setUso] = useState<Uso | null>(null)
   const [tabela, setTabela] = useState(false)
   const dica = useDica()
+  // mês da planilha: à parte do período da tela (começa no mês atual)
+  const [mes, setMes] = useState(() => hojeIso().slice(0, 7))
+  const [baixando, setBaixando] = useState(false)
+
+  async function exportarMes() {
+    if (!mes) return
+    setBaixando(true)
+    try {
+      const piso = pisos.find((p) => String(p.id) === filtros.piso_id)
+      const q = new URLSearchParams({ mes, ...(filtros.piso_id ? { piso_id: filtros.piso_id } : {}) })
+      await Api.baixar(`/api/relatorios/uso.xlsx?${q}`, `uso_${mes}${piso ? "_" + piso.nome.toLowerCase() : ""}.xlsx`)
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setBaixando(false)
+    }
+  }
 
   const consulta = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v) as [string, string][]).toString()
 
@@ -133,6 +160,24 @@ export function AbaUso({ filtros, mudar }: { filtros: FiltrosUso; mudar: (novos:
             ))}
           </Select>
         </Campo>
+        {/* planilha do mês inteiro (Resumo, Por dia, Por estação, Sessões), no piso escolhido */}
+        <div className="ml-auto flex items-end gap-2">
+          <Campo rotulo="Exportar mês" id="uso-mes">
+            <Input
+              id="uso-mes"
+              type="month"
+              className="h-10 w-44"
+              min={INICIO_RELATORIOS.slice(0, 7)}
+              max={hojeIso().slice(0, 7)}
+              value={mes}
+              onChange={(e) => setMes(e.target.value)}
+            />
+          </Campo>
+          <Button type="button" variant="outline" className="gap-1.5" onClick={exportarMes} disabled={!mes || baixando}
+            title="Baixa a planilha do mês (Excel) com o resumo, os dias, as estações e cada sessão">
+            <IconDownload size={15} /> {baixando ? "Gerando..." : "Baixar Excel"}
+          </Button>
+        </div>
       </div>
 
       {!uso ? (
@@ -145,20 +190,7 @@ export function AbaUso({ filtros, mudar }: { filtros: FiltrosUso; mudar: (novos:
             {" · "}só sessões já encerradas
           </p>
 
-          {/* números em destaque */}
-          <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              ["Sessões", uso.resumo.sessoes.toLocaleString("pt-BR")],
-              ["Tempo de uso", formatarTempo(uso.resumo.segundos)],
-              ["Clientes diferentes", uso.resumo.clientes.toLocaleString("pt-BR")],
-              ["Média por sessão", formatarTempo(uso.resumo.media_segundos)],
-            ].map(([rotulo, valor]) => (
-              <div key={rotulo} className="rounded-lg border border-borda bg-superficie-2 px-4 py-3">
-                <div className="text-xs text-texto-fraco">{rotulo}</div>
-                <div className="text-2xl font-semibold tabular-nums">{valor}</div>
-              </div>
-            ))}
-          </div>
+          <Indicadores uso={uso} mostrarPisos={!filtros.piso_id} />
 
           {uso.resumo.sessoes === 0 ? (
             <Vazio>Nenhuma sessão encerrada nesse período.</Vazio>
@@ -184,7 +216,9 @@ export function AbaUso({ filtros, mudar }: { filtros: FiltrosUso; mudar: (novos:
               </section>
 
               <section>
-                <h3 className="mb-2 font-semibold">Estações mais usadas</h3>
+                <h3 className="mb-2 font-semibold">
+                  Estações mais usadas <span className="text-xs font-normal text-texto-fraco">· tempo de uso e ocupação</span>
+                </h3>
                 <RankingEstacoes estacoes={uso.estacoes} dica={dica} />
               </section>
             </div>
@@ -357,6 +391,58 @@ function MapaDeCalor({ pico, dica }: { pico: Uso["pico"]; dica: Dica }) {
   )
 }
 
+/** Números em destaque: o uso total do período (com a divisão por piso) e a ocupação. */
+function Indicadores({ uso, mostrarPisos }: { uso: Uso; mostrarPisos: boolean }) {
+  const r = uso.resumo
+  const oc = r.ocupacao
+  const porDia = oc.dias_abertos ? Math.floor(r.segundos / oc.dias_abertos) : 0
+  const pisos = mostrarPisos ? uso.por_piso.filter((p) => p.piso) : []
+  return (
+    <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
+      {/* o principal: ocupa duas colunas */}
+      <div className="col-span-2 rounded-lg border border-destaque/40 bg-destaque/10 px-4 py-3">
+        <div className="text-xs text-texto-fraco">Uso total no período</div>
+        <div className="text-3xl font-semibold tabular-nums">{formatarTempo(r.segundos)}</div>
+        <div className="mt-1 text-xs text-texto-suave">
+          {oc.dias_abertos
+            ? `${formatarTempo(porDia)} por dia aberto · ${oc.dias_abertos} ${oc.dias_abertos === 1 ? "dia" : "dias"} de funcionamento`
+            : "nenhum dia de funcionamento no período"}
+        </div>
+        {pisos.length > 1 && (
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 border-t border-borda/60 pt-2 text-xs text-texto-suave">
+            {pisos.map((p) => (
+              <span key={p.piso}>
+                {p.piso}: <strong className="text-texto tabular-nums">{formatarTempo(p.segundos)}</strong>{" "}
+                ({p.sessoes} {p.sessoes === 1 ? "sessão" : "sessões"})
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="col-span-2 rounded-lg border border-borda bg-superficie-2 px-4 py-3 lg:col-span-1">
+        <div className="text-xs text-texto-fraco">Ocupação das estações</div>
+        <div className="text-3xl font-semibold tabular-nums">{porcento(oc.percentual)}</div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-superficie-3">
+          <div className="h-full rounded-full bg-destaque" style={{ width: `${Math.min(100, oc.percentual ?? 0)}%` }} />
+        </div>
+        <div className="mt-1 text-xs text-texto-suave" title="Uso dividido pelas horas em que as estações poderiam ser usadas (horário de funcionamento, até agora)">
+          {oc.estacoes} estações × horário de funcionamento
+        </div>
+      </div>
+      {[
+        ["Sessões", r.sessoes.toLocaleString("pt-BR")],
+        ["Clientes diferentes", r.clientes.toLocaleString("pt-BR")],
+        ["Média por sessão", formatarTempo(r.media_segundos)],
+      ].map(([rotulo, valor]) => (
+        <div key={rotulo} className="rounded-lg border border-borda bg-superficie-2 px-4 py-3">
+          <div className="text-xs text-texto-fraco">{rotulo}</div>
+          <div className="text-2xl font-semibold tabular-nums">{valor}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function RankingEstacoes({ estacoes, dica }: { estacoes: Uso["estacoes"]; dica: Dica }) {
   const maximo = Math.max(...estacoes.map((e) => e.segundos), 1)
   const mostradas = estacoes.slice(0, 15)
@@ -365,9 +451,13 @@ function RankingEstacoes({ estacoes, dica }: { estacoes: Uso["estacoes"]; dica: 
       {mostradas.map((e) => (
         <div
           key={e.estacao}
-          className="grid grid-cols-[6rem_1fr_6rem] items-center gap-3 text-sm"
+          className="grid grid-cols-[6rem_1fr_6rem_3.5rem] items-center gap-3 text-sm"
           onMouseMove={(ev) =>
-            dica.mostrar(ev, [e.estacao, `${formatarTempo(e.segundos)} de uso`, `${e.sessoes} sessões`])
+            dica.mostrar(ev, [
+              e.piso ? `${e.estacao} (${e.piso})` : e.estacao,
+              `${formatarTempo(e.segundos)} de uso`,
+              `${e.sessoes} sessões · ocupação ${porcento(e.ocupacao)}`,
+            ])
           }
           onMouseLeave={dica.esconder}
         >
@@ -376,6 +466,9 @@ function RankingEstacoes({ estacoes, dica }: { estacoes: Uso["estacoes"]; dica: 
             <div className="h-full rounded-r-[4px] bg-destaque" style={{ width: `${(e.segundos / maximo) * 100}%` }} />
           </div>
           <span className="text-right text-texto-suave tabular-nums">{formatarTempo(e.segundos)}</span>
+          <span className="text-right text-xs text-texto-fraco tabular-nums" title="Ocupação: uso / horário de funcionamento">
+            {porcento(e.ocupacao)}
+          </span>
         </div>
       ))}
       {estacoes.length > mostradas.length && (

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-17 — Filtro por estado, confirmação na fila e erro no histórico por estação (painel)
+
+- Os chips **Livres, Ocupadas, Desligadas e Em manutenção** da barra de cima viraram filtro do **Controle de sessões**: clicar mostra só as estações nesse estado (somando ao filtro de grupo); clicar de novo, ou no "Mostrar todas" da lista vazia, tira o filtro. O chip escolhido ganha um contorno e um ×, e os outros ficam apagados. O rodapé da tabela continua contando o grupo inteiro. O filtro não fica gravado: ao recarregar, volta a mostrar todas.
+- Corrigido: **Históricos → Por estação** dava erro (`piso_id` "1?") ao escolher a estação. O endereço da consulta saía com dois "?"; agora as datas entram com "&".
+- **Fila de espera**: botão **Remover todos** no cabeçalho, que esvazia a fila do piso mostrado. Tirar um cliente (ou todos) agora pede **confirmação**.
+
+## 2026-11-17 — Indicadores de uso e planilha do mês (Históricos → Uso)
+
+- **Uso total no período** em destaque: o total de horas, a média por dia de funcionamento e quantos dias a biblioteca abriu; com **Todos os pisos**, a divisão por piso (Adulto, Infantil) logo abaixo.
+- **Ocupação das estações**: quanto do tempo disponível foi usado (estações × horário de funcionamento configurado, até agora). Aparece no geral, com uma barra, e para cada estação na lista **Estações mais usadas**.
+- **Exportar mês**: escolha o mês e clique em **Baixar Excel** para receber a planilha do mês inteiro (no piso escolhido), com as abas **Resumo**, **Por dia**, **Por estação** e **Sessões**. As horas vêm no formato de horas do Excel (somam direto) e a ocupação em %.
+
 ## 2026-11-16 — Fade nas trocas de tela e no menu da esquerda (agente 1.27.0)
 
 - A tela do cliente troca com **fade** em vez de pular: do login para a Área do Cliente, da sessão para a tela de encerramento e dela para o login (tela inteira), e no centro ao trocar de seção no menu (Início, Meus Apps, Configurações) e quando os apps mudam pelo painel (envio automático ou **Atualizar tela**): os cards novos entram em cascata.

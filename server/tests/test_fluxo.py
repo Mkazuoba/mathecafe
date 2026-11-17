@@ -1558,7 +1558,8 @@ def test_relatorio_de_uso(c, admin, operador, cenario):
     r = c.get("/api/relatorios/uso", headers=admin, params={"de": "2031-03-10", "ate": "2031-03-11"})
     assert r.status_code == 200, r.text
     u = r.json()
-    assert u["resumo"] == {"sessoes": 3, "segundos": 180 * 60, "clientes": 2, "media_segundos": 60 * 60}
+    assert {k: u["resumo"][k] for k in ("sessoes", "segundos", "clientes", "media_segundos")} == {
+        "sessoes": 3, "segundos": 180 * 60, "clientes": 2, "media_segundos": 60 * 60}
     assert u["por_dia"] == [
         {"dia": "2031-03-10", "sessoes": 2, "segundos": 120 * 60, "clientes": 2},
         {"dia": "2031-03-11", "sessoes": 1, "segundos": 60 * 60, "clientes": 1},
@@ -1567,7 +1568,8 @@ def test_relatorio_de_uso(c, admin, operador, cenario):
     pico = {(p["dia_semana"], p["hora"]): p["segundos"] for p in u["pico"]}
     assert pico[(0, 14)] == 3600 and pico[(0, 15)] == 1800 and pico[(0, 16)] == 1800
     assert pico[(1, 14)] == 3600
-    assert u["estacoes"][0] == {"estacao": cenario["estacao"], "sessoes": 2, "segundos": 120 * 60}
+    e = u["estacoes"][0]
+    assert (e["estacao"], e["sessoes"], e["segundos"]) == (cenario["estacao"], 2, 120 * 60)
     # sem nada no periodo: tudo zerado, sem erro
     vazio = c.get("/api/relatorios/uso", headers=admin, params={"de": "2031-04-01", "ate": "2031-04-02"}).json()
     assert vazio["resumo"]["sessoes"] == 0 and vazio["por_dia"] == [] and vazio["estacoes"] == []
@@ -1586,6 +1588,77 @@ def test_relatorio_de_uso_por_piso(c, admin, cenario):
     assert [e["estacao"] for e in so_infantil["estacoes"]] == [infantil]
     todos = c.get("/api/relatorios/uso", headers=admin, params=params).json()
     assert todos["resumo"]["segundos"] == 75 * 60
+
+
+
+def _estacoes_ativas(piso_nome=None):
+    from app.models import Estacao
+    from app.pisos import piso_da_estacao
+    db = SessionLocal()
+    try:
+        return sum(1 for e in db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada == True).all()
+                   if piso_nome is None or piso_da_estacao(e).nome == piso_nome)
+    finally:
+        db.close()
+
+
+def test_uso_mostra_ocupacao_e_uso_por_piso(c, admin, cenario):
+    # 02/03/2020 (segunda) e 03/03/2020: periodo passado e sem outras sessoes
+    infantil = _estacao_infantil(c, admin)
+    _, crianca = _cliente_infantil(c, admin)
+    _sessao_encerrada(cenario["cliente_id"], cenario["estacao"], datetime(2020, 3, 2, 13, 0), 120)
+    _sessao_encerrada(crianca, infantil, datetime(2020, 3, 3, 13, 0), 60)
+    antes = c.get("/api/config/horario", headers=admin).json()
+    # segunda aberta 10h (08-18), terca fechada: so a segunda conta como horario disponivel
+    dias = [{"aberto": True, "abre": "08:00", "fecha": "18:00"} for _ in range(7)]
+    dias[1] = {"aberto": False, "abre": "08:00", "fecha": "18:00"}
+    assert c.put("/api/config/horario", headers=admin, json={"ativo": False, "dias": dias}).status_code == 200
+    try:
+        u = c.get("/api/relatorios/uso", headers=admin, params={"de": "2020-03-02", "ate": "2020-03-03"}).json()
+        n = _estacoes_ativas()
+        oc = u["resumo"]["ocupacao"]
+        assert oc["estacoes"] == n
+        assert oc["dias_abertos"] == 1
+        assert oc["disponivel_segundos"] == n * 10 * 3600
+        assert oc["percentual"] == round(180 * 60 / (n * 10 * 3600) * 100, 1)
+        # cada estacao: uso / horas abertas do periodo
+        por_nome = {e["estacao"]: e for e in u["estacoes"]}
+        assert por_nome[cenario["estacao"]]["ocupacao"] == 20.0  # 2h de 10h
+        assert por_nome[infantil]["piso"] == "Infantil"
+        pisos = {p["piso"]: p for p in u["por_piso"]}
+        assert pisos["Infantil"] == {"piso": "Infantil", "sessoes": 1, "segundos": 3600, "clientes": 1}
+        assert pisos["Adulto"]["segundos"] == 7200
+        # so o Infantil: as estacoes contadas sao as dele
+        so = c.get("/api/relatorios/uso", headers=admin, params={
+            "de": "2020-03-02", "ate": "2020-03-03", "piso_id": _id_piso(c, admin, "Infantil")}).json()
+        assert so["resumo"]["ocupacao"]["estacoes"] == _estacoes_ativas("Infantil")
+    finally:
+        c.put("/api/config/horario", headers=admin, json=antes)
+
+
+def test_exporta_uso_do_mes_em_planilha(c, admin, operador, cenario):
+    import io
+    import re
+    import zipfile
+    _sessao_encerrada(cenario["cliente_id"], cenario["estacao"], datetime(2020, 2, 10, 13, 0), 90)
+    _sessao_encerrada(cenario["cliente_id"], cenario["estacao"], datetime(2020, 3, 1, 13, 0), 30)  # outro mes
+    assert c.get("/api/relatorios/uso.xlsx?mes=2020-02", headers=operador).status_code == 403
+    assert c.get("/api/relatorios/uso.xlsx?mes=fevereiro", headers=admin).status_code == 400
+    r = c.get("/api/relatorios/uso.xlsx?mes=2020-02", headers=admin)
+    assert r.status_code == 200, r.text
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert "uso_2020-02" in r.headers["content-disposition"]
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    assert z.testzip() is None
+    livro = z.read("xl/workbook.xml").decode()
+    assert re.findall(r'<sheet name="([^"]+)"', livro) == ["Resumo", "Por dia", "Por estação", "Sessões"]
+    resumo = z.read("xl/worksheets/sheet1.xml").decode()
+    assert "01/02/2020 a 29/02/2020" in resumo
+    sessoes = z.read("xl/worksheets/sheet4.xml").decode()
+    assert cenario["estacao"] in sessoes
+    assert sessoes.count("<row ") == 2  # cabecalho + a sessao de fevereiro (a de marco fica de fora)
+    # 90 min em fracao de dia, para o Excel somar como [h]:mm:ss
+    assert f"<v>{90 / 1440!r}</v>" in sessoes or f"<v>{round(90 / 1440, 10)}</v>" in sessoes
 
 
 # ── 8.5 Historico do VSCyber guardado, mas escondido por enquanto ───────────

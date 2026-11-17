@@ -110,6 +110,8 @@ O FastAPI serve os arquivos de `app/static/` e devolve o `index.html` para qualq
 
 **Comandos em massa**: `POST /api/estacoes/acoes` `{acao, estacoes, texto}` com `acao` = `mensagem`, `encerrar`, `reiniciar`, `desligar` ou `ligar` (Wake-on-LAN) aplica o mesmo comando a cada estação e devolve `resultados` (`"ok"` ou o motivo: offline, sem sessão...), sem parar no primeiro erro. No Painel: as caixinhas do Controle de sessões e a barra `components/AcoesEmMassa.tsx`.
 
+**Barra do Painel** (`pages/Painel.tsx`): os chips de estado (Livres, Ocupadas...) filtram o Controle de sessões pelo `status` da estação (estado `filtroStatus` no `Painel`, só na memória). A **Fila de espera** pede confirmação (modal) antes de tirar alguém; **Remover todos** chama `DELETE /api/estacoes/fila/{cliente_id}` para cada cliente da fila do piso (`removerTodosDaFila` em `lib/acoes.ts`), então cada saída fica no registro de ações como `tirar_da_fila`.
+
 ## Perfis
 
 | Perfil | Pode |
@@ -188,6 +190,8 @@ Os endpoints `/api/agente/versao` e `/api/agente/download` não exigem autentica
 - `POST /api/estacoes/grupos/duplicar` (`itens: [{grupo_id, zona}]`): copia as zonas para a posição dada pelo painel (embaixo de tudo) com as estações renumeradas por `Proximos` (maior número já usado no prefixo + 1, contando excluídas e pendentes).
 - `DELETE /api/estacoes/grupos/{id}`: exclui a zona e as estações dela (como Excluir estação); recusa se alguma está em uso.
 - Seleção de zonas só no painel (`Mapa.tsx`, `selecao`): `zonasArrastadas` aplica o deslocamento (ou o tamanho) da zona arrastada às selecionadas e `salvarZonas` grava todas.
+- **Aba Uso** (`/api/relatorios/uso`, só admin, `_calcular_uso`): resumo, `por_dia`, `por_piso`, `pico` e `estacoes`. A **ocupação** é o uso dividido pelas horas em que as estações poderiam ser usadas: estações ativas e aprovadas (do piso filtrado) × horas abertas do período pelo horário de funcionamento configurado (`app/horario.py`, ligado ou não; padrão 08–20 todos os dias), contando só até agora (dia futuro não conta, hoje só até este momento). Por estação, `ocupacao` = uso / horas abertas.
+- **Planilha do mês**: `GET /api/relatorios/uso.xlsx?mes=AAAA-MM&piso_id=` com as abas Resumo, Por dia (todos os dias do mês e o total), Por estação e Sessões (uma linha por sessão encerrada). Feita por `app/planilha.py`, sem dependência: um .xlsx mínimo (zip + XML) com tempos em fração de dia no formato `[h]:mm:ss` (o Excel soma), datas como número de série e porcentagens `0.0%`.
 - `/api/relatorios/cliente/{id}` e `/estacao/{nome}` incluem as sessões em andamento (`_filtrar(..., abertas=True)`), com `em_uso` por linha e, no do cliente, `em_uso` (a estação) e a foto. O painel refaz a consulta quando muda a lista de sessões abertas (WebSocket).
 
 ## Mapas separados por piso (6.18)
