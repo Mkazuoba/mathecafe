@@ -6,6 +6,10 @@
 - Corrigido: **Históricos → Por estação** dava erro (`piso_id` "1?") ao escolher a estação. O endereço da consulta saía com dois "?"; agora as datas entram com "&".
 - **Fila de espera**: botão **Remover todos** no cabeçalho, que esvazia a fila do piso mostrado. Tirar um cliente (ou todos) agora pede **confirmação**.
 
+## 2026-11-17 — Limpar o log da estação
+
+- Na aba **Log** do modal da estação, o botão **Limpar log** abre uma confirmação com as linhas que serão apagadas (quantas e de que horário a que horário). Só o log some; a estação, as sessões e o histórico ficam. A limpeza aparece em **Ações dos operadores** ("Limpou o log da estação").
+
 ## 2026-11-17 — Indicadores de uso e planilha do mês (Históricos → Uso)
 
 - **Uso total no período** em destaque: o total de horas, a média por dia de funcionamento e quantos dias a biblioteca abriu; com **Todos os pisos**, a divisão por piso (Adulto, Infantil) logo abaixo.

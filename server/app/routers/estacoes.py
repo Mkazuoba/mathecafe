@@ -542,6 +542,19 @@ def logs(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"
         raise HTTPException(404, "Estação não encontrada")
     return logs_estacoes.linhas(id)
 
+@router.delete("/{id}/logs")
+async def limpar_logs(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
+    """Apaga o log de comunicacao da estacao (so a memoria do servidor; o agente segue mandando as novas)."""
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    apagadas = len(logs_estacoes.linhas(id))
+    logs_estacoes.apagar(id)
+    registrar(db, quem, "limpar_log_estacao", estacao=e.nome, detalhe=f"{apagadas} linhas")
+    # outro painel com o modal aberto tambem esvazia
+    await manager.broadcast_paineis("log_limpo", {"estacao_id": id, "estacao": e.nome})
+    return {"ok": True, "apagadas": apagadas}
+
 # ── Fila de espera ────────────────────────────────────────────────────────────
 @router.get("/fila")
 def ver_fila(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):

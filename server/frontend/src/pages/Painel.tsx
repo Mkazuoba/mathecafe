@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { Link, useSearchParams } from "react-router-dom"
-import { IconLayoutColumns, IconPlus, IconSearch, IconUsersGroup, IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
+import { IconLayoutColumns, IconPlus, IconSearch, IconUsersGroup, IconAlertTriangle, IconArrowsMaximize, IconArrowsMinimize, IconCamera, IconDownload, IconMaximize, IconX, IconChevronDown, IconChevronUp, IconSelector, IconClockPlay, IconMessage, IconPencil, IconSettings, IconPlayerPause, IconPlayerPlay, IconPlayerStop, IconPower, IconRefresh, IconRefreshAlert, IconTool, IconTrash, IconVideo, IconVideoOff, IconWifi, IconWifiOff } from "@tabler/icons-react"
 import { Api } from "@/lib/api"
 import { useAcoes } from "@/lib/acoes"
 import { useAvisos } from "@/lib/avisos"
@@ -683,6 +683,15 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
   useEffect(() => {
     if (aba === "log") carregarLog()
   }, [aba, e.id])
+  async function limparLog() {
+    try {
+      const r = await Api.del<{ apagadas: number }>(`/api/estacoes/${e.id}/logs`)
+      setLog([])
+      avisar(`Log da ${e.nome} limpo (${r?.apagadas ?? 0} linhas)`)
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    }
+  }
 
   // Escuta captura_tela, tela_frame e log_agente via WebSocket.
   // Usa polling para re-registrar quando o WS for substituido apos reconexao.
@@ -698,6 +707,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
         if (msg.evento === "tela_frame") {
           setFrameUrl("data:image/jpeg;base64," + msg.dados.imagem)
         }
+        if (msg.evento === "log_limpo") setLog((atual) => (atual ? [] : atual))
         if (msg.evento === "log_agente") {
           const linha: LinhaLog = { ts: msg.dados.ts, msg: msg.dados.msg }
           setLog((atual) => (atual ? [...atual, linha].slice(-LIMITE_LOG) : atual))
@@ -836,7 +846,7 @@ function ModalEstacao({ estacao: e, aoFechar }: { estacao: Estacao; aoFechar: ()
             <AbaHistorico estacao={e.nome} estacaoId={e.id} />
           )}
           {aba === "log" && (
-            <AbaLog linhas={log} erro={erroLog} aoAtualizar={carregarLog} />
+            <AbaLog estacao={e.nome} linhas={log} erro={erroLog} aoAtualizar={carregarLog} aoLimpar={limparLog} />
           )}
         </div>
 
@@ -1248,9 +1258,28 @@ function SecaoComando({ titulo, children }: { titulo: string; children: React.Re
 // ---------------------------------------------------------------------------
 // Aba: Log (o log de comunicacao que ficava na tela do PC)
 // ---------------------------------------------------------------------------
-function AbaLog({ linhas, erro, aoAtualizar }: { linhas: LinhaLog[] | null; erro: string; aoAtualizar: () => void }) {
+function AbaLog({ estacao, linhas, erro, aoAtualizar, aoLimpar }: {
+  estacao: string
+  linhas: LinhaLog[] | null
+  erro: string
+  aoAtualizar: () => void
+  aoLimpar: () => Promise<void>
+}) {
   const caixa = useRef<HTMLDivElement>(null)
   const [seguir, setSeguir] = useState(true)
+  // o que vai ser apagado fica congelado na confirmação (as novas linhas que chegarem nela continuam)
+  const [previa, setPrevia] = useState<LinhaLog[] | null>(null)
+  const [limpando, setLimpando] = useState(false)
+
+  async function confirmarLimpeza() {
+    setLimpando(true)
+    try {
+      await aoLimpar()
+    } finally {
+      setLimpando(false)
+      setPrevia(null)
+    }
+  }
 
   // acompanha o fim enquanto o operador nao rolar para cima
   useEffect(() => {
@@ -1271,7 +1300,7 @@ function AbaLog({ linhas, erro, aoAtualizar }: { linhas: LinhaLog[] | null; erro
         className="h-72 overflow-auto rounded-md border border-borda bg-superficie-2 p-2 font-mono text-xs leading-relaxed"
       >
         {linhas.length === 0 ? (
-          <p className="py-6 text-center font-sans text-texto-fraco">Nada registrado desde que o servidor iniciou.</p>
+          <p className="py-6 text-center font-sans text-texto-fraco">Nada registrado ainda (o log recomeça quando o servidor inicia ou depois de limpar).</p>
         ) : (
           linhas.map((l, i) => (
             <div key={i} className="break-words">
@@ -1282,10 +1311,60 @@ function AbaLog({ linhas, erro, aoAtualizar }: { linhas: LinhaLog[] | null; erro
       </div>
       <div className="flex items-center justify-between text-xs text-texto-fraco">
         <span>Últimas {LIMITE_LOG} linhas, ao vivo. Reiniciar o servidor apaga.</span>
-        <Button variant="outline" size="sm" onClick={aoAtualizar}>
-          <IconRefresh size={14} className="mr-1.5" /> Atualizar
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPrevia(linhas)}
+            disabled={linhas.length === 0}
+            title="Mostra o que será apagado antes de limpar"
+          >
+            <IconTrash size={14} className="mr-1.5" /> Limpar log
+          </Button>
+          <Button variant="outline" size="sm" onClick={aoAtualizar}>
+            <IconRefresh size={14} className="mr-1.5" /> Atualizar
+          </Button>
+        </div>
       </div>
+
+      <Modal
+        titulo={`Limpar o log da ${estacao}?`}
+        aberto={previa != null}
+        aoFechar={() => !limpando && setPrevia(null)}
+        className="max-w-lg"
+      >
+        {previa && (
+          <>
+            <p className="mb-3 text-sm text-texto-suave">
+              Serão apagadas <strong className="text-texto">{previa.length}</strong>{" "}
+              {previa.length === 1 ? "linha" : "linhas"}
+              {previa.length > 0 && (
+                <>
+                  , de <strong className="text-texto">{previa[0].ts}</strong> a{" "}
+                  <strong className="text-texto">{previa[previa.length - 1].ts}</strong>
+                </>
+              )}
+              . Só o log some: a estação, as sessões e o histórico continuam. As linhas novas voltam a aparecer
+              conforme o PC mandar.
+            </p>
+            <div className="mb-6 max-h-56 overflow-auto rounded-md border border-borda bg-superficie-2 p-2 font-mono text-xs leading-relaxed">
+              {previa.map((l, i) => (
+                <div key={i} className="break-words">
+                  <span className="text-texto-fraco">[{l.ts}]</span> {l.msg}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setPrevia(null)} disabled={limpando}>
+            Cancelar
+          </Button>
+          <Button variant="perigo" onClick={confirmarLimpeza} disabled={limpando} autoFocus>
+            {limpando ? "Limpando..." : "Limpar log"}
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }

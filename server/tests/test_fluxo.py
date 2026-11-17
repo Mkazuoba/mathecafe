@@ -2281,6 +2281,27 @@ def test_log_do_agente_fica_no_servidor(c, admin, operador, cenario):
     assert c.get(f"/api/estacoes/{eid}/logs").status_code == 401
 
 
+def test_limpar_o_log_da_estacao(c, admin, operador, cenario):
+    # 17/11: botao Limpar log na aba Log da estacao (operador tambem pode)
+    eid = next(e["id"] for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "versao": "1.18.0", "sessao_id": None})
+        for i in range(3):
+            ws.send_json({"evento": "log_agente", "dados": {"msg": f"limpar {i}", "ts": "11:00:00"}})
+        ws.send_json({"evento": "teste_conexao"})
+        while ws.receive_json()["evento"] != "pong":
+            pass
+    antes = len(c.get(f"/api/estacoes/{eid}/logs", headers=operador).json())
+    assert antes >= 3
+    assert c.delete(f"/api/estacoes/{eid}/logs").status_code == 401
+    r = c.delete(f"/api/estacoes/{eid}/logs", headers=operador)
+    assert r.status_code == 200 and r.json() == {"ok": True, "apagadas": antes}
+    assert c.get(f"/api/estacoes/{eid}/logs", headers=operador).json() == []
+    assert c.delete("/api/estacoes/999999/logs", headers=admin).status_code == 404
+    acoes = c.get("/api/relatorios/acoes?acao=limpar_log_estacao", headers=admin).json()
+    assert acoes and acoes[0]["estacao"] == cenario["estacao"]
+
+
 def test_log_do_agente_sem_hora_e_comprido(c, admin, cenario):
     eid = next(e["id"] for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
