@@ -228,6 +228,7 @@ def _estado(ws, sessao_id=None):
     resposta = ws.receive_json()
     piso = ws.receive_json()  # logo depois vem a cor do piso da estacao (agente 1.9)
     assert piso["evento"] == "piso_estacao"
+    assert ws.receive_json()["evento"] == "estilo_estacao"  # e o estilo da tela (17/11)
     return resposta
 
 
@@ -1752,6 +1753,7 @@ def test_agente_recebe_a_cor_do_piso(c, admin, cenario):
         assert ws.receive_json()["evento"] == "pong"
         piso = ws.receive_json()
         assert piso == {"evento": "piso_estacao", "dados": {"nome": "Infantil", "cor": "#ec4899"}}
+        assert ws.receive_json()["evento"] == "estilo_estacao"
         cliente, cid = _cliente_infantil(c, admin)
         c.post(f"/api/estacoes/fila/{cid}", headers=admin)
         assert _logar_no_pc(ws, cliente)["piso"]["nome"] == "Infantil"
@@ -1907,9 +1909,10 @@ def test_apps_antigos_viram_por_piso(c, admin):
 def _estado_114(ws):
     """Manda o estado como o agente 1.14 e devolve as respostas ate estacao_info."""
     ws.send_json({"evento": "estado", "sessao_id": None, "versao": "1.14.0"})
-    respostas = [ws.receive_json(), ws.receive_json(), ws.receive_json()]
-    assert respostas[2]["evento"] == "estacao_info", respostas
-    return respostas[2]["dados"]
+    # resposta ao estado, piso_estacao, estilo_estacao (17/11) e estacao_info
+    respostas = [ws.receive_json() for _ in range(4)]
+    assert respostas[3]["evento"] == "estacao_info", respostas
+    return respostas[3]["dados"]
 
 
 def _pendente(c, admin, identificador):
@@ -2097,7 +2100,7 @@ def test_nao_substitui_estacao_ligada(c, admin, cenario):
 
 def _agente_na_versao(ws, versao):
     ws.send_json({"evento": "estado", "sessao_id": None, "versao": versao})
-    ws.receive_json(); ws.receive_json()
+    ws.receive_json(); ws.receive_json(); ws.receive_json()  # resposta, piso e estilo
 
 
 def test_atualizar_agente_pelo_painel(c, admin, operador, cenario):
@@ -2300,6 +2303,40 @@ def test_limpar_o_log_da_estacao(c, admin, operador, cenario):
     assert c.delete("/api/estacoes/999999/logs", headers=admin).status_code == 404
     acoes = c.get("/api/relatorios/acoes?acao=limpar_log_estacao", headers=admin).json()
     assert acoes and acoes[0]["estacao"] == cenario["estacao"]
+
+
+def _ate_o_evento(ws, nome, limite=20):
+    for _ in range(limite):
+        msg = ws.receive_json()
+        if msg["evento"] == nome:
+            return msg["dados"]
+    raise AssertionError(f"{nome} nao chegou")
+
+
+def test_estilo_da_tela_por_estacao(c, admin, operador, cenario):
+    # 17/11: o admin escolhe no painel o estilo da tela do cliente de cada PC
+    estilos = c.get("/api/estacoes/estilos", headers=operador).json()
+    assert estilos[0] == {"id": "padrao", "nome": "Padrão"}
+    assert any(e["id"] == "biblioteca" for e in estilos)
+    est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
+    assert est["estilo"] == "padrao"
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "versao": "1.28.0", "sessao_id": None})
+        assert _ate_o_evento(ws, "estilo_estacao") == {"estilo": "padrao"}
+        r = c.put(f"/api/estacoes/{est['id']}/estilo", headers=admin, json={"estilo": "biblioteca"})
+        assert r.status_code == 200 and r.json()["estilo"] == "biblioteca"
+        # o PC conectado recebe na hora
+        assert _ate_o_evento(ws, "estilo_estacao") == {"estilo": "biblioteca"}
+    assert c.put(f"/api/estacoes/{est['id']}/estilo", headers=admin, json={"estilo": "nao-existe"}).status_code == 400
+    assert c.put(f"/api/estacoes/{est['id']}/estilo", headers=operador, json={"estilo": "padrao"}).status_code == 403
+    assert c.put("/api/estacoes/999999/estilo", headers=admin, json={"estilo": "padrao"}).status_code == 404
+    # ao reconectar, o agente recebe o estilo guardado
+    with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:
+        ws.send_json({"evento": "estado", "versao": "1.28.0", "sessao_id": None})
+        assert _ate_o_evento(ws, "estilo_estacao") == {"estilo": "biblioteca"}
+    acoes = c.get("/api/relatorios/acoes?acao=estilo_estacao", headers=admin).json()
+    assert acoes and acoes[0]["estacao"] == cenario["estacao"]
+    assert c.put(f"/api/estacoes/{est['id']}/estilo", headers=admin, json={"estilo": "padrao"}).json()["estilo"] == "padrao"
 
 
 def test_log_do_agente_sem_hora_e_comprido(c, admin, cenario):
@@ -2836,6 +2873,7 @@ def test_atualizar_tela_manda_a_lista_de_apps_atual(c, admin, operador, cenario)
         ws.send_json({"evento": "estado", "sessao_id": None, "versao": "1.25.0"})
         ws.receive_json()  # pong
         ws.receive_json()  # piso_estacao
+        ws.receive_json()  # estilo_estacao
         # todas as estações conectadas
         r = c.post("/api/estacoes/atualizar_telas", headers=operador, json={})
         assert r.status_code == 200, r.text

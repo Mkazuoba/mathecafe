@@ -83,6 +83,8 @@ class Estacao(Base):
     # nome trocado no proprio PC (Configurar conexao): espera o admin aceitar
     # em Novas estacoes; ate la a estacao segue com o nome atual
     nome_pedido = Column(String(20), nullable=True)
+    # estilo da tela do cliente (app/estilos.py); vazio = padrao
+    estilo = Column(String(20), nullable=True)
     ultimo_ping = Column(DateTime, nullable=True)
     pos_x = Column(Integer, default=0)
     pos_y = Column(Integer, default=0)

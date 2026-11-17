@@ -40,6 +40,7 @@ ROTULOS = {
     "substituir_estacao": "Substituiu o computador da estação",
     "excluir_estacao": "Excluiu estação",
     "limpar_log_estacao": "Limpou o log da estação",
+    "estilo_estacao": "Trocou o estilo da tela",
     "criar_estacoes": "Cadastrou estações",
     "duplicar_zona": "Duplicou zona do mapa",
     "excluir_zona": "Excluiu zona do mapa",

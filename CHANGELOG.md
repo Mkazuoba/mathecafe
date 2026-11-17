@@ -6,6 +6,14 @@
 - Corrigido: **Históricos → Por estação** dava erro (`piso_id` "1?") ao escolher a estação. O endereço da consulta saía com dois "?"; agora as datas entram com "&".
 - **Fila de espera**: botão **Remover todos** no cabeçalho, que esvazia a fila do piso mostrado. Tirar um cliente (ou todos) agora pede **confirmação**.
 
+## 2026-11-17 — Estilo da tela do cliente por estação (para testes)
+
+- No modal da estação (aba **Geral**), o admin escolhe o **Estilo da tela** daquele PC: fonte e cores da tela do cliente. As outras estações não mudam.
+- Sem cliente usando, o agente reabre na hora com o estilo novo. Com cliente usando, a troca entra quando a sessão acaba. Voltar ao **Padrão** desfaz.
+- Por enquanto há o **Padrão** (o visual de sempre) e o **Biblioteca (teste)**, um exemplo com fonte Georgia e tons de papel e madeira, para testar o mecanismo. Os estilos de verdade entram depois.
+- Vai no **agente 1.28.0** (liberado: atualize as estações pelo painel). Com agente antigo a escolha é ignorada e o painel avisa.
+- Simulador: quando o agente reabre sozinho (estilo, Configurar conexão), volta com as mesmas opções (`--navegador`, `--estacao`).
+
 ## 2026-11-17 — Limpar o log da estação
 
 - Na aba **Log** do modal da estação, o botão **Limpar log** abre uma confirmação com as linhas que serão apagadas (quantas e de que horário a que horário). Só o log some; a estação, as sessões e o histórico ficam. A limpeza aparece em **Ações dos operadores** ("Limpou o log da estação").

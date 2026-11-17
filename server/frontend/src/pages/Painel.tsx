@@ -893,6 +893,7 @@ function AbaGeral({ estacao: e, sessao, restante }: {
         <span className="text-texto-suave">{e.versao_agente} (em dia)</span>
       )
     ) : <span className="text-texto-fraco">não informou (agente antigo ou nunca conectou)</span>],
+    ["Estilo da tela", <SeletorEstilo estacao={e} />],
   ]
 
   if (sessao) {
@@ -916,6 +917,71 @@ function AbaGeral({ estacao: e, sessao, restante }: {
         </>
       ))}
     </dl>
+  )
+}
+
+/** O agente aplica o estilo a partir desta versão (as antigas ignoram). */
+const VERSAO_ESTILO = [1, 28, 0]
+const temEstilo = (v: string | null) => {
+  if (!v) return false
+  const p = v.split(".").map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < 3; i++) if ((p[i] ?? 0) !== VERSAO_ESTILO[i]) return (p[i] ?? 0) > VERSAO_ESTILO[i]
+  return true
+}
+let estilosCache: Promise<{ id: string; nome: string }[]> | null = null
+
+/** Estilo da tela do cliente deste PC (fonte e cores). Só o admin troca. */
+function SeletorEstilo({ estacao: e }: { estacao: Estacao }) {
+  const { recarregarEstacoes } = useDados()
+  const avisar = useAvisos()
+  const [estilos, setEstilos] = useState<{ id: string; nome: string }[]>([])
+  const [salvando, setSalvando] = useState(false)
+  const atual = e.estilo ?? "padrao"
+
+  useEffect(() => {
+    estilosCache ??= Api.get<{ id: string; nome: string }[]>("/api/estacoes/estilos")
+    estilosCache.then(setEstilos).catch(() => { estilosCache = null })
+  }, [])
+
+  async function trocar(estilo: string) {
+    setSalvando(true)
+    try {
+      await Api.put(`/api/estacoes/${e.id}/estilo`, { estilo })
+      await recarregarEstacoes()
+      const nome = estilos.find((s) => s.id === estilo)?.nome ?? estilo
+      avisar(
+        !e.online ? `${e.nome}: ${nome} quando o PC ligar`
+          : e.status === "ocupada" ? `${e.nome}: ${nome} quando a sessão acabar`
+            : `${e.nome}: aplicando ${nome} (a tela do PC reabre)`,
+      )
+    } catch (err) {
+      avisar((err as Error).message, "erro")
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const nomeAtual = estilos.find((s) => s.id === atual)?.nome ?? atual
+  if (!Api.ehAdmin()) return <span className="text-texto-suave">{nomeAtual}</span>
+  return (
+    <div className="flex flex-col gap-1">
+      <Select
+        aria-label="Estilo da tela do cliente"
+        className="h-8 w-56 text-sm"
+        value={atual}
+        disabled={salvando || estilos.length === 0}
+        onChange={(ev) => trocar(ev.target.value)}
+      >
+        {(estilos.length ? estilos : [{ id: atual, nome: nomeAtual }]).map((s) => (
+          <option key={s.id} value={s.id}>{s.nome}</option>
+        ))}
+      </Select>
+      <span className="text-xs text-texto-fraco">
+        {e.versao_agente && !temEstilo(e.versao_agente)
+          ? "Precisa do agente 1.28 ou mais novo para aparecer no PC."
+          : "Fonte e cores da tela do cliente. Com cliente usando, muda quando a sessão acabar."}
+      </span>
+    </div>
   )
 }
 

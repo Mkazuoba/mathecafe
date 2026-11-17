@@ -10,6 +10,7 @@ from app.database import get_db, init_db, SessionLocal
 from app.models import Estacao, Sessao, Usuario, Autorizacao, GrupoEstacao, AppPermitido, ConfiguracaoSistema
 from app.security import verificar_senha, decodificar_token
 from app.websocket_manager import manager
+from app.estilos import estilo_de
 from app.pisos import apps_do_piso, cor_para_o_agente, piso_da_estacao, recusa_de_piso, whitelist_para_o_agente
 from app import horario, logs_estacoes
 from app.estacoes_novas import AGUARDANDO, estacao_do_agente, info_para_o_agente
@@ -313,6 +314,8 @@ async def ws_estacao(nome: str, ws: WebSocket, id: Optional[str] = None, piso: O
                 await ws.send_text(json.dumps(resposta))
                 # a cor do piso da estacao (o agente usa como destaque)
                 await ws.send_text(json.dumps({"evento": "piso_estacao", "dados": cor_para_o_agente(estacao)}))
+                # o estilo da tela escolhido no painel (agente 1.28+; os antigos ignoram)
+                await ws.send_text(json.dumps({"evento": "estilo_estacao", "dados": {"estilo": estilo_de(estacao)}}))
                 if id:
                     # agente 1.14: o nome cadastrado e se ja foi aprovado
                     await ws.send_text(json.dumps({"evento": "estacao_info", "dados": info_para_o_agente(estacao)}))

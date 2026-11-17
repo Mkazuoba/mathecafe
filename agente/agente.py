@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.27.0"
+VERSAO = "1.28.0"
 
 import asyncio
 import json
@@ -442,6 +442,29 @@ PALETAS = {
         "fundo": "#fafafa", "superficie": "#ffffff", "superficie2": "#f4f4f5", "superficie3": "#d4d4d8",
         "borda": "#e4e4e7", "texto": "#27272a", "texto2": "#52525b", "fraco": "#8b8b94",
         "destaque": "#4f46e5", "destaque_forte": "#4338ca",
+    },
+}
+# Estilos da tela (17/11): o admin escolhe no painel, por estacao (mesmas chaves
+# de server/app/estilos.py). Cada um troca a fonte e/ou as paletas acima (mesmas
+# chaves, sem cores repetidas); "padrao" e o visual de sempre. A fonte so vale se
+# estiver instalada no PC. Trocar de estilo reabre o agente (_aplicar_estilo).
+ESTILOS = {
+    "padrao": {},
+    # exemplo para testes: tons de papel e madeira, titulos e textos com serifa
+    "biblioteca": {
+        "fonte": "Georgia",
+        "paletas": {
+            "escuro": {
+                "fundo": "#14110d", "superficie": "#1d1914", "superficie2": "#28221b", "superficie3": "#3a3127",
+                "borda": "#2b241c", "texto": "#efe6d6", "texto2": "#bfb19b", "fraco": "#8a7d6a",
+                "destaque": "#c2793b", "destaque_forte": "#a3622c",
+            },
+            "claro": {
+                "fundo": "#f5efe3", "superficie": "#fbf7ef", "superficie2": "#efe7d8", "superficie3": "#d9ccb5",
+                "borda": "#e4d9c5", "texto": "#2b241c", "texto2": "#5b4f40", "fraco": "#8c7f6c",
+                "destaque": "#9a5a2a", "destaque_forte": "#7d4820",
+            },
+        },
     },
 }
 ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
@@ -3040,6 +3063,14 @@ class AgenteApp:
         self._sessao_pausada = False
         self._aviso_5min_dado = False
 
+        # Estilo da tela escolhido no painel (guardado no agente.cfg): troca as
+        # paletas antes de montar qualquer tela
+        self.estilo = carregar_cfg().get("ESTILO", "padrao")
+        if self.estilo not in ESTILOS:
+            self.estilo = "padrao"
+        PALETAS.update(ESTILOS[self.estilo].get("paletas", {}))
+        self._estilo_pendente = False  # chegou com cliente usando: aplica ao voltar ao login
+
         # Tema escolhido pelo cliente, guardado no agente.cfg da estação
         self.tema = carregar_cfg().get("TEMA", "escuro")
         if self.tema not in PALETAS:
@@ -3060,6 +3091,9 @@ class AgenteApp:
         global FONTE
         if "Inter" in tkfont.families(root):
             FONTE = "Inter"  # 9.13: a do prompt; sem ela fica a Segoe UI
+        fonte_do_estilo = ESTILOS[self.estilo].get("fonte")
+        if fonte_do_estilo and fonte_do_estilo in tkfont.families(root):
+            FONTE = fonte_do_estilo
         self._build_ui()
         self.barra = BarraSessao(self)
         self.notificacoes = Notificacoes(self)
@@ -3133,6 +3167,29 @@ class AgenteApp:
         self._menu.redesenhar()
         self._painel_direito.redesenhar()
         self._preferencias.redesenhar()
+
+    def _aplicar_estilo(self, dados):
+        """O painel escolheu o estilo da tela deste PC. A fonte fica presa em cada
+        widget, entao o agente reabre para aplicar: na hora se ninguem esta
+        usando; com cliente (ou manutencao), so guarda e reabre ao voltar ao login."""
+        estilo = (dados or {}).get("estilo")
+        if estilo not in ESTILOS:
+            return
+        if estilo == self.estilo:
+            if self._estilo_pendente:  # voltou atras antes de aplicar
+                gravar_cfg(ESTILO=estilo)
+                self._estilo_pendente = False
+            return
+        gravar_cfg(ESTILO=estilo)
+        if self.sessao_ativa or self.modo_manutencao_ativo:
+            self._estilo_pendente = True
+            self._log(f"Estilo da tela trocado para {estilo}: aplica ao voltar ao login")
+            return
+        self._reabrir_pelo_estilo(estilo)
+
+    def _reabrir_pelo_estilo(self, estilo=None):
+        self._log(f"Estilo da tela: {estilo or carregar_cfg().get('ESTILO')} - reabrindo o agente")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def alternar_tema(self):
         """Botão do cliente (tela de login e barra da sessão): claro <-> escuro."""
@@ -3625,6 +3682,10 @@ class AgenteApp:
 
         elif evento == "piso_estacao":
             self._aplicar_cor_piso(dados)
+
+        elif evento == "estilo_estacao":
+            # 1.28: estilo da tela escolhido no painel
+            self.root.after(0, self._aplicar_estilo, dados)
 
         elif evento == "atualizar_agente":
             # 1.16: o painel mandou atualizar (o servidor so manda sem cliente usando)
@@ -4236,6 +4297,9 @@ class AgenteApp:
 
     def _ir_para_login(self):
         """Exibe a tela de login apos o encerramento (com fade)."""
+        if self._estilo_pendente:  # o estilo trocado durante a sessao entra agora
+            self._reabrir_pelo_estilo()
+            return
         def mostrar_login():
             self.frame_encerramento.pack_forget()
             self.root.attributes("-fullscreen", True)
@@ -4606,6 +4670,8 @@ class AgenteApp:
         self.root.lift()
         self.root.focus_force()
         self._log("Modo manutencao encerrado - retornando ao login")
+        if self._estilo_pendente and not self.sessao_ativa:
+            self._reabrir_pelo_estilo()
 
     @staticmethod
     def _fmt(segundos):

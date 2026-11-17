@@ -45,6 +45,8 @@ export interface Estacao extends PisoDe {
   aprovada?: boolean
   /** nome trocado no próprio PC, esperando o admin aceitar (Novas estações) */
   nome_pedido?: string | null
+  /** estilo da tela do cliente (server/app/estilos.py) */
+  estilo?: string
 }
 
 /** Mapa (sala). piso_id vazio: mapa antigo ainda sem piso, o painel avisa. */

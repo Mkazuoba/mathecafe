@@ -34,6 +34,11 @@ args.add_argument("--navegador", action="store_true",
                   help="em vez da janela, mostra a tela numa pagina (http://127.0.0.1:PORTA), com mouse e teclado")
 args.add_argument("--porta", type=int, default=5190, help="porta da pagina do --navegador (padrao 5190)")
 opcoes = args.parse_args()
+# o agente reabre a si mesmo (estilo da tela, Configurar conexao): volta com
+# as mesmas opcoes do simulador, senao abriria uma janela comum na tela
+_ARGS_DO_SIMULADOR = [os.path.abspath(__file__)] + sys.argv[1:]
+_execv = os.execv
+os.execv = lambda exe, _args: _execv(exe, [exe] + _ARGS_DO_SIMULADOR)
 LARGURA, ALTURA = (int(v) for v in opcoes.tamanho.lower().split("x"))
 # no --navegador a "tela" do cliente fica no canto do monitor, mas ESCONDIDA pelo
 # DWM ("cloak"): o Windows continua desenhando (o espelho captura), ela nao aparece

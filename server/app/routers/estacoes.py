@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 from datetime import datetime
+from app.estilos import ESTILOS, estilo_de
 from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
@@ -55,6 +56,7 @@ def serial_estacao(e: Estacao):
         "identificador": e.identificador,
         "aprovada": bool(e.aprovada),
         "nome_pedido": e.nome_pedido,
+        "estilo": estilo_de(e),
         "versao_atual": _versao_dist(),
         "agente_desatualizado": bool(e.versao_agente) and desatualizado(e.versao_agente),
     }
@@ -457,6 +459,28 @@ async def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
         # o agente 1.14 grava o nome novo no agente.cfg
         await manager.enviar_estacao(e.id, "estacao_info", info_para_o_agente(e))
     return serial_estacao(e)
+
+@router.get("/estilos")
+def listar_estilos(_=Depends(requer_perfil("admin", "operador"))):
+    """Os estilos da tela do cliente que o agente conhece (o padrao primeiro)."""
+    return [{"id": k, "nome": v} for k, v in ESTILOS.items()]
+
+
+@router.put("/{id}/estilo")
+async def trocar_estilo(id: int, data: dict, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """Estilo da tela do cliente deste PC; o agente conectado aplica (sem cliente usando, na hora)."""
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
+        raise HTTPException(404, "Estação não encontrada")
+    estilo = (data or {}).get("estilo")
+    if estilo not in ESTILOS:
+        raise HTTPException(400, "Estilo desconhecido")
+    e.estilo = None if estilo == "padrao" else estilo
+    db.commit()
+    registrar(db, quem, "estilo_estacao", estacao=e.nome, detalhe=ESTILOS[estilo])
+    await manager.enviar_estacao(e.id, "estilo_estacao", {"estilo": estilo})
+    return serial_estacao(e)
+
 
 @router.put("/{id}/posicao")
 def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db),

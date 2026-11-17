@@ -1326,3 +1326,37 @@ def _tk_raiz():
             if tentativa == 2:
                 raise
             _time.sleep(0.5)
+
+
+def _constantes(*nomes):
+    ns = {}
+    for no in ast.parse(_fonte()).body:
+        if isinstance(no, ast.Assign) and any(getattr(t, "id", "") in nomes for t in no.targets):
+            exec(compile(ast.Module(body=[no], type_ignores=[]), AGENTE, "exec"), ns)
+    return ns
+
+
+def test_estilos_da_tela_batem_com_o_servidor():
+    # 17/11: estilo da tela escolhido por estacao no painel
+    from app.estilos import ESTILOS as DO_SERVIDOR
+    ns = _constantes("PALETAS", "ESTILOS")
+    estilos, chaves = ns["ESTILOS"], set(ns["PALETAS"]["escuro"])
+    assert set(estilos) == set(DO_SERVIDOR)
+    assert estilos["padrao"] == {}  # o padrao e o visual de hoje, sem trocar nada
+    for nome, e in estilos.items():
+        for tema, paleta in e.get("paletas", {}).items():
+            assert tema in ("escuro", "claro"), nome
+            assert set(paleta) == chaves, (nome, tema)
+            assert len({v.lower() for v in paleta.values()}) == len(paleta), (nome, tema)
+
+
+def test_estilo_novo_so_reabre_o_agente_fora_da_sessao():
+    fonte = _fonte()
+    assert 'evento == "estilo_estacao"' in fonte
+    trecho = fonte[fonte.index("    def _aplicar_estilo("):]
+    trecho = trecho[:trecho.index("\n    def ", 1)]
+    # com cliente usando, so guarda; reabre ao voltar ao login
+    assert "self.sessao_ativa" in trecho and "gravar_cfg(ESTILO=" in trecho
+    login = fonte[fonte.index("    def _ir_para_login("):]
+    login = login[:login.index("\n    def ", 1)]
+    assert "_estilo_pendente" in login
