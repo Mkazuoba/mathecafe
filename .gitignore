@@ -23,3 +23,5 @@ server/reiniciar.pedido
 server/restaurar.pedido
 # configuracao do simulador da tela do cliente (agente/simular.py)
 agente/agente_simulacao.cfg
+# build do MatheCafe-Instalador.exe (agente/gerar_instalador.bat)
+agente/build/
