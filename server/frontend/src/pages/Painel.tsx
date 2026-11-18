@@ -921,25 +921,27 @@ function AbaGeral({ estacao: e, sessao, restante }: {
 }
 
 /** O agente aplica o estilo a partir desta versão (as antigas ignoram). */
-const VERSAO_ESTILO = [1, 28, 0]
-const temEstilo = (v: string | null) => {
+type Estilo = { id: string; nome: string; desde?: string }
+// o agente da estação é desta versão ou mais novo?
+const agenteDesde = (v: string | null, desde = "1.28.0") => {
   if (!v) return false
   const p = v.split(".").map((n) => parseInt(n, 10) || 0)
-  for (let i = 0; i < 3; i++) if ((p[i] ?? 0) !== VERSAO_ESTILO[i]) return (p[i] ?? 0) > VERSAO_ESTILO[i]
+  const d = desde.split(".").map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < 3; i++) if ((p[i] ?? 0) !== (d[i] ?? 0)) return (p[i] ?? 0) > (d[i] ?? 0)
   return true
 }
-let estilosCache: Promise<{ id: string; nome: string }[]> | null = null
+let estilosCache: Promise<Estilo[]> | null = null
 
 /** Estilo da tela do cliente deste PC (fonte e cores). Só o admin troca. */
 function SeletorEstilo({ estacao: e }: { estacao: Estacao }) {
   const { recarregarEstacoes } = useDados()
   const avisar = useAvisos()
-  const [estilos, setEstilos] = useState<{ id: string; nome: string }[]>([])
+  const [estilos, setEstilos] = useState<Estilo[]>([])
   const [salvando, setSalvando] = useState(false)
   const atual = e.estilo ?? "padrao"
 
   useEffect(() => {
-    estilosCache ??= Api.get<{ id: string; nome: string }[]>("/api/estacoes/estilos")
+    estilosCache ??= Api.get<Estilo[]>("/api/estacoes/estilos")
     estilosCache.then(setEstilos).catch(() => { estilosCache = null })
   }, [])
 
@@ -962,6 +964,7 @@ function SeletorEstilo({ estacao: e }: { estacao: Estacao }) {
   }
 
   const nomeAtual = estilos.find((s) => s.id === atual)?.nome ?? atual
+  const desde = estilos.find((s) => s.id === atual)?.desde ?? "1.28.0"
   if (!Api.ehAdmin()) return <span className="text-texto-suave">{nomeAtual}</span>
   return (
     <div className="flex flex-col gap-1">
@@ -977,8 +980,8 @@ function SeletorEstilo({ estacao: e }: { estacao: Estacao }) {
         ))}
       </Select>
       <span className="text-xs text-texto-fraco">
-        {e.versao_agente && !temEstilo(e.versao_agente)
-          ? "Precisa do agente 1.28 ou mais novo para aparecer no PC."
+        {e.versao_agente && !agenteDesde(e.versao_agente, desde)
+          ? `Precisa do agente ${desde.replace(/\.0$/, "")} ou mais novo para aparecer no PC (este está na ${e.versao_agente}).`
           : "Fonte e cores da tela do cliente. Com cliente usando, muda quando a sessão acabar."}
       </span>
     </div>

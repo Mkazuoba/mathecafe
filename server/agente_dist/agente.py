@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.28.0"
+VERSAO = "1.29.0"
 
 import asyncio
 import json
@@ -466,6 +466,24 @@ ESTILOS = {
             },
         },
     },
+    # 17/11: a referencia do caderno desenhado a mao (papel e tinta, nome do PC
+    # carimbado com bichinhos e rabiscos no login; desenhar_carimbo)
+    "caderno": {
+        "fonte": "Palatino Linotype",
+        "caderno": True,
+        "paletas": {
+            "escuro": {
+                "fundo": "#0e0e10", "superficie": "#17171a", "superficie2": "#232327", "superficie3": "#3a3a40",
+                "borda": "#2a2a2f", "texto": "#f4f1ea", "texto2": "#bdb8ad", "fraco": "#86827a",
+                "destaque": "#ff8a3d", "destaque_forte": "#e5702a",
+            },
+            "claro": {
+                "fundo": "#ffffff", "superficie": "#fbfaf7", "superficie2": "#f3f1ec", "superficie3": "#d9d5cc",
+                "borda": "#e6e2da", "texto": "#0d0d0d", "texto2": "#4d4a45", "fraco": "#8a857c",
+                "destaque": "#ff6b2c", "destaque_forte": "#e0531a",
+            },
+        },
+    },
 }
 ROTULO_TEMA = {"escuro": "☀  Tema claro", "claro": "☾  Tema escuro"}
 # o computador acima do login: conectando, online, offline
@@ -681,6 +699,16 @@ class BotaoPrimario:
         c.delete("all")
         c.config(bg=p["fundo"], cursor="hand2" if self.state == "normal" else "arrow")
         ativo = self.state == "normal"
+        if getattr(self.app, "caderno", False):
+            # Caderno: pílula de tinta com sombra dura deslocada, que sobe com o mouse
+            r, topo = (h - 2) // 2, (0 if self.sobre and ativo else 2)
+            BarraSessao._retangulo(c, 0, 5, w - 1, h + 4, r, fill=p["destaque"] if ativo else p["borda"], outline="")
+            BarraSessao._retangulo(c, 0, topo, w - 1, topo + h - 1, r, fill=p["texto"] if ativo else p["fraco"], outline="")
+            BarraSessao._retangulo(c, 2, topo + 2, w - 3, topo + h - 3, r - 2, fill=p["texto"] if ativo else p["fundo"],
+                                   outline="")
+            c.create_text(w / 2, topo + h / 2, text=self.texto, fill=p["fundo"] if ativo else p["fraco"],
+                          font=(FONTE, 12, "bold"))
+            return
         if ativo:
             BarraSessao._retangulo(c, 6, 4, w - 6, h + 3, 12, fill=misturar(AZUL, p["fundo"], 0.18), outline="")
         fundo = (AZUL_CLARO if self.sobre else AZUL) if ativo else p["superficie2"]
@@ -2448,6 +2476,8 @@ class TelaLogin:
             peca = cartaz.resize((largo, alto), Image.LANCZOS)
             mascara = _cantos(Image.new("RGB", (largo, alto), (255, 255, 255)), 10, "#000000").convert("L")
             img.paste(peca, (x, y), mascara)
+        elif getattr(self.app, "caderno", False):  # Caderno sem cartaz: papel com rabiscos
+            img = rabiscos_soltos(w, h, p)
         else:  # sem cartaz: degradê azul -> índigo para o fundo (cores da Área do Cliente)
             img = Image.composite(Image.new("RGB", (w, h), _cor_rgb("#4f46e5")), Image.new("RGB", (w, h), _cor_rgb(AZUL)),
                                   degrade_diagonal(w, h))
@@ -2532,6 +2562,525 @@ class TelaLogin:
         """Tema ou cor do piso trocados."""
         self._atual = None
         self._mostrar(reiniciar_texto=False)
+
+
+# ── Estilo Caderno (17/11): o login como a última página de um caderno ──────
+# O nome do PC carimbado em tinta seca sobre uma linha de chão desenhada à mão,
+# uns bichinhos morando nas letras (um encostado na primeira, um sentado em
+# cima, um gato no fim) e rabiscos em volta. Tudo desenhado pelo Pillow a partir
+# de trechos de SVG (sem arquivos de imagem). Só aparece no estilo "caderno".
+
+_CADERNO_ACENTO = {"chama": "#ff7a1a", "miolo": "#ffd23f", "ouro": "#ffd23f", "coracao": "#ff5c7a", "brilho": "#8fdcff"}
+
+# Cada bichinho no próprio sistema: base no (0, 0), para cima negativo, ~144
+# unidades até o topo da letra. Classes: n sem preenchimento, k tinta, a cor de
+# destaque, o laranja, r vermelho, h hachurado (hs hachurado com contorno),
+# sombra; thin/thick mudam a espessura do traço.
+_CADERNO_ARTE = {
+    "yeti": {
+        "k": 1, "caixa": (-72, 60, -140, 6),
+        "olhos": [(-15, -86, 8, 3.6, 3.6), (13, -88, 8, 3.6, 3.6)],
+        "svg": """
+        <ellipse class="sombra" cx="0" cy="2" rx="54" ry="5" />
+        <path d="M-40 -92 C-62 -92 -70 -76 -68 -56 L-66 -30 C-64 -18 -54 -16 -44 -20 Z" />
+        <path class="h" d="M-40 -92 C-62 -92 -70 -76 -68 -56 L-66 -30 C-64 -18 -54 -16 -44 -20 Z" />
+        <path class="n" d="M-67 -64 C-58 -59 -50 -59 -43 -64" />
+        <path d="M-30 -104 C-40 -112 -44 -124 -40 -138 C-32 -129 -22 -122 -13 -114 Z" />
+        <path d="M18 -114 C26 -124 36 -130 47 -133 C45 -120 41 -110 32 -101 Z" />
+        <path class="n" d="M-38 -124 L-28 -119 M39 -125 L33 -116" />
+        <path d="M-44 -2 C-54 -28 -54 -66 -42 -90 C-32 -110 -14 -118 2 -118 C22 -118 40 -108 48 -88 C58 -64 58 -28 48 -2 C30 4 -26 4 -44 -2 Z" />
+        <path class="h" d="M40 -96 C54 -66 54 -30 46 -4 C40 -2 34 -1 30 0 C40 -30 42 -64 33 -101 Z" />
+        <path class="n" d="M-7 -117 C-5 -126 1 -128 3 -120 C5 -127 11 -126 11 -116" />
+        <path class="n thin" d="M-14 -24 l-3 4 M8 -40 l3 4 M14 -46 l3 3 M20 -30 l3 3" />
+        <path class="n" d="M-48 -62 C-22 -50 10 -32 49 -26 M-50 -52 C-24 -40 8 -22 49 -16" />
+        <rect x="-12" y="-46" width="15" height="13" rotate="26 -4.5 -39.5" />
+        <path d="M-46 -60 C-62 -50 -63 -29 -51 -19 C-45 -15 -38 -19 -40 -28 C-43 -36 -40 -46 -36 -52" />
+        <path d="M46 -58 C61 -46 61 -26 51 -18 C45 -14 38 -18 40 -26 C43 -34 41 -44 37 -50" />
+        <path d="M-37 -2 C-41 -14 -23 -19 -16 -7 C-14 0 -26 4 -37 -2 Z" />
+        <path d="M37 -2 C41 -14 23 -19 16 -7 C14 0 26 4 37 -2 Z" />
+        <path class="n thin" d="M-30 -4 l1 -4 M-24 -3 l1 -4 M30 -4 l-1 -4 M24 -3 l-1 -4" />
+        <path class="n" d="M-23 -98 L-9 -96 M6 -98 L20 -100" />
+        <path class="n" d="M-12 -70 C-6 -64 6 -64 12 -71" />
+        <path d="M3 -66.5 L5.5 -60 L8 -67.5 Z" />
+        """,
+    },
+    "bird": {
+        "k": 1.22, "caixa": (-34, 30, -62, 2),
+        "olhos": [(3, -30, 4.6, 2.3, 2), (12, -31, 4.6, 2.3, 2)],
+        "svg": """
+        <path class="n" d="M-5 0 L-5 -7 M-9 0 L-1 0 M5 0 L5 -7 M1 0 L9 0" />
+        <path d="M-17 -16 C-26 -18 -31 -14 -33 -9 C-26 -10 -20 -8 -15 -10 Z" />
+        <path d="M-18 -14 C-20 -30 -10 -40 2 -40 C16 -40 22 -28 20 -16 C18 -6 8 -4 0 -4 C-10 -4 -17 -8 -18 -14 Z" />
+        <path class="hs" d="M-11 -25 C-3 -26 1 -18 -3 -13 C-9 -12 -15 -17 -11 -25 Z" />
+        <path class="o" d="M19 -30 L29 -27 L19 -23 Z" />
+        <path class="a" d="M-3 -38 L4 -59 L12 -37 Z" />
+        <path class="n thin" d="M-1 -44 L10 -46 M1 -51 L8 -52" />
+        <circle cx="4" cy="-60" r="2.8" />
+        """,
+    },
+    "cat": {
+        "k": 1.06, "caixa": (-30, 52, -110, 4),
+        "olhos": [(10, -76, 6, 2.8, 2.6)],
+        "svg": """
+        <ellipse class="sombra" cx="4" cy="2" rx="32" ry="4" />
+        <path d="M18 -4 C42 -4 52 -24 46 -44 C44 -51 36 -53 34 -46 C40 -30 34 -16 16 -14 Z" />
+        <path class="n thin" d="M40 -16 l5 4 M45 -30 l6 1 M43 -42 l6 -3" />
+        <path d="M-22 0 C-28 -18 -24 -42 -14 -52 L14 -52 C24 -42 28 -18 22 0 C10 3 -10 3 -22 0 Z" />
+        <path class="h" d="M14 -46 C24 -36 26 -16 22 0 C18 1 14 2 12 2 C16 -14 16 -32 10 -46 Z" />
+        <path class="n" d="M-8 -30 L-9 -1 M8 -30 L9 -1" />
+        <path d="M-16 1 C-16 -5 -3 -5 -3 1 Z M3 1 C3 -5 16 -5 16 1 Z" />
+        <path class="a" d="M-18 -55 C-6 -49 6 -49 18 -55 L17 -46 C6 -40 -6 -40 -17 -46 Z" />
+        <path class="a" d="M9 -45 L18 -32 L6 -37 Z" />
+        <path d="M-22 -86 L-25 -107 L-7 -96 Z" />
+        <path d="M8 -96 L23 -108 L22 -86 Z" />
+        <path class="n thin" d="M-20 -92 L-21 -101 M18 -101 L18 -92" />
+        <path d="M-26 -70 C-28 -88 -16 -98 0 -98 C16 -98 28 -88 26 -70 C24 -56 12 -50 0 -50 C-12 -50 -24 -56 -26 -70 Z" />
+        <path class="n thin" d="M-4 -97 L-3 -90 M3 -97 L3 -91" />
+        <path class="n" d="M-26 -80 C-14 -83 4 -87 25 -93" />
+        <ellipse class="k" cx="-10" cy="-76" rx="7.5" ry="6.5" />
+        <path class="k" d="M-2.5 -68 L2.5 -68 L0 -64.5 Z" />
+        <path class="n" d="M0 -64.5 C-1 -60.5 -5 -60.5 -6 -62.5 M0 -64.5 C1 -60.5 5 -60.5 6 -62.5" />
+        <path class="n thin" d="M-15 -66 L-29 -68 M-15 -63 L-28 -59 M15 -66 L29 -68 M15 -63 L28 -59" />
+        """,
+    },
+    "mushroom": {
+        "k": 1.12, "caixa": (-27, 27, -56, 4),
+        "olhos": [(-4.5, -16, 0, 1.9, 1.3), (4.5, -16, 0, 1.9, 1.3)],
+        "svg": """
+        <ellipse class="sombra" cx="0" cy="2" rx="18" ry="3" />
+        <path class="n" d="M-10 -15 L-17 -9 M10 -15 L17 -11" />
+        <path d="M-10 0 C-12 -10 -10 -22 -8 -28 L8 -28 C10 -22 12 -10 10 0 C4 2 -4 2 -10 0 Z" />
+        <path class="h" d="M5 -27 C9 -20 11 -10 10 0 C8 1 6 1.5 4 1.5 C6 -8 6 -18 2 -27 Z" />
+        <path class="r" d="M-25 -28 C-27 -45 -12 -55 0 -55 C12 -55 27 -45 25 -28 C14 -23 -14 -23 -25 -28 Z" />
+        <circle cx="-12" cy="-40" r="4.2" />
+        <circle cx="6" cy="-46" r="3.4" />
+        <circle cx="15" cy="-34" r="3" />
+        <circle cx="-2" cy="-33" r="2.4" />
+        <path class="n" d="M-2 -10 C-1 -8 1 -8 2 -10" />
+        """,
+    },
+}
+
+# rabiscos soltos, numa caixa de 32 unidades centrada no (0, 0)
+_CADERNO_RABISCOS = {
+    "chama": f"""<path fill="{_CADERNO_ACENTO['chama']}" d="M0 14 C-9 14 -12 6 -10 0 C-8 -5 -4 -6 -4 -12 C1 -9 3 -5 2 -1 C4 -3 5 -6 5 -8 C10 -3 11 4 8 9 C6 12 3 14 0 14 Z" />
+        <path fill="{_CADERNO_ACENTO['miolo']}" d="M0 11.5 C-4 11.5 -6 8 -5 5 C-4 2 -1 1 -1 -3 C2 -1 4 3 3 6 C4 5 5 4 5 3 C7 6 5 11.5 0 11.5 Z" />""",
+    "estrela": f"""<path fill="{_CADERNO_ACENTO['ouro']}" d="M0 -13 L3.6 -4.4 L13 -4 L5.8 2.2 L8.2 12 L0 6.6 L-8.2 12 L-5.8 2.2 L-13 -4 L-3.6 -4.4 Z" />""",
+    "coracao": f"""<path fill="{_CADERNO_ACENTO['coracao']}" d="M0 11 C-6 6 -13 1 -13 -5 C-13 -10 -8 -13 -4 -11 C-2 -10 -1 -8 0 -6 C1 -8 2 -10 4 -11 C8 -13 13 -10 13 -5 C13 1 6 6 0 11 Z" />""",
+    "raio": f"""<path fill="{_CADERNO_ACENTO['ouro']}" d="M3 -14 L-8 2 L-1 2 L-4 14 L8 -3 L1 -3 Z" />""",
+    "brilho": f"""<path fill="{_CADERNO_ACENTO['brilho']}" d="M0 -13 C1 -4 4 -1 13 0 C4 1 1 4 0 13 C-1 4 -4 1 -13 0 C-4 -1 -1 -4 0 -13 Z" />""",
+}
+
+_SVG_ELEMENTO = re.compile(r"<(path|circle|ellipse|rect)\s([^>]*?)/>")
+_SVG_ATRIBUTO = re.compile(r'([\w-]+)="([^"]*)"')
+_SVG_TOKEN = re.compile(r"[MmLlCcSsQqZzHhVv]|-?(?:\d+\.?\d*|\.\d+)")
+
+
+def _hash_caderno(n):
+    """Pseudoaleatório fixo em [0, 1): a cena sai sempre igual para o mesmo nome."""
+    s = math.sin(n * 127.1 + 311.7) * 43758.5453
+    return s - math.floor(s)
+
+
+def _svg_elementos(svg):
+    return [(tag, dict(_SVG_ATRIBUTO.findall(attrs))) for tag, attrs in _SVG_ELEMENTO.findall(svg)]
+
+
+def _svg_caminho(d, passos=10):
+    """Um path SVG (M L H V C S Q Z, absolutos e relativos) em subcaminhos:
+    [(pontos, fechado)], com as curvas quebradas em `passos` retas."""
+    tk_ = _SVG_TOKEN.findall(d)
+    i, cmd = 0, "M"
+    x = y = 0.0
+    inicio, ctrl = (0.0, 0.0), None
+    subs, atual = [], []
+
+    def num():
+        nonlocal i
+        i += 1
+        return float(tk_[i - 1])
+
+    while i < len(tk_):
+        if tk_[i].isalpha():
+            cmd = tk_[i]
+            i += 1
+            if cmd in "Zz":
+                if atual:
+                    subs.append((atual, True))
+                atual, (x, y), ctrl = [], inicio, None
+                continue
+        rel, c = cmd.islower(), cmd.upper()
+        ox, oy = (x, y) if rel else (0.0, 0.0)
+        if c == "M":
+            if len(atual) > 1:
+                subs.append((atual, False))
+            x, y = ox + num(), oy + num()
+            atual, inicio, ctrl = [(x, y)], (x, y), None
+            cmd = "l" if rel else "L"
+        elif c == "L":
+            x, y = ox + num(), oy + num()
+            atual.append((x, y))
+            ctrl = None
+        elif c == "H":
+            x = ox + num()
+            atual.append((x, y))
+            ctrl = None
+        elif c == "V":
+            y = oy + num()
+            atual.append((x, y))
+            ctrl = None
+        elif c in "CS":
+            if c == "C":
+                c1 = (ox + num(), oy + num())
+            else:
+                c1 = (2 * x - ctrl[0], 2 * y - ctrl[1]) if ctrl else (x, y)
+            c2 = (ox + num(), oy + num())
+            fim = (ox + num(), oy + num())
+            for k in range(1, passos + 1):
+                t = k / passos
+                u = 1 - t
+                atual.append((u ** 3 * x + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t ** 3 * fim[0],
+                              u ** 3 * y + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * fim[1]))
+            (x, y), ctrl = fim, c2
+        elif c == "Q":
+            q = (ox + num(), oy + num())
+            fim = (ox + num(), oy + num())
+            for k in range(1, passos + 1):
+                t = k / passos
+                u = 1 - t
+                atual.append((u * u * x + 2 * u * t * q[0] + t * t * fim[0], u * u * y + 2 * u * t * q[1] + t * t * fim[1]))
+            (x, y), ctrl = fim, None
+        else:
+            i += 1  # comando desconhecido: pula o número
+    if len(atual) > 1:
+        subs.append((atual, False))
+    return subs
+
+
+def _svg_formas(tag, a):
+    """Os subcaminhos de um elemento (path, circle, ellipse, rect com rotate)."""
+    if tag == "path":
+        return _svg_caminho(a["d"])
+    if tag in ("circle", "ellipse"):
+        cx, cy = float(a.get("cx", 0)), float(a.get("cy", 0))
+        rx = float(a.get("rx", a.get("r", 0)))
+        ry = float(a.get("ry", a.get("r", 0)))
+        return [([(cx + rx * math.cos(k * math.pi / 14), cy + ry * math.sin(k * math.pi / 14)) for k in range(28)], True)]
+    x, y, w, h = (float(a[k]) for k in ("x", "y", "width", "height"))
+    cantos = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+    if a.get("rotate"):
+        ang, rx, ry = (float(v) for v in a["rotate"].split())
+        co, si = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+        cantos = [(rx + (px - rx) * co - (py - ry) * si, ry + (px - rx) * si + (py - ry) * co) for px, py in cantos]
+    return [(cantos, True)]
+
+
+class _PincelCaderno:
+    """Desenha trechos de SVG numa imagem RGBA: preenchimento, contorno de tinta
+    com pontas redondas, hachurado e sombra."""
+
+    def __init__(self, img, tinta, papel, destaque):
+        self.img, self.tinta, self.papel, self.destaque = img, tinta, papel, destaque
+        self._hachura = {}
+
+    def _linhas_hachura(self, passo):
+        chave = round(passo, 1)
+        if chave not in self._hachura:
+            w, h = self.img.size
+            lado = int(math.hypot(w, h)) + 4
+            folha = Image.new("L", (lado, lado), 0)
+            d = ImageDraw.Draw(folha)
+            for k in range(0, lado, max(2, round(passo))):
+                d.line((k, 0, k, lado), fill=255, width=max(1, round(passo * 0.27)))
+            folha = folha.rotate(38, resample=Image.BILINEAR)
+            self._hachura[chave] = folha.crop(((lado - w) // 2, (lado - h) // 2, (lado - w) // 2 + w, (lado - h) // 2 + h))
+        return self._hachura[chave]
+
+    def desenhar(self, svg, ox, oy, esc, vira=1, giro=0.0, traco=2.5):
+        from PIL import ImageChops
+        co, si = math.cos(math.radians(giro)), math.sin(math.radians(giro))
+
+        def pt(p):
+            x, y = p[0] * vira, p[1]
+            return (ox + (x * co - y * si) * esc, oy + (x * si + y * co) * esc)
+
+        d = ImageDraw.Draw(self.img)
+        for tag, a in (_svg_elementos(svg) if isinstance(svg, str) else svg):
+            cls = a.get("class", "").split()
+            formas = [([pt(p) for p in pts], fechado) for pts, fechado in _svg_formas(tag, a)]
+            largura = max(1, round(traco * esc * (0.6 if "thin" in cls else 1.36 if "thick" in cls else 1)))
+            contorno = not ({"h", "sombra", "brilho"} & set(cls))
+            if "sombra" in cls:
+                camada = Image.new("RGBA", self.img.size, (0, 0, 0, 0))
+                cor = _cor_rgb(self.tinta) + (36,)
+                for pts, _ in formas:
+                    ImageDraw.Draw(camada).polygon(pts, fill=cor)
+                self.img.alpha_composite(camada)
+                continue
+            if "h" in cls or "hs" in cls:
+                mascara = Image.new("L", self.img.size, 0)
+                for pts, _ in formas:
+                    if len(pts) > 2:
+                        ImageDraw.Draw(mascara).polygon(pts, fill=255)
+                if "hs" in cls:
+                    for pts, _ in formas:
+                        if len(pts) > 2:
+                            d.polygon(pts, fill=self.papel)
+                self.img.paste(self.tinta, (0, 0), ImageChops.multiply(mascara, self._linhas_hachura(4.6 * esc)))
+            elif "n" not in cls:
+                cor = a.get("fill") or (self.tinta if "k" in cls else self.destaque if "a" in cls else "#ff9f1c" if "o" in cls
+                                        else "#ff4d4d" if "r" in cls else self.papel)
+                for pts, _ in formas:
+                    if len(pts) > 2:
+                        d.polygon(pts, fill=cor)
+            if contorno:
+                for pts, fechado in formas:
+                    linha = pts + [pts[0]] if fechado else pts
+                    d.line(linha, fill=self.tinta, width=largura, joint="curve")
+                    if not fechado:
+                        r = largura / 2
+                        for px, py in (pts[0], pts[-1]):
+                            d.ellipse((px - r, py - r, px + r, py + r), fill=self.tinta)
+
+    def olhos(self, olhos, ox, oy, esc, vira=1):
+        """Olho (bola de papel), pupila de tinta olhando um pouco para baixo e o brilho."""
+        partes = []
+        for x, y, r, pupila, alcance in olhos:
+            if r > 0:
+                partes.append(("circle", {"cx": x, "cy": y, "r": r}))
+            py = y + alcance * 0.6
+            partes.append(("circle", {"cx": x, "cy": py, "r": pupila, "class": "k"}))
+            partes.append(("circle", {"cx": x + pupila * 0.35, "cy": py - pupila * 0.4, "r": pupila * 0.32, "class": "brilho",
+                                      "fill": self.papel}))
+        self.desenhar(partes, ox, oy, esc, vira)
+
+
+def _elenco_caderno(letras):
+    """Quem mora em quais letras: (bicho, letra, lugar, deslocamento, escala, virado)."""
+    idx = [i for i, c in enumerate(letras) if c.isalnum()]
+    if not idx:
+        return []
+    elenco = []
+    if len(idx) >= 3:
+        elenco.append(("yeti", idx[0], "frente", -0.62, 0.95, False))
+    if len(idx) >= 5:
+        elenco.append(("mushroom", idx[2], "frente", 0.1, 0.95, False))
+    if len(idx) >= 2:
+        elenco.append(("bird", idx[len(idx) // 2 if len(idx) < 5 else -3], "topo", 0.02, 1.0, False))
+    elenco.append(("cat", idx[-1], "frente", 0.42, 1.0, True))
+    return elenco
+
+
+def _tinta_seca(mascara, semente):
+    """Textura de pincel seco num texto (máscara L): borda irregular, riscos e pontinhos sem tinta."""
+    from PIL import ImageChops
+    import random as _random
+    w, h = mascara.size
+    rnd = _random.Random(semente)
+
+    def ruido(lw, lh):
+        lw, lh = max(1, lw), max(1, lh)
+        return Image.frombytes("L", (lw, lh), rnd.randbytes(lw * lh)).resize((w, h), Image.BILINEAR)
+
+    borda = ImageChops.add(mascara.filter(ImageFilter.GaussianBlur(max(1, w / 500))), ruido(w // 7, h // 7).point(lambda v: v // 3),
+                           1, -40).point(lambda v: 255 if v > 128 else 0)
+    riscos = ruido(w // 60, h // 3).point(lambda v: 255 if v > 182 else 0)
+    pontos = ruido(w // 3, h // 3).point(lambda v: 255 if v > 236 else 0)
+    return ImageChops.subtract(borda, ImageChops.lighter(riscos, pontos))
+
+
+def _movimento_bicho(bicho, t):
+    """Como o bichinho clicado se mexe: (dx, dy, giro, sx, sy) no instante t (0 a 1)
+    da animação, em pixels da tela. Começa e termina parado no lugar."""
+    if t <= 0 or t >= 1:
+        return (0, 0, 0, 1, 1)
+    s1, resto = math.sin(math.pi * t), 1 - t
+    if bicho == "yeti":  # dois pulinhos, o segundo menor
+        return (0, -18 * abs(math.sin(2 * math.pi * t)) * (1 - 0.5 * t), 6 * math.sin(2 * math.pi * t), 1, 1)
+    if bicho == "bird":  # sobe batendo as asas
+        return (0, -14 * s1, 10 * math.sin(6 * math.pi * t) * resto, 1, 1)
+    if bicho == "cat":  # rebola
+        return (0, -6 * s1, 12 * math.sin(4 * math.pi * t) * resto, 1, 1)
+    # cogumelo: amassa e estica como mola
+    mola = math.sin(3 * math.pi * t) * resto
+    return (0, 0, 0, 1 + 0.12 * mola, 1 - 0.18 * mola)
+
+
+def _movimento_parado(bicho, tempo):
+    """O mexer de leve de sempre (respira, balança, olha em volta), em segundos
+    desde que o login apareceu; cada bichinho no seu ritmo. Mesmo formato do
+    _movimento_bicho."""
+    onda = lambda periodo, fase=0.0: math.sin(2 * math.pi * (tempo / periodo + fase))  # noqa: E731
+    if bicho == "yeti":  # respira fundo e troca o peso de pé
+        return (1.5 * onda(4.3), 0, 1.5 * onda(3.1, 0.2), 1 - 0.015 * onda(2.4), 1 + 0.03 * onda(2.4))
+    if bicho == "bird":  # olha para os lados e dá um pulinho a cada 3,2 s
+        fase = tempo % 3.2
+        return (0, -4 * math.sin(math.pi * fase / 0.45) if fase < 0.45 else 0, 4 * onda(1.7, 0.5), 1, 1)
+    if bicho == "cat":  # balança devagar
+        return (0, 0, 3 * onda(2.8, 0.7), 1, 1 + 0.02 * onda(2.1, 0.3))
+    return (0, 0, 2.5 * onda(1.9, 0.4), 1, 1 + 0.03 * onda(1.9, 0.65))  # cogumelo bamboleia
+
+
+def _somar_movimentos(a, b):
+    """Um movimento por cima do outro: desloca e gira somando, estica multiplicando."""
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] * b[3], a[4] * b[4])
+
+
+def _bicho_no_ponto(bichos, x, y):
+    """Qual bichinho está sob o ponto (o de cima, se as caixas se encostam)."""
+    for i in range(len(bichos) - 1, -1, -1):
+        x0, y0, x1, y1 = bichos[i]["caixa"]
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return i
+    return None
+
+
+def compor_carimbo(carimbo, movimentos=None):
+    """Junta o fundo do carimbo e os bichinhos, cada um no seu movimento
+    ({índice: (dx, dy, giro, sx, sy)}). Devolve RGB."""
+    img = carimbo["base"].copy()
+    for i, b in enumerate(carimbo["bichos"]):
+        dx, dy, giro, sx, sy = (movimentos or {}).get(i, (0, 0, 0, 1, 1))
+        spr, x, y = _bicho_movido(b, giro, sx, sy)
+        img.paste(spr, (round(x + dx), round(y + dy)), spr)
+    return img
+
+
+def _bicho_movido(b, giro, sx, sy):
+    """O sprite do bichinho girado e esticado em volta dos pés, e onde o canto
+    de cima dele fica no carimbo (sem o deslocamento)."""
+    spr, (ax, ay) = b["sprite"], b["ancora"]
+    if sx != 1 or sy != 1:
+        w, h = spr.size
+        spr = spr.resize((max(1, round(w * sx)), max(1, round(h * sy))), Image.BILINEAR)
+        ax, ay = ax * sx, ay * sy
+    if giro:
+        spr = spr.rotate(giro, resample=Image.BICUBIC, center=(ax, ay))
+    return spr, b["pos"][0] + b["ancora"][0] - ax, b["pos"][1] + b["ancora"][1] - ay
+
+
+def desenhar_carimbo(texto, paleta, largura_max=600, altura_max=240):
+    """O nome do PC carimbado, já com os bichinhos parados (RGB)."""
+    return compor_carimbo(montar_carimbo(texto, paleta, largura_max, altura_max))
+
+
+def montar_carimbo(texto, paleta, largura_max=600, altura_max=240):
+    """O nome do PC carimbado em tinta, com o chão, os bichinhos e uns rabiscos
+    (estilo Caderno). Devolve {"base": RGB sem os bichinhos, "bichos": [{nome,
+    sprite RGBA, pos, ancora (os pés), caixa}]}: cada bichinho à parte para
+    poder se mexer (compor_carimbo)."""
+    tinta, papel, destaque = paleta["texto"], paleta["fundo"], paleta["destaque"]
+    letras = list((texto or "?").upper())
+    fonte = _fonte_pil("ariblk.ttf", 200)
+    avancos = [fonte.getlength(c) for c in letras]
+    topo = fonte.getbbox("H", anchor="ls")[1]
+    cap = -topo if topo < 0 else 146.0
+    folga = -0.02 * 200
+    xs, x = [], 0.0
+    for a in avancos:
+        xs.append(x)
+        x += a + folga
+    largura_palavra = x - folga
+    # onde fica cada bichinho e a caixa que cabe tudo (em unidades da fonte)
+    elenco = []
+    esq, dir_, cima, baixo = 0.0, largura_palavra, -cap - 70, 34.0
+    for bicho, li, lugar, desloc, escala, virado in _elenco_caderno(letras):
+        arte = _CADERNO_ARTE[bicho]
+        esc = cap / 144 * arte["k"] * escala
+        bx = xs[li] + avancos[li] * (0.5 + desloc)
+        by = -cap if lugar == "topo" else 0.0
+        vira = -1 if virado else 1
+        l, r, t, b = arte["caixa"]
+        l, r = (l, r) if vira > 0 else (-r, -l)
+        esq, dir_ = min(esq, bx + l * esc), max(dir_, bx + r * esc)
+        cima, baixo = min(cima, by + t * esc), max(baixo, by + b * esc)
+        elenco.append((bicho, arte, bx, by, esc, vira))
+    esq, dir_, cima, baixo = esq - 20, dir_ + 20, cima - 26, baixo + 6  # em cima: espaço para o pulo
+    vw, vh = dir_ - esq, baixo - cima
+    final = min(largura_max / vw, altura_max / vh)
+    s = final * 2  # desenha no dobro e reduz: bordas lisas
+    W, H = max(1, round(vw * s)), max(1, round(vh * s))
+    X = lambda u: (u - esq) * s  # noqa: E731
+    Y = lambda u: (u - cima) * s  # noqa: E731
+    img = Image.new("RGBA", (W, H), _cor_rgb(papel) + (255,))
+    pincel = _PincelCaderno(img, tinta, papel, destaque)
+    d = ImageDraw.Draw(img)
+
+    # o chão: linha tremida, tufos de grama e pedrinhas
+    x0, x1 = esq + 8, dir_ - 8
+    chao = [(X(x0), Y(6))]
+    for k in range(1, 15):
+        xa = x0 + (x1 - x0) * k / 14
+        chao.append((X(xa - (x1 - x0) / 28), Y(6 + (_hash_caderno(k * 3.1) - 0.5) * 5)))
+        chao.append((X(xa), Y(6 + (_hash_caderno(k * 7.7) - 0.5) * 2)))
+    d.line(chao, fill=tinta, width=max(1, round(2.6 * s)), joint="curve")
+    for k in range(18):
+        tx = x0 + 20 + _hash_caderno(k * 11.3) * (x1 - x0 - 40)
+        t = 0.7 + _hash_caderno(k * 5.9) * 0.6
+        for dx, alto, inc in ((0, 9, 2), (3, 12, 1), (6, 7, -1)):
+            d.line((X(tx + dx * t), Y(6), X(tx + dx * t + inc * t), Y(6 - alto * t)), fill=tinta, width=max(1, round(1.8 * s)))
+    for k in range(7):
+        px, py = x0 + 40 + _hash_caderno(k * 17.1) * (x1 - x0 - 80), 16 + _hash_caderno(k * 2.3) * 8
+        r = 2 + _hash_caderno(k * 9.4) * 2.6
+        d.ellipse((X(px - r * 1.5), Y(py - r), X(px + r * 1.5), Y(py + r)), fill=papel, outline=tinta,
+                  width=max(1, round(1.6 * s)))
+
+    # as letras, cada uma carimbada levemente torta, com textura de tinta seca
+    fonte_s = _fonte_pil("ariblk.ttf", max(8, round(200 * s)))
+    mascara = Image.new("L", (W, H), 0)
+    for i, c in enumerate(letras):
+        if c == " ":
+            continue
+        caixa = fonte_s.getbbox(c, anchor="ls")
+        lw, lh = caixa[2] - caixa[0] + 20, caixa[3] - caixa[1] + 20
+        letra = Image.new("L", (lw, lh), 0)
+        ImageDraw.Draw(letra).text((10 - caixa[0], 10 - caixa[1]), c, font=fonte_s, fill=255, anchor="ls")
+        letra = letra.rotate((_hash_caderno(i * 2.3) - 0.5) * 5, resample=Image.BICUBIC, center=(lw / 2, lh - 10))
+        mascara.paste(letra, (round(X(xs[i]) + caixa[0] - 10), round(Y(0) + caixa[1] - 10)), letra)
+    img.paste(_cor_rgb(tinta), (0, 0), _tinta_seca(mascara, texto))
+
+    # rabiscos em cima da palavra
+    tipos = list(_CADERNO_RABISCOS)
+    for k in range(5):
+        rx = esq + 30 + (k + _hash_caderno(k * 9.1) * 0.7) / 5 * (vw - 60)
+        ry = cima + 32 + _hash_caderno(k * 3.3) * 40
+        pincel.desenhar(_CADERNO_RABISCOS[tipos[k % len(tipos)]], X(rx), Y(ry), cap / 144 * 0.9 * s,
+                        giro=(_hash_caderno(k * 1.7) - 0.5) * 50, traco=1.9)
+    base = img.resize((max(1, round(vw * final)), max(1, round(vh * final))), Image.LANCZOS).convert("RGB")
+
+    # os bichinhos (e os olhos), cada um numa camada própria recortada, com folga para girar
+    bichos, folga = [], 24
+    for bicho, arte, bx, by, esc, vira in elenco:
+        camada = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        p = _PincelCaderno(camada, tinta, papel, destaque)
+        p.desenhar(arte["svg"], X(bx), Y(by), esc * s, vira)
+        p.olhos(arte["olhos"], X(bx), Y(by), esc * s, vira)
+        caixa = camada.getchannel("A").getbbox()
+        if not caixa:
+            continue
+        x0, y0 = (caixa[0] // 2) * 2 - folga * 2, (caixa[1] // 2) * 2 - folga * 2  # par: cai certo na metade
+        x1, y1 = caixa[2] + folga * 2, caixa[3] + folga * 2
+        recorte = camada.crop((x0, y0, x1, y1))
+        sprite = recorte.resize((max(1, round((x1 - x0) / 2)), max(1, round((y1 - y0) / 2))), Image.LANCZOS)
+        fator = final / s  # do desenho no dobro para a tela
+        pos = (x0 * fator, y0 * fator)
+        bichos.append({"nome": bicho, "sprite": sprite, "pos": pos,
+                       "ancora": (X(bx) * fator - pos[0], Y(by) * fator - pos[1]),
+                       "caixa": (caixa[0] * fator, caixa[1] * fator, caixa[2] * fator, caixa[3] * fator)})
+    return {"base": base, "bichos": bichos}
+
+
+def rabiscos_soltos(largura, altura, paleta, quantos=14):
+    """Fundo de papel com rabiscos espalhados (o lado dos cartazes, sem cartaz)."""
+    img = Image.new("RGBA", (largura * 2, altura * 2), _cor_rgb(paleta["fundo"]) + (255,))
+    pincel = _PincelCaderno(img, paleta["texto"], paleta["fundo"], paleta["destaque"])
+    tipos = list(_CADERNO_RABISCOS)
+    for k in range(quantos):
+        x = (0.06 + 0.88 * ((k + _hash_caderno(k * 9.1) * 0.8) / quantos)) * largura * 2
+        y = (0.06 + _hash_caderno(k * 3.3) * 0.62) * altura * 2
+        pincel.desenhar(_CADERNO_RABISCOS[tipos[k % len(tipos)]], x, y, (1.4 + _hash_caderno(k * 4.7)) * 2,
+                        giro=(_hash_caderno(k * 1.7) - 0.5) * 60, traco=1.9)
+    return img.resize((largura, altura), Image.LANCZOS).convert("RGB")
 
 
 def degrade_diagonal(largura, altura):
@@ -3070,6 +3619,7 @@ class AgenteApp:
             self.estilo = "padrao"
         PALETAS.update(ESTILOS[self.estilo].get("paletas", {}))
         self._estilo_pendente = False  # chegou com cliente usando: aplica ao voltar ao login
+        self.caderno = bool(ESTILOS[self.estilo].get("caderno")) and PIL_AVAILABLE
 
         # Tema escolhido pelo cliente, guardado no agente.cfg da estação
         self.tema = carregar_cfg().get("TEMA", "escuro")
@@ -3278,11 +3828,13 @@ class AgenteApp:
         # sem barra em cima: o nome do PC bem grande, com o computador verde
         # (online) ou vermelho (offline)
         self._icone_pc = tk.Canvas(_form, width=120, height=100, bg=bg, highlightthickness=0)
-        self._icone_pc.pack()
+        if not self.caderno:  # no Caderno o nome carimbado já ocupa esse lugar
+            self._icone_pc.pack()
         self._desenhar_icone_pc(COR_CONECTANDO)
         self.lbl_estacao = tk.Label(_form, text=self.estacao, font=tkfont.Font(family=FONTE, size=38, weight="bold"),
                                     fg=text, bg=bg, wraplength=520)
         self.lbl_estacao.pack(pady=(2, 0))
+        self._mostrar_nome_estacao()
         self.lbl_status = tk.Label(_form, text="● Conectando...", font=tkfont.Font(family=FONTE, size=9, weight="bold"),
                                    fg=COR_CONECTANDO, bg=bg)
         self.lbl_status.pack(pady=(2, 30))
@@ -3426,9 +3978,13 @@ class AgenteApp:
             w = max(80, cv.winfo_width())
             cv.delete("fundo")
             cv.config(bg=p["fundo"])
-            borda = misturar(AZUL, p["fundo"], 0.75) if estado["foco"] else p["borda"]
+            if self.caderno:  # contorno de tinta, mais forte com o foco
+                borda, fina = (p["texto"] if estado["foco"] else p["texto2"]), 2
+            else:
+                borda, fina = (misturar(AZUL, p["fundo"], 0.75) if estado["foco"] else p["borda"]), 1
             BarraSessao._retangulo(cv, 0, 0, w - 1, 43, 12, fill=borda, outline="", tags="fundo")
-            BarraSessao._retangulo(cv, 1, 1, w - 2, 42, 11, fill=p["superficie"], outline="", tags="fundo")
+            BarraSessao._retangulo(cv, fina, fina, w - 1 - fina, 43 - fina, 12 - fina, fill=p["superficie"], outline="",
+                                   tags="fundo")
             cv.tag_lower("fundo")
             cv.itemconfig(janela, width=w - 32 - (32 if senha else 0))
             if olho:
@@ -3448,13 +4004,111 @@ class AgenteApp:
         p, c = self.paleta, self._marca_login
         c.delete("all")
         c.config(bg=p["fundo"])
-        BarraSessao._retangulo(c, 0, 4, 32, 36, 10, fill=AZUL, outline="")
-        c.create_text(16, 20, text="M", fill=TEXTO_CLARO, font=(FONTE, 12, "bold"))
+        if self.caderno:  # um selo redondo desenhado a tinta
+            c.create_oval(1, 3, 33, 35, fill=p["fundo"], outline=p["texto"], width=2)
+            c.create_text(17, 19, text="M", fill=p["texto"], font=(FONTE, 13, "bold"), angle=-6)
+        else:
+            BarraSessao._retangulo(c, 0, 4, 32, 36, 10, fill=AZUL, outline="")
+            c.create_text(16, 20, text="M", fill=TEXTO_CLARO, font=(FONTE, 12, "bold"))
         c.create_text(44, 13, anchor="w", text="MatheCafé", fill=p["texto"], font=(FONTE, 10, "bold"))
         c.create_text(44, 29, anchor="w", text="Sistema de Estações", fill=p["texto2"], font=(FONTE, 8))
 
+    def _mostrar_nome_estacao(self):
+        """O nome do PC no login: texto grande, ou carimbado em tinta no Caderno
+        (numa tela de desenho: o fundo fica parado e só os bichinhos se mexem)."""
+        self._carimbo, self._bichos_mexendo, self._sprites_bichos = None, {}, {}
+        if self.caderno:
+            try:
+                self._carimbo = montar_carimbo(self.estacao, self.paleta)
+                base = self._carimbo["base"]
+                cv = getattr(self, "_tela_carimbo", None)
+                if cv is None:
+                    cv = self._tela_carimbo = tk.Canvas(self.lbl_estacao.master, highlightthickness=0, bd=0)
+                    cv.bind("<Button-1>", self._clique_carimbo)
+                    cv.bind("<Motion>", self._mouse_carimbo)
+                cv.delete("all")
+                cv.config(width=base.width, height=base.height, bg=self.paleta["fundo"])
+                self._foto_carimbo = ImageTk.PhotoImage(base)
+                cv.create_image(0, 0, image=self._foto_carimbo, anchor="nw")
+                self._itens_bichos = [cv.create_image(0, 0, anchor="nw") for _ in self._carimbo["bichos"]]
+                self._chaves_bichos = [None] * len(self._itens_bichos)
+                if not cv.winfo_manager():
+                    cv.pack(after=self.lbl_estacao, pady=(2, 0))
+                    self.lbl_estacao.pack_forget()
+                self._inicio_carimbo = time.monotonic()
+                if getattr(self, "_id_quadro", None) is None:  # um laço só
+                    self._quadro_carimbo()
+                return
+            except Exception as e:  # sem a fonte ou o Pillow: fica o texto
+                self._carimbo = None
+                self._log(f"Carimbo do nome: {e}")
+        cv = getattr(self, "_tela_carimbo", None)
+        if cv is not None and cv.winfo_manager():
+            self.lbl_estacao.pack(after=cv, pady=(2, 0))
+            cv.pack_forget()
+        self.lbl_estacao.config(image="", text=self.estacao)
+
+    def _bicho_sob_mouse(self, e):
+        """Índice do bichinho do carimbo sob o mouse."""
+        if not self._carimbo:
+            return None
+        return _bicho_no_ponto(self._carimbo["bichos"], e.x, e.y)
+
+    def _mouse_carimbo(self, e):
+        cursor = "hand2" if self._bicho_sob_mouse(e) is not None else ""
+        if self._tela_carimbo.cget("cursor") != cursor:
+            self._tela_carimbo.config(cursor=cursor)
+
+    def _clique_carimbo(self, e):
+        """Clicou num bichinho: o movimento grande (~0,7 s) entra por cima do de sempre."""
+        i = self._bicho_sob_mouse(e)
+        if i is not None:
+            self._bichos_mexendo[i] = time.monotonic()
+
+    def _quadro_carimbo(self):
+        """Um quadro da animação: move a imagem de cada bichinho na tela de
+        desenho. Giro e esticada são arredondados e cada pose fica guardada,
+        então depois da primeira volta quase nada é desenhado de novo.
+        15 quadros/s no mexer de leve, 30 durante um clique; com o login
+        escondido (cliente usando) não mexe em nada, só confere de novo."""
+        self._id_quadro = None
+        try:
+            cv = self._tela_carimbo
+            if not self._carimbo or not cv.winfo_exists():
+                return
+            if not cv.winfo_viewable():
+                self._id_quadro = self.root.after(500, self._quadro_carimbo)
+                return
+        except (tk.TclError, AttributeError):
+            return
+        agora = time.monotonic()
+        if len(self._sprites_bichos) > 800:  # poses demais guardadas (não deve acontecer)
+            self._sprites_bichos.clear()
+            self._chaves_bichos = [None] * len(self._itens_bichos)
+        for i, b in enumerate(self._carimbo["bichos"]):
+            mov = _movimento_parado(b["nome"], agora - self._inicio_carimbo)
+            inicio = self._bichos_mexendo.get(i)
+            if inicio is not None:
+                t = (agora - inicio) / 0.7
+                if t >= 1:
+                    del self._bichos_mexendo[i]
+                else:
+                    mov = _somar_movimentos(mov, _movimento_bicho(b["nome"], t))
+            dx, dy, giro, sx, sy = mov
+            chave = (i, round(giro), round(sx, 2), round(sy, 2))
+            pose = self._sprites_bichos.get(chave)
+            if pose is None:
+                spr, x, y = _bicho_movido(b, *chave[1:])
+                pose = self._sprites_bichos[chave] = (ImageTk.PhotoImage(spr), x, y)
+            if self._chaves_bichos[i] != chave:
+                cv.itemconfig(self._itens_bichos[i], image=pose[0])
+                self._chaves_bichos[i] = chave
+            cv.coords(self._itens_bichos[i], round(pose[1] + dx), round(pose[2] + dy))
+        self._id_quadro = self.root.after(33 if self._bichos_mexendo else 100, self._quadro_carimbo)
+
     def _redesenhar_login(self):
         """Tema ou cor do piso trocados: o que é desenhado no login."""
+        self._mostrar_nome_estacao()
         self._desenhar_marca_login()
         for desenhar in self._campos_login:
             desenhar()
@@ -3759,7 +4413,7 @@ class AgenteApp:
             self._log(f"Estacao renomeada no painel: {self.estacao} -> {nome}")
             self.estacao = nome
             gravar_cfg(ESTACAO=nome)
-            self.lbl_estacao.config(text=nome)
+            self._mostrar_nome_estacao()
         aprovada = bool(dados.get("aprovada", True))
         if not aprovada:
             self.lbl_login_erro.config(text=AGUARDANDO_APROVACAO, fg="#f59e0b", wraplength=340)

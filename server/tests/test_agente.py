@@ -1360,3 +1360,66 @@ def test_estilo_novo_so_reabre_o_agente_fora_da_sessao():
     login = fonte[fonte.index("    def _ir_para_login("):]
     login = login[:login.index("\n    def ", 1)]
     assert "_estilo_pendente" in login
+
+
+def test_caderno_le_os_caminhos_svg_e_escolhe_os_bichinhos():
+    # 17/11: estilo Caderno desenha os bichinhos a partir de trechos de SVG
+    import math as _math
+    import re as _re
+    ns = {"re": _re, "math": _math}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if (isinstance(no, ast.FunctionDef) and no.name in ("_svg_caminho", "_elenco_caderno"))
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") == "_SVG_TOKEN" for t in no.targets))]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    # relativo, curva e fechamento
+    subs = ns["_svg_caminho"]("M0 0 l10 0 C10 5 5 10 0 10 Z M20 20 L30 20", passos=2)
+    assert subs[0][1] is True and subs[0][0][:2] == [(0.0, 0.0), (10.0, 0.0)] and subs[0][0][-1] == (0.0, 10.0)
+    assert subs[1] == ([(20.0, 20.0), (30.0, 20.0)], False)
+    elenco = ns["_elenco_caderno"](list("AD-10"))
+    assert [e[0] for e in elenco] == ["yeti", "bird", "cat"]
+    assert all(list("AD-10")[e[1]].isalnum() for e in elenco)  # ninguem sentado no hifen
+    assert [e[0] for e in ns["_elenco_caderno"](list("X"))] == ["cat"]
+    assert ns["_elenco_caderno"](list("--")) == []
+
+
+def test_caderno_bichinho_clicado_se_mexe_e_volta_ao_lugar():
+    # 18/11: clicar num bichinho do nome carimbado faz ele se mexer
+    import math as _math
+    ns = {"math": _math}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if isinstance(no, ast.FunctionDef) and no.name in ("_movimento_bicho", "_bicho_no_ponto")]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    mov = ns["_movimento_bicho"]
+    parado = (0, 0, 0, 1, 1)
+    for bicho in ("yeti", "bird", "cat", "mushroom"):
+        assert tuple(mov(bicho, 0)) == parado and tuple(mov(bicho, 1)) == parado and tuple(mov(bicho, 2)) == parado
+        meio = [mov(bicho, k / 20) for k in range(1, 20)]
+        assert any(m != parado for m in meio), bicho
+    assert min(mov("yeti", k / 20)[1] for k in range(20)) < -5  # pula
+    assert min(mov("bird", k / 20)[1] for k in range(20)) < -5  # voa um pouco
+    assert any(abs(mov("cat", k / 20)[2]) > 5 for k in range(20))  # balança
+    assert min(mov("mushroom", k / 20)[4] for k in range(20)) < 0.95  # amassa
+    # o clique cai no bichinho de cima quando as caixas se encostam
+    bichos = [{"caixa": (0, 0, 50, 50)}, {"caixa": (40, 10, 90, 60)}]
+    assert ns["_bicho_no_ponto"](bichos, 45, 20) == 1
+    assert ns["_bicho_no_ponto"](bichos, 5, 5) == 0
+    assert ns["_bicho_no_ponto"](bichos, 95, 5) is None
+
+
+def test_caderno_bichinhos_se_mexem_de_leve_o_tempo_todo():
+    # 18/11: parados eles respiram/balançam; o clique soma o pulo por cima
+    import math as _math
+    ns = {"math": _math}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if isinstance(no, ast.FunctionDef) and no.name in ("_movimento_bicho", "_movimento_parado", "_somar_movimentos")]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    parado = ns["_movimento_parado"]
+    for bicho in ("yeti", "bird", "cat", "mushroom"):
+        quadros = [parado(bicho, k * 0.1) for k in range(80)]
+        assert len(set(quadros)) > 10, bicho  # mexe
+        for dx, dy, giro, sx, sy in quadros:  # mas de leve
+            assert abs(dx) <= 3 and abs(dy) <= 4 and abs(giro) <= 5 and 0.94 <= sx <= 1.06 and 0.94 <= sy <= 1.06
+    # cada um no seu ritmo
+    assert parado("yeti", 1.3) != parado("cat", 1.3)
+    soma = ns["_somar_movimentos"]((1, 2, 3, 1.1, 0.9), (1, -2, 1, 1.0, 1.1))
+    assert soma[:3] == (2, 0, 4) and abs(soma[3] - 1.1) < 1e-9 and abs(soma[4] - 0.99) < 1e-9

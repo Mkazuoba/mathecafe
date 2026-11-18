@@ -6,6 +6,17 @@
 - Corrigido: **Históricos → Por estação** dava erro (`piso_id` "1?") ao escolher a estação. O endereço da consulta saía com dois "?"; agora as datas entram com "&".
 - **Fila de espera**: botão **Remover todos** no cabeçalho, que esvazia a fila do piso mostrado. Tirar um cliente (ou todos) agora pede **confirmação**.
 
+## 2026-11-18 — Estilo Caderno na tela de login (agente 1.29.0)
+
+- Novo estilo **Caderno (teste)**, inspirado num caderno desenhado à mão: papel e tinta (claro e escuro), textos com serifa (Palatino Linotype).
+- No login, o nome do PC aparece **carimbado em tinta seca** sobre uma linha de chão desenhada, com bichinhos morando nas letras (um yeti encostado na primeira, um passarinho sentado em cima, um gato no fim e, nos nomes longos, um cogumelo) e rabiscos em volta (estrela, coração, raio, chama, brilho). Tudo desenhado pelo agente, sem arquivos de imagem.
+- Botão **Entrar** em pílula de tinta com sombra dura na cor do piso; campos com contorno de tinta; selo redondo no lugar do "M" azul. Sem cartaz da Programação, o lado direito vira papel com rabiscos.
+- **Os bichinhos estão sempre se mexendo de leve**, cada um no seu ritmo: o yeti respira e troca o peso de pé, o passarinho olha para os lados e dá um pulinho de vez em quando, o gato balança e o cogumelo bamboleia.
+- **Clicar num bichinho faz ele reagir** (cerca de 0,7 s, por cima do mexer de sempre): o yeti dá dois pulinhos, o passarinho sobe batendo as asas, o gato rebola e o cogumelo amassa como mola. O mouse vira mãozinha em cima deles.
+- Leve: o fundo do carimbo fica parado numa tela de desenho e só as figuras dos bichinhos se movem, com cada pose guardada depois da primeira vez. 10 quadros/s parado e 30 durante o clique; medido em ~3% de um núcleo, só enquanto a tela de login aparece (com cliente usando, para).
+- Só a tela de login por enquanto; a área do cliente (apps, menu, dock) continua no visual de sempre.
+- Para usar: no modal da estação, aba **Geral**, escolha **Caderno (teste)** em **Estilo da tela**. Vai no **agente 1.29.0** (liberado: atualize as estações pelo painel). Com agente mais antigo o PC ignora a escolha e o painel avisa qual versão falta.
+
 ## 2026-11-17 — Estilo da tela do cliente por estação (para testes)
 
 - No modal da estação (aba **Geral**), o admin escolhe o **Estilo da tela** daquele PC: fonte e cores da tela do cliente. As outras estações não mudam.

@@ -2316,8 +2316,10 @@ def _ate_o_evento(ws, nome, limite=20):
 def test_estilo_da_tela_por_estacao(c, admin, operador, cenario):
     # 17/11: o admin escolhe no painel o estilo da tela do cliente de cada PC
     estilos = c.get("/api/estacoes/estilos", headers=operador).json()
-    assert estilos[0] == {"id": "padrao", "nome": "Padrão"}
+    assert estilos[0] == {"id": "padrao", "nome": "Padrão", "desde": "1.28.0"}
     assert any(e["id"] == "biblioteca" for e in estilos)
+    # 18/11: cada estilo diz desde qual agente funciona (o painel avisa nos PCs antigos)
+    assert next(e for e in estilos if e["id"] == "caderno")["desde"] == "1.29.0"
     est = next(e for e in c.get("/api/estacoes/", headers=admin).json() if e["nome"] == cenario["estacao"])
     assert est["estilo"] == "padrao"
     with c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as ws:

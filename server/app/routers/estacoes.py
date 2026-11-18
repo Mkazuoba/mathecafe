@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 from datetime import datetime
-from app.estilos import ESTILOS, estilo_de
+from app.estilos import DESDE, ESTILOS, estilo_de
 from app.database import get_db
 from app.models import Estacao, GrupoEstacao, Autorizacao, Usuario, Sessao
 from app.security import requer_perfil
@@ -463,7 +463,7 @@ async def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
 @router.get("/estilos")
 def listar_estilos(_=Depends(requer_perfil("admin", "operador"))):
     """Os estilos da tela do cliente que o agente conhece (o padrao primeiro)."""
-    return [{"id": k, "nome": v} for k, v in ESTILOS.items()]
+    return [{"id": k, "nome": v, "desde": DESDE.get(k, "1.28.0")} for k, v in ESTILOS.items()]
 
 
 @router.put("/{id}/estilo")
