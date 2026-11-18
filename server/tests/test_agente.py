@@ -1406,6 +1406,41 @@ def test_caderno_bichinho_clicado_se_mexe_e_volta_ao_lugar():
     assert ns["_bicho_no_ponto"](bichos, 95, 5) is None
 
 
+def test_texto_grande_nao_encosta_a_descricao_no_pronto():
+    # 18/11: com o texto Grande, a descrição em 2 linhas invadia o "Pronto" no pé do card
+    fonte = _fonte()
+    cartao = fonte[fonte.index("    def _desenhar_cartao("):fonte.index("    def _sobre(")]
+    assert "cortar_linhas(descricao, fonte_desc, W - 28, 1 if e else 2)" in cartao
+
+
+def test_notificacoes_fecham_ao_clicar_fora():
+    # 18/11: a pilha aberta fecha com um clique em qualquer lugar fora dela (e fora do sininho)
+    ns = {}
+    corpo = [no for no in ast.parse(_fonte()).body if isinstance(no, ast.FunctionDef) and no.name == "clique_fora"]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    fora = ns["clique_fora"]
+    pilha, sininho = (1500, 600, 1900, 1000), (1700, 1040, 1734, 1072)
+    assert fora((200, 300), [pilha, sininho])  # clicou na tela de apps
+    assert not fora((1600, 700), [pilha, sininho])  # dentro da pilha
+    assert not fora((1710, 1050), [pilha, sininho])  # no sininho (ele mesmo alterna)
+    fonte = _fonte()
+    notif = fonte[fonte.index("class Notificacoes"):fonte.index("def montar_banner(")]
+    assert "clique_fora(" in notif and "GetAsyncKeyState" in fonte
+
+
+def test_caderno_linhas_finas_e_icones_do_dock_mais_fortes():
+    # 18/11: traços de tinta grossos demais (o do topo do dock, sobretudo); ícones do dock fracos no claro
+    import re
+    fonte = _fonte()
+    assert re.search(r"^TRACO_TINTA = 1 ", fonte, re.M)
+    dock = fonte[fonte.index("class BarraSessao"):fonte.index("class Notificacoes")]
+    assert re.search(r"_linha_tremida\([^)]*\)[^\n]*\n?[^\n]*width=TRACO_TINTA", dock)
+    assert re.search(r"ICONE = (\d+)", dock) and int(re.search(r"ICONE = (\d+)", dock).group(1)) >= 22
+    # sininho e sol/lua maiores e na cor do texto (não no texto2, apagado no claro)
+    assert '"Segoe MDL2 Assets", 13' in dock
+    assert 'fill=p["texto" if n else "texto2"]' not in dock
+
+
 def test_dock_some_com_app_em_tela_cheia():
     # 18/11: o dock ficava por cima de vídeo e de conteúdo em tela cheia
     ns = {}
@@ -1490,7 +1525,8 @@ def test_caderno_menu_da_esquerda_e_painel_da_direita():
     corpo = [no for no in ast.parse(_fonte()).body
              if (isinstance(no, ast.FunctionDef) and no.name in ("_linha_menu", "_linha_menu_caderno", "misturar"))
              or (isinstance(no, ast.ClassDef) and no.name == "BarraSessao")
-             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") == "FONTE" for t in no.targets))]
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") in ("FONTE", "TRACO_TINTA")
+                                                    for t in no.targets))]
     ns["AZUL"], ns["AZUL_CLARO"] = "#2563eb", "#3b82f6"
     exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
     p = {"fundo": "#ffffff", "superficie": "#fbfaf7", "superficie2": "#f3f1ec", "superficie3": "#d9d5cc",

@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.31.0"
+VERSAO = "1.32.0"
 
 import asyncio
 import json
@@ -322,6 +322,9 @@ try:
     _u32.IsIconic.argtypes = [ctypes.c_void_p]
     _u32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
     _u32.GetForegroundWindow.restype = ctypes.c_void_p
+    _u32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+    _u32.GetAsyncKeyState.restype = ctypes.c_short
+    _u32.GetCursorPos.argtypes = [ctypes.POINTER(_wt.POINT)]
     _dwm = ctypes.WinDLL("dwmapi")
     _dwm.DwmGetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
 except (AttributeError, OSError):
@@ -428,6 +431,21 @@ def janela_em_foco():
     return _u32.GetForegroundWindow() if _u32 else None
 
 
+def clique_fora(ponto, caixas):
+    """O ponto (x, y da tela) está fora de todas as caixas (x1, y1, x2, y2)?"""
+    x, y = ponto
+    return not any(x1 <= x <= x2 and y1 <= y <= y2 for x1, y1, x2, y2 in caixas)
+
+
+def botao_esquerdo_e_ponteiro():
+    """(apertado agora?, (x, y) do ponteiro na tela) em qualquer janela, até de outro programa."""
+    if _u32 is None:
+        return False, (0, 0)
+    pt = _wt.POINT()
+    _u32.GetCursorPos(ctypes.byref(pt))
+    return bool(_u32.GetAsyncKeyState(0x01) & 0x8000), (pt.x, pt.y)  # VK_LBUTTON
+
+
 def cobre_a_tela(ret, largura, altura):
     """A janela (esquerda, topo, direita, baixo) cobre a tela inteira? Tela
     cheia (vídeo, jogo, F11) sim; maximizada não: ela para em cima do dock."""
@@ -526,6 +544,8 @@ COR_CONECTANDO, COR_ONLINE, COR_OFFLINE = "#f59e0b", "#10b981", "#f43f5e"  # âm
 # acabamento da Área do Cliente (9.12, padrão shadcn): sem branco puro nem vermelho vivo
 ZINC_950, ZINC_900 = "#09090b", "#18181b"
 AZUL, AZUL_CLARO = "#2563eb", "#3b82f6"  # blue-600 / blue-500: Abrir, banner, contador
+TRACO_TINTA = 1  # espessura (px) dos traços de tinta do estilo Caderno desenhados no Tk
+TRACO_IMAGEM = 1.5  # e nas imagens montadas com o Pillow (cards e banner), em px da tela
 ROSA, ROSA_CLARO, ROSA_TEXTO = "#e11d48", "#f43f5e", "#fb7185"  # Encerrar sessão
 TEXTO_CLARO = "#f4f4f5"  # zinc-100, no lugar do branco puro
 EMERALD, EMERALD_TEXTO = "#10b981", "#34d399"  # Online, app aberto, tempo no dock
@@ -769,7 +789,7 @@ class BarraSessao:
     """
     CHAVE = "#010203"  # cor que vira transparente
     ALTURA = 48  # sem a barra do Windows para copiar
-    ICONE = 18  # px: ícone dentro da aba do app
+    ICONE = 22  # px: ícone dentro da aba do app
     ESPACO = 8
     CORES_APPS = ("#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6")
 
@@ -819,10 +839,11 @@ class BarraSessao:
         self.bloco = tk.Frame(self.canvas, bg=p["fundo"])
         fundo_bloco = lambda: self.app.paleta["fundo"]
         caderno = lambda: getattr(self.app, "caderno", False)  # noqa: E731
-        traco = lambda: 2 if caderno() else 1  # noqa: E731
+        traco = lambda: TRACO_TINTA if caderno() else 1  # noqa: E731
+        # o texto/ícone na cor cheia do texto: no claro, o texto2 deixava o sol e a lua apagados
         neutro = lambda sobre: (self.app.paleta["superficie2" if sobre else "superficie"],
                                 self.app.paleta["texto" if caderno() else "borda"],
-                                self.app.paleta["texto" if caderno() else "texto2"])
+                                self.app.paleta["texto"])
         # sininho pequeno com o contador azul (clicar mostra/esconde as notificações)
         self.sininho = tk.Canvas(self.bloco, width=34, height=32, bg=p["fundo"], highlightthickness=0,
                                  bd=0, cursor="hand2")
@@ -831,7 +852,7 @@ class BarraSessao:
         self.lbl_relogio = tk.Canvas(self.bloco, width=150, height=30, bg=p["fundo"], highlightthickness=0, bd=0)
         self.lbl_relogio.pack(side="left", padx=3)
         self._mostrar_relogio()
-        self.btn_tema = Pilula(self.bloco, ICONE_TEMA[app.tema], tkfont.Font(family="Segoe MDL2 Assets", size=10),
+        self.btn_tema = Pilula(self.bloco, ICONE_TEMA[app.tema], tkfont.Font(family="Segoe MDL2 Assets", size=13),
                                neutro, fundo_bloco, comando=app.alternar_tema, altura=30, padx=9, traco=traco)
         self.btn_tema.pack(side="left", padx=3)
         rosa = lambda sobre: ((ROSA, self.app.paleta["texto"] if caderno() else ROSA, TEXTO_CLARO) if sobre else
@@ -849,10 +870,11 @@ class BarraSessao:
         w = 34 + fonte.measure(self._hora) + 21 + fonte.measure(self._tempo) + 12
         c.delete("all")
         c.config(width=w, bg=p["fundo"])
-        t = 2 if self._caderno() else 1  # contorno de tinta no Caderno
-        self._retangulo(c, 0, 0, w - 1, 29, 10, fill=p["texto" if t == 2 else "borda"], outline="")
+        caderno = self._caderno()
+        t = TRACO_TINTA if caderno else 1  # contorno de tinta no Caderno
+        self._retangulo(c, 0, 0, w - 1, 29, 10, fill=p["texto" if caderno else "borda"], outline="")
         self._retangulo(c, t, t, w - 1 - t, 29 - t, 10 - t, fill=p["superficie"], outline="")
-        c.create_text(16, 15, text="\uE823", font=("Segoe MDL2 Assets", 8), fill=p["texto2"])
+        c.create_text(16, 15, text="\uE823", font=("Segoe MDL2 Assets", 10), fill=p["texto"])
         h = c.create_text(30, 15, anchor="w", text=self._hora, font=fonte, fill=p["texto"])
         xs = (c.bbox(h) or (0, 0, 70, 0))[2] + 10
         c.create_line(xs, 8, xs, 22, fill=p["borda"])
@@ -1125,7 +1147,7 @@ class BarraSessao:
         # com um traço de tinta feito à mão em cima
         c.create_rectangle(0, 0, largura, h, fill=p["fundo"], outline="", tags="desenho")
         if caderno:
-            c.create_line(*_linha_tremida(-4, largura + 4, 2, amplitude=1.1), fill=p["texto"], width=2, smooth=True,
+            c.create_line(*_linha_tremida(-4, largura + 4, 1.5, amplitude=0.7), fill=p["texto"], width=TRACO_TINTA, smooth=True,
                           capstyle="round", tags="desenho")
         else:
             c.create_line(0, 0, largura, 0, fill=p["borda"], tags="desenho")
@@ -1136,7 +1158,7 @@ class BarraSessao:
             y0, y1 = meio - 16, meio + 16
             if item["chave"] == "inicio" and caderno:  # selo redondo de tinta, como no login
                 self._contornos[k] = p["texto"]
-                c.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill=p["fundo"], outline=p["texto"], width=2,
+                c.create_oval(x0 + 1, y0 + 1, x1 - 1, y1 - 1, fill=p["fundo"], outline=p["texto"], width=TRACO_TINTA + 0.5,
                               tags=("desenho", f"icone{k}"))
                 c.create_text((x0 + x1) / 2 + 1, meio, text="M", fill=p["texto"], font=(FONTE, 11, "bold"), angle=-6,
                               tags="desenho")
@@ -1151,7 +1173,7 @@ class BarraSessao:
                 self._contornos[k] = contorno
                 self._retangulo(c, x0 + 3, y0 + 3, x1 + 3, y1 + 3, 12, fill=p["destaque"] if foco else p["superficie3"],
                                 outline="", tags="desenho")
-                self._retangulo(c, x0, y0, x1, y1, 12, fill=p["superficie"], outline=contorno, width=2,
+                self._retangulo(c, x0, y0, x1, y1, 12, fill=p["superficie"], outline=contorno, width=TRACO_TINTA,
                                 tags=("desenho", f"icone{k}"))
             else:
                 contorno = misturar(AZUL, p["fundo"], 0.6) if foco else p["borda"]
@@ -1170,7 +1192,7 @@ class BarraSessao:
                     c.create_image(x, topo + t / 2, image=capa, tags="desenho")
                 else:
                     self._retangulo(c, x - t / 2, topo, x + t / 2, topo + t, 5, fill=item["cor"] or p["destaque"],
-                                    outline=p["texto"] if caderno else "", width=1.5 if caderno else 1, tags="desenho")
+                                    outline=p["texto"] if caderno else "", width=TRACO_TINTA, tags="desenho")
                     c.create_text(x, topo + t / 2, text=item["letra"], fill=TEXTO_CLARO,
                                   font=(FONTE, 8, "bold"), tags="desenho")
             xt = x + t / 2 + 8
@@ -1203,12 +1225,13 @@ class BarraSessao:
         s.config(bg=p["fundo"])
         n = self.contagem_notificacoes()
         # botão discreto (bg zinc-900, borda zinc-800) com o contador azul; no Caderno, tinta
-        t = 2 if self._caderno() else 1
-        self._retangulo(s, 0, 1, 30, 31, 10, fill=p["texto" if t == 2 else "borda"], outline="")
+        caderno = self._caderno()
+        t = TRACO_TINTA if caderno else 1
+        self._retangulo(s, 0, 1, 30, 31, 10, fill=p["texto" if caderno else "borda"], outline="")
         self._retangulo(s, t, 1 + t, 30 - t, 31 - t, 10 - t, fill=p["superficie"], outline="")
-        s.create_text(15, 16, text="\uEA8F", font=("Segoe MDL2 Assets", 10), fill=p["texto" if n else "texto2"])
+        s.create_text(15, 16, text="\uEA8F", font=("Segoe MDL2 Assets", 13), fill=p["texto"])
         if n:
-            s.create_oval(21, 0, 33, 12, fill=p["destaque"] if t == 2 else AZUL, outline=p["texto"] if t == 2 else p["fundo"])
+            s.create_oval(21, 0, 33, 12, fill=p["destaque"] if caderno else AZUL, outline=p["texto"] if caderno else p["fundo"])
             s.create_text(27, 6, text=str(n) if n < 10 else "9+", fill=TEXTO_CLARO, font=(FONTE, 6, "bold"))
 
 
@@ -1408,6 +1431,33 @@ class Notificacoes:
         self._alpha_alvo, self._dx_alvo = 1.0, 0.0
         self.top.lift()
         self._efeito()
+        if not getattr(self, "_vigia_clique", None):
+            self._apertado = True  # o clique que abriu (no sininho) não conta
+            self._vigia_clique = self.top.after(80, self._clique_fora)
+
+    def _clique_fora(self):
+        """Com a pilha na tela, um clique fora dela (e fora do sininho), em
+        qualquer lugar, até em outro programa, fecha a pilha."""
+        self._vigia_clique = None
+        if not self.visivel:
+            return
+        apertado, ponto = botao_esquerdo_e_ponteiro()
+        if apertado and not self._apertado:  # acabou de apertar
+            x0, y0 = self.top.winfo_rootx(), self.top.winfo_rooty()
+            cx1, cy1, cx2, cy2 = self._caixa
+            s = self.app.barra.sininho
+            caixas = [(x0 + cx1, y0 + cy1, x0 + cx2, y0 + cy2),
+                      (s.winfo_rootx(), s.winfo_rooty(), s.winfo_rootx() + s.winfo_width(), s.winfo_rooty() + s.winfo_height())]
+            if clique_fora(ponto, caixas):
+                self.visivel = self.fixa = False
+                self._alvo = 0.0
+                if self._timer:
+                    self.top.after_cancel(self._timer)
+                    self._timer = None
+                self._mostrar()
+                return
+        self._apertado = apertado
+        self._vigia_clique = self.top.after(80, self._clique_fora)
 
     def _posicionar(self):
         x, y = self._base
@@ -1467,7 +1517,7 @@ class Notificacoes:
         # cabeçalho: título, "N novas" e Limpar tudo, numa pílula
         hy = topo - self.CABECALHO
         caderno = getattr(self.app, "caderno", False)
-        contorno, grossura = (p["texto"], 2) if caderno else (p["superficie3"], 1)  # tinta no Caderno
+        contorno, grossura = (p["texto"], TRACO_TINTA) if caderno else (p["superficie3"], 1)  # tinta no Caderno
         ret(c, 1, hy + 4, L - 1, hy + self.CABECALHO - 6, 14, fill=p["superficie"], outline=contorno, width=grossura)
         c.create_text(14, hy + 19, text="Notificações", anchor="w", fill=p["texto"], font=(FONTE, 10, "bold"))
         novas = self.nao_lidas()
@@ -1475,7 +1525,7 @@ class Notificacoes:
         etiqueta = c.create_text(126, hy + 19, text=rotulo, anchor="w", fill="white", font=(FONTE, 8, "bold"))
         ex1, ey1, ex2, ey2 = c.bbox(etiqueta)
         fundo = ret(c, ex1 - 8, ey1 - 3, ex2 + 8, ey2 + 3, 10, fill=p["destaque"],
-                    outline=p["texto"] if caderno else "", width=1.5 if caderno else 1)
+                    outline=p["texto"] if caderno else "", width=TRACO_TINTA)
         c.tag_raise(etiqueta, fundo)
         if self.itens:
             lim = c.create_text(L - 14, hy + 19, text="Limpar tudo", anchor="e", fill=p["texto2"],
@@ -1515,7 +1565,7 @@ class Notificacoes:
         ret(c, ix, iy, ix + 40, iy + 22, 11, fill=cima, outline="")  # brilho de cima
         ret(c, ix, iy + 14, ix + 40, iy + 40, 11, fill=baixo, outline="")
         if caderno:  # contorno de tinta no ícone
-            ret(c, ix, iy, ix + 40, iy + 40, 11, fill="", outline=p["texto"], width=2)
+            ret(c, ix, iy, ix + 40, iy + 40, 11, fill="", outline=p["texto"], width=TRACO_TINTA)
         c.create_text(ix + 20, iy + 20, text=self.SIMBOLOS.get(item["tipo"], "•"), fill="white",
                       font=(FONTE, 14))
         tx = ix + 52
@@ -1696,7 +1746,7 @@ def montar_banner_caderno(cartaz, largura, altura, fundo, papel, tinta, sombra, 
     folga, raio = 5 * S, 22 * S
     d.rounded_rectangle((folga, folga, W - 1, H - 1), raio, fill=_cor_rgb(sombra))
     d.rounded_rectangle((0, 0, W - 1 - folga, H - 1 - folga), raio, fill=_cor_rgb(papel), outline=_cor_rgb(tinta),
-                        width=2 * S)
+                        width=round(TRACO_IMAGEM * S))
     # o cartaz, com contorno de tinta
     cartaz = cartaz.convert("RGB")
     margem = max(16, altura // 11) * S
@@ -1706,7 +1756,7 @@ def montar_banner_caderno(cartaz, largura, altura, fundo, papel, tinta, sombra, 
         largo = int(W * 0.42)
         alto = max(1, round(cartaz.height * largo / cartaz.width))
     peca = cartaz.resize((largo, alto), Image.LANCZOS).convert("RGBA")
-    ImageDraw.Draw(peca).rectangle((0, 0, largo - 1, alto - 1), outline=_cor_rgb(tinta), width=2 * S)
+    ImageDraw.Draw(peca).rectangle((0, 0, largo - 1, alto - 1), outline=_cor_rgb(tinta), width=round(TRACO_IMAGEM * S))
     giro = -2.5
     torta = peca.rotate(giro, resample=Image.BICUBIC, expand=True)
     sombra_peca = Image.new("RGBA", peca.size, _cor_rgb(sombra) + (255,)).rotate(giro, resample=Image.BICUBIC,
@@ -1861,8 +1911,8 @@ def montar_cartao_caderno(dados, largura, altura, capa_h, fundo, papel, tinta, s
     ImageDraw.Draw(mascara).rounded_rectangle(caixa, raio, fill=255)
     mascara.paste(0, (0, M + CH, total.width, total.height))
     total.paste(capa, (M, M), mascara.crop((M, M, M + W, M + CH)))
-    d.line(_linha_tremida(M, M + W - 1, M + CH, amplitude=1.3 * S, passo=16 * S), fill=_cor_rgb(tinta), width=2 * S)
-    d.rounded_rectangle(caixa, raio, outline=_cor_rgb(tinta), width=2 * S)
+    d.line(_linha_tremida(M, M + W - 1, M + CH, amplitude=1.3 * S, passo=16 * S), fill=_cor_rgb(tinta), width=round(TRACO_IMAGEM * S))
+    d.rounded_rectangle(caixa, raio, outline=_cor_rgb(tinta), width=round(TRACO_IMAGEM * S))
     return total.resize((largura + 2 * margem, altura + 2 * margem), Image.LANCZOS).convert("RGB")
 
 
@@ -2096,7 +2146,7 @@ class Programacao:
         ls = fonte_selo.measure(texto_selo) + 22
         if caderno:  # etiqueta de tinta
             BarraSessao._retangulo(c, x, y, x + ls, y + 22, 11, fill=tom(p["superficie"]), outline=tom(p["texto"]),
-                                   width=1.5)
+                                   width=TRACO_TINTA)
             c.create_text(x + ls / 2, y + 11, text=texto_selo, fill=tom(p["texto"]), font=fonte_selo)
         else:
             violeta = "#8b5cf6"
@@ -2153,7 +2203,7 @@ class Programacao:
                 tag = f"seta{alvo}_{xs}"
                 if caderno:
                     BarraSessao._retangulo(c, xs, meio_y - 15, xs + 30, meio_y + 15, 10, fill=p["superficie"],
-                                           outline=p["texto"], width=1.5, tags=tag)
+                                           outline=p["texto"], width=TRACO_TINTA, tags=tag)
                     c.create_text(xs + 15, meio_y, text=glifo, font=("Segoe MDL2 Assets", 8), fill=p["texto"], tags=tag)
                 else:
                     BarraSessao._retangulo(c, xs, meio_y - 15, xs + 30, meio_y + 15, 10, fill="#3f3f46", outline="", tags=tag)
@@ -2296,7 +2346,7 @@ class TelaApps:
         c.delete("fundo")
         c.config(bg=p["fundo"])
         if self._caderno():  # contorno de tinta, mais forte com o foco
-            borda, t = p["texto"] if self._foco_busca else p["texto2"], 2
+            borda, t = p["texto"] if self._foco_busca else p["texto2"], TRACO_TINTA
         else:
             borda, t = (misturar(AZUL, p["fundo"], 0.7) if self._foco_busca else p["borda"]), 1
         BarraSessao._retangulo(c, 0, 0, 269, 35, 12, fill=borda, outline="", tags="fundo")
@@ -2447,10 +2497,10 @@ class TelaApps:
         glifo = icone_da_categoria(categoria)
         if caderno:  # selo e ícone de tinta: etiqueta de papel colada na capa
             BarraSessao._retangulo(cv, M + 10, M + 10, M + 10 + larg, M + 30, 8, fill=p["superficie"],
-                                   outline=p["texto"], width=1.5)
+                                   outline=p["texto"], width=TRACO_TINTA)
             cv.create_text(M + 10 + larg / 2, M + 20, text=texto_selo, fill=p["texto"], font=fonte_selo)
             BarraSessao._retangulo(cv, M + 12, y_ic, M + 48, y_ic + 36, 11, fill=misturar(cor, p["superficie"], 0.3),
-                                   outline=p["texto"], width=2)
+                                   outline=p["texto"], width=TRACO_TINTA)
             cv.create_text(M + 30, y_ic + 18, text=glifo or letra, fill=p["texto"],
                            font=("Segoe MDL2 Assets", 12) if glifo else (FONTE, 13, "bold"))
         else:
@@ -2473,7 +2523,7 @@ class TelaApps:
         descricao = (a.get("descricao") or "").strip() or (categoria if categoria != "Outros" else "Aplicativo")
         cv.create_text(M + 14, M + CH + 26, anchor="nw", text=nome, fill=p["texto"], width=W - 28,
                        font=(FONTE, 10 + e, "bold"))
-        cv.create_text(M + 14, M + CH + 46 + e * 2, anchor="nw", text=cortar_linhas(descricao, fonte_desc, W - 28),
+        cv.create_text(M + 14, M + CH + 46 + e * 2, anchor="nw", text=cortar_linhas(descricao, fonte_desc, W - 28, 1 if e else 2),
                        fill=p["texto2"], font=fonte_desc)
         aberto = (a.get("processo") or "").strip().lower() in self.abertos
         rotulo = "Aberto" if aberto else "Pronto"
@@ -2551,7 +2601,8 @@ class TelaApps:
                 else:
                     BarraSessao._retangulo(cv, 0, 0, w - 4, h - 4, 12, fill=p["texto" if chave == sobre else "texto2"],
                                            outline="")
-                    BarraSessao._retangulo(cv, 2, 2, w - 6, h - 6, 10,
+                    t = TRACO_TINTA
+                    BarraSessao._retangulo(cv, t, t, w - 4 - t, h - 4 - t, 12 - t,
                                            fill=p["superficie2"] if chave == sobre else p["superficie"], outline="")
                     cor_texto = p["texto"] if chave == sobre else p["texto2"]
                 cv.create_text((w - 4) / 2, (h - 4) / 2, text=texto, fill=cor_texto, font=fonte)
@@ -3439,7 +3490,8 @@ def _linha_menu_caderno(cv, largura, altura, rotulo, icone, aberto, escolhido, s
         borda = misturar(p["texto"], p["fundo"], nivel)
         fundo_item = misturar(p["superficie2"], p["fundo"], max(escolhido, sobre))
         BarraSessao._retangulo(cv, 0, 0, w, h, 12, fill=borda, outline="")
-        BarraSessao._retangulo(cv, 2, 2, w - 2, h - 2, 10, fill=fundo_item, outline="")
+        t = TRACO_TINTA
+        BarraSessao._retangulo(cv, t, t, w - t, h - t, 12 - t, fill=fundo_item, outline="")
     cor_icone = misturar(p["texto"], cor or p["texto2"], escolhido)
     cor_texto = misturar(p["texto"], p["texto2"], max(escolhido, sobre))
     cv.create_text(22, h / 2, text=icone, font=("Segoe MDL2 Assets", 11), fill=cor_icone)
@@ -3532,9 +3584,9 @@ class MenuLateral:
         x = 16 if a >= 1 else 17 * (1 - a) + 16 * a  # (64 - 30) / 2 = 17 recolhido
         marca = "recolher" if not self.aberto else ""
         if getattr(self.app, "caderno", False):  # selo de tinta e traço feito à mão embaixo
-            c.create_line(*_linha_tremida(6, w - 6, 57, amplitude=1.1, semente=3.0), fill=p["texto"], width=2,
+            c.create_line(*_linha_tremida(6, w - 6, 57, amplitude=0.8, semente=3.0), fill=p["texto"], width=TRACO_TINTA,
                           smooth=True, capstyle="round")
-            c.create_oval(x, 15, x + 30, 45, fill=p["fundo"], outline=p["texto"], width=2, tags=marca)
+            c.create_oval(x, 15, x + 30, 45, fill=p["fundo"], outline=p["texto"], width=TRACO_TINTA + 0.5, tags=marca)
             c.create_text(x + 16, 30, text="M", fill=p["texto"], font=(FONTE, 11, "bold"), angle=-6, tags=marca)
         else:
             c.create_line(0, 59, w, 59, fill=p["borda"])
@@ -3730,13 +3782,15 @@ class PainelDireito:
         if caderno:  # papel com contorno de tinta e sombra dura
             BarraSessao._retangulo(c, 4, 4, W - 1, H - 1, 16, fill=p["superficie3"], outline="")
             BarraSessao._retangulo(c, 0, 0, W - 5, H - 5, 16, fill=tinta, outline="")
-            BarraSessao._retangulo(c, 2, 2, W - 7, H - 7, 14, fill=p["superficie"], outline="")
+            t = TRACO_TINTA
+            BarraSessao._retangulo(c, t, t, W - 5 - t, H - 5 - t, 16 - t, fill=p["superficie"], outline="")
         else:
             BarraSessao._retangulo(c, 0, 0, W - 1, H - 1, 16, fill=p["borda"], outline="")
             BarraSessao._retangulo(c, 1, 1, W - 2, H - 2, 15, fill=p["superficie"], outline="")
         # cliente: avatar em degradê, nome, estação, login e Online
         if caderno:  # avatar de tinta: círculo com a inicial
-            c.create_oval(18, 18, 58, 58, fill=misturar(p["destaque"], p["superficie"], 0.25), outline=tinta, width=2)
+            c.create_oval(18, 18, 58, 58, fill=misturar(p["destaque"], p["superficie"], 0.25), outline=tinta,
+                          width=TRACO_TINTA + 0.5)
         elif PIL_AVAILABLE:
             if self._avatar is None:
                 self._avatar = ImageTk.PhotoImage(avatar_degrade(40, 12, p["superficie"]))
@@ -3746,7 +3800,7 @@ class PainelDireito:
         c.create_text(38, 38, text=(self.nome[:1] or "?").upper(), fill=tinta if caderno else TEXTO_CLARO,
                       font=(FONTE, 12, "bold"))
         c.create_oval(50, 50, 62, 62, fill=EMERALD if self.online else COR_OFFLINE,
-                      outline=tinta if caderno else p["superficie"], width=2 if not caderno else 1.5)
+                      outline=tinta if caderno else p["superficie"], width=2 if not caderno else TRACO_TINTA)
         # nome inteiro se couber ao lado da estação e do Online; senão, o primeiro nome
         fonte_nome = tkfont.Font(family=FONTE, size=10, weight="bold")
         livre = W - 70 - 16 - 62 - tkfont.Font(family="Consolas", size=7).measure(self.app.estacao) - 18
@@ -3757,7 +3811,7 @@ class PainelDireito:
         estacao = self.app.estacao
         larg = fonte_mono.measure(estacao) + 10
         if caderno:
-            BarraSessao._retangulo(c, x, 22, x + larg, 38, 5, fill=p["superficie"], outline=tinta, width=1.5)
+            BarraSessao._retangulo(c, x, 22, x + larg, 38, 5, fill=p["superficie"], outline=tinta, width=TRACO_TINTA)
             c.create_text(x + larg / 2, 30, text=estacao, fill=tinta, font=fonte_mono)
         else:
             BarraSessao._retangulo(c, x, 22, x + larg, 38, 5, fill=misturar(AZUL, p["superficie"], 0.4), outline="")
@@ -3773,9 +3827,9 @@ class PainelDireito:
         if caderno:
             d = 4  # o card ficou 4 px mais estreito (a sombra)
             BarraSessao._retangulo(c, W - 16 - d - larg, 28, W - 16 - d, 48, 10, fill=misturar(cor, p["superficie"], 0.25),
-                                   outline=tinta, width=1.5)
+                                   outline=tinta, width=TRACO_TINTA)
             c.create_text(W - 16 - d - larg / 2, 38, text=rotulo, fill=tinta, font=fonte_chip)
-            c.create_line(*_linha_tremida(18, W - 22, 76, amplitude=1.0), fill=tinta, width=1.5, smooth=True)
+            c.create_line(*_linha_tremida(18, W - 22, 76, amplitude=0.7), fill=tinta, width=TRACO_TINTA, smooth=True)
         else:
             BarraSessao._retangulo(c, W - 16 - larg, 28, W - 16, 48, 10, fill=misturar(cor, p["superficie"], 0.45),
                                    outline="")
@@ -3788,7 +3842,7 @@ class PainelDireito:
         c.create_text(18, 126, anchor="w", text="00:00:00", fill=p["texto"], font=("Consolas", 22, "bold"), tags="tempo")
         c.create_text(18, 152, anchor="w", text="", fill=p["fraco"], font=(FONTE, 7), tags="inicio")
         if caderno:  # trilho de tinta com a barra na cor do piso dentro
-            c.create_line(18, 174, W - 22, 174, width=10, capstyle="round", fill=tinta)
+            c.create_line(18, 174, W - 22, 174, width=6 + 2 * TRACO_TINTA, capstyle="round", fill=tinta)
             c.create_line(18, 174, W - 22, 174, width=6, capstyle="round", fill=p["superficie"])
             c.create_line(18, 174, 19, 174, width=6, capstyle="round", fill=p["destaque"], tags="barra")
         else:
@@ -3861,8 +3915,9 @@ class PainelDireito:
                 y = (c.bbox(t) or (0, 0, 0, y + 14))[3]
             h = y + 14
             c.config(height=h)
-            t = 2 if getattr(self.app, "caderno", False) else 1  # contorno de tinta no Caderno
-            fundo = BarraSessao._retangulo(c, 0, 0, W - 1, h - 1, 12, fill=p["texto2" if t == 2 else "borda"],
+            caderno = getattr(self.app, "caderno", False)
+            t = TRACO_TINTA if caderno else 1  # contorno de tinta no Caderno
+            fundo = BarraSessao._retangulo(c, 0, 0, W - 1, h - 1, 12, fill=p["texto" if caderno else "borda"],
                                            outline="")
             dentro = BarraSessao._retangulo(c, t, t, W - 1 - t, h - 1 - t, 12 - t, fill=p["superficie"], outline="")
             c.tag_lower(dentro)
@@ -3920,6 +3975,13 @@ class PaginaPreferencias:
             cv.delete("all")
             cv.config(bg=p["fundo"])
             sim = ativo()
+            if getattr(self.app, "caderno", False):  # o escolhido cheio de tinta com sombra; os outros, contorno
+                if sim:
+                    BarraSessao._retangulo(cv, 3, 3, 109, 35, 12, fill=p["destaque"], outline="")
+                BarraSessao._retangulo(cv, 0, 0, 105, 31, 12, fill=p["texto"] if sim else p["superficie"],
+                                       outline=p["texto"], width=TRACO_TINTA)
+                cv.create_text(53, 16, text=rotulo, fill=p["fundo"] if sim else p["texto"], font=(FONTE, 9, "bold"))
+                continue
             BarraSessao._retangulo(cv, 0, 0, 109, 35, 12, fill=AZUL if sim else p["borda"], outline="")
             BarraSessao._retangulo(cv, 1, 1, 108, 34, 11, fill=AZUL if sim else p["superficie"], outline="")
             cv.create_text(55, 18, text=rotulo, fill=TEXTO_CLARO if sim else p["texto2"], font=(FONTE, 9, "bold"))
@@ -4339,7 +4401,7 @@ class AgenteApp:
             cv.delete("fundo")
             cv.config(bg=p["fundo"])
             if self.caderno:  # contorno de tinta, mais forte com o foco
-                borda, fina = (p["texto"] if estado["foco"] else p["texto2"]), 2
+                borda, fina = (p["texto"] if estado["foco"] else p["texto2"]), TRACO_TINTA + (1 if estado["foco"] else 0)
             else:
                 borda, fina = (misturar(AZUL, p["fundo"], 0.75) if estado["foco"] else p["borda"]), 1
             BarraSessao._retangulo(cv, 0, 0, w - 1, 43, 12, fill=borda, outline="", tags="fundo")
@@ -4365,7 +4427,7 @@ class AgenteApp:
         c.delete("all")
         c.config(bg=p["fundo"])
         if self.caderno:  # um selo redondo desenhado a tinta
-            c.create_oval(1, 3, 33, 35, fill=p["fundo"], outline=p["texto"], width=2)
+            c.create_oval(1, 3, 33, 35, fill=p["fundo"], outline=p["texto"], width=TRACO_TINTA + 0.5)
             c.create_text(17, 19, text="M", fill=p["texto"], font=(FONTE, 13, "bold"), angle=-6)
         else:
             BarraSessao._retangulo(c, 0, 4, 32, 36, 10, fill=AZUL, outline="")

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-18 — Traços mais finos, dock mais legível e notificações que fecham ao clicar fora (agente 1.32.0)
+
+- Estilo Caderno: os traços de tinta ficaram mais finos (1 px nas telas, 1,5 px nos cards e no banner), a começar pelo traço entre o dock e o resto da tela.
+- Dock (todos os estilos): ícones dos apps maiores; sininho, relógio e o sol/lua do tema maiores e na cor cheia do texto (no tema claro quase não apareciam).
+- Notificações: a pilha aberta fecha com um clique em qualquer lugar fora dela, até em outro programa (o sininho continua abrindo e fechando).
+- Configurações → Tamanho do texto dos apps: os botões ficam em tinta no Caderno. Corrigido: no **Grande**, a descrição em duas linhas encostava no "Pronto" do card; agora fica em uma linha, cortada com "…".
+
 ## 2026-11-18 — Dock sai da frente em tela cheia (agente 1.31.0)
 
 - O dock não fica mais por cima de vídeo, jogo ou página em tela cheia (F11, botão de tela cheia do YouTube etc.): quando o programa em foco cobre a tela inteira, o dock some, como a barra do Windows faz, e volta ao sair da tela cheia (em até 1 segundo). Janela só maximizada não conta (ela já para em cima do dock).
