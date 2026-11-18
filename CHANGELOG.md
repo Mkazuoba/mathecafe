@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-18 — Área do cliente no estilo Caderno (agente 1.30.0)
+
+- Com o estilo **Caderno (teste)**, o dock da sessão também vira papel e tinta. Em cima da barra fica um traço de tinta feito à mão, e o botão **Início** vira o selo redondo com "M", igual ao do login.
+- As abas (Meus arquivos e os apps abertos) ganham contorno de tinta e sombra dura deslocada. A aba do app em foco tem a sombra na cor do piso, e passar o mouse pinta o contorno com essa cor. O balão com o nome do app fica em tinta.
+- No bloco da direita, o sininho, o relógio com o tempo, o botão de tema e **Encerrar sessão** ganham contorno de tinta.
+- **Cards dos apps** no Caderno: papel com contorno de tinta e sombra dura, que fica na cor da categoria com o mouse em cima; um traço tremido separa a capa do rodapé. A foto da capa aparece como é (sem escurecer). Sem capa, a capa vira papel tingido com a cor da categoria, com a inicial do app em tinta e um rabisco (chama, estrela, coração, raio ou brilho; cards vizinhos nunca repetem).
+- Selo da categoria e ícone viram etiquetas de tinta; **Abrir** vira uma pílula de tinta com sombra na cor do piso. As pílulas das categorias (a escolhida cheia de tinta, com sombra), a pesquisa e o contador "N liberados" também ficam em tinta.
+- **Menu da esquerda**: selo de tinta no lugar do "M" azul, com um traço feito à mão embaixo da marca. O item escolhido ganha contorno de tinta com sombra dura na cor do piso; o mouse em cima acende um contorno mais fraco (o fade de antes continua). Os contadores ficam em tinta.
+- **Painel da direita**: o card da sessão vira papel com contorno de tinta e sombra dura; o avatar vira um círculo de tinta com a inicial; as etiquetas da estação e do Online ficam em tinta; a barra do tempo vira um trilho de tinta com a cor do piso dentro (rosa nos 5 minutos finais). Os avisos ganham contorno de tinta.
+- **Banner da Programação**: no lugar do cartaz desfocado ao fundo, uma folha de papel com contorno de tinta e sombra dura, com o cartaz colado à direita (um pouco torto, com contorno, sombra e dois pedaços de fita na cor do piso) e dois rabiscos entre o texto e o cartaz. Título, descrição e créditos em tinta; o botão de inscrição vira pílula de tinta com sombra na cor do piso; setas e bolinhas também em tinta. A troca de cartaz com fade continua.
+- **Notificações**: cabeçalho e cartões com contorno de tinta, ícone com contorno, e a etiqueta "N novas" e a bolinha de não lida na cor do piso.
+- Funciona no tema claro e no escuro. Sem o Caderno, tudo continua igual.
+- Vai no **agente 1.30.0** (liberado: atualize as estações pelo painel). Com a 1.29 a estação no Caderno muda só o login.
+- Corrigido (vale para todos os estilos): app com capa que o agente não consegue ler (SVG, por exemplo) ficava sem a inicial grande no card; agora conta como sem capa.
+
 ## 2026-11-17 — Filtro por estado, confirmação na fila e erro no histórico por estação (painel)
 
 - Os chips **Livres, Ocupadas, Desligadas e Em manutenção** da barra de cima viraram filtro do **Controle de sessões**: clicar mostra só as estações nesse estado (somando ao filtro de grupo); clicar de novo, ou no "Mostrar todas" da lista vazia, tira o filtro. O chip escolhido ganha um contorno e um ×, e os outros ficam apagados. O rodapé da tabela continua contando o grupo inteiro. O filtro não fica gravado: ao recarregar, volta a mostrar todas.

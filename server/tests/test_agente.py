@@ -1406,6 +1406,128 @@ def test_caderno_bichinho_clicado_se_mexe_e_volta_ao_lugar():
     assert ns["_bicho_no_ponto"](bichos, 95, 5) is None
 
 
+def test_caderno_linha_tremida_do_dock():
+    # 18/11: no Caderno o topo do dock é um traço de tinta tremido, sempre igual
+    import math as _math
+    ns = {"math": _math}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if isinstance(no, ast.FunctionDef) and no.name in ("_hash_caderno", "_linha_tremida")]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    linha = ns["_linha_tremida"](0, 1000, 2, amplitude=1.2)
+    xs, ys = linha[0::2], linha[1::2]
+    assert xs[0] == 0 and xs[-1] == 1000 and xs == sorted(xs) and len(xs) > 20
+    assert all(0.8 <= y <= 3.2 for y in ys) and len(set(ys)) > 5  # treme, mas não sai da faixa
+    assert linha == ns["_linha_tremida"](0, 1000, 2, amplitude=1.2)  # não pisca entre redesenhos
+    fonte = _fonte()
+    dock = fonte[fonte.index("class BarraSessao"):fonte.index("class Notificacoes")]
+    assert "caderno" in dock and "_linha_tremida(" in dock
+
+
+def test_caderno_cards_dos_apps():
+    # 18/11: no Caderno os cards são papel e tinta; sem capa, cada app ganha um rabisco fixo
+    import hashlib as _hashlib
+    import math as _math
+    ns = {"math": _math, "hashlib": _hashlib}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if (isinstance(no, ast.FunctionDef) and no.name in ("_hash_caderno", "_rabisco_do_app"))
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") in ("_CADERNO_RABISCOS", "_CADERNO_ACENTO")
+                                                    for t in no.targets))]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    rabisco = ns["_rabisco_do_app"]
+    escolhidos = [rabisco(i) for i in range(12)]
+    assert all(r in ns["_CADERNO_RABISCOS"] for r in escolhidos)
+    assert escolhidos == [rabisco(i) for i in range(12)]  # sempre o mesmo para o mesmo app
+    assert all(a != b for a, b in zip(escolhidos, escolhidos[1:]))  # vizinhos nunca repetem
+    assert len(set(escolhidos[:4])) == 4
+    fonte = _fonte()
+    tela = fonte[fonte.index("class TelaApps"):fonte.index("class TelaLogin")]
+    assert "montar_cartao_caderno(" in tela and "caderno" in tela
+
+
+def test_caderno_menu_da_esquerda_e_painel_da_direita():
+    # 18/11: no Caderno o item escolhido do menu tem contorno de tinta e sombra na cor do piso
+    import math as _math
+
+    class _Canvas:
+        def __init__(self):
+            self.poligonos = []
+
+        def delete(self, *a):
+            self.poligonos = []
+
+        def config(self, **k):
+            pass
+
+        def create_polygon(self, *pts, **k):
+            self.poligonos.append(k)
+
+        def create_text(self, *a, **k):
+            pass
+
+    ns = {"math": _math}
+    corpo = [no for no in ast.parse(_fonte()).body
+             if (isinstance(no, ast.FunctionDef) and no.name in ("_linha_menu", "_linha_menu_caderno", "misturar"))
+             or (isinstance(no, ast.ClassDef) and no.name == "BarraSessao")
+             or (isinstance(no, ast.Assign) and any(getattr(t, "id", "") == "FONTE" for t in no.targets))]
+    ns["AZUL"], ns["AZUL_CLARO"] = "#2563eb", "#3b82f6"
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    p = {"fundo": "#ffffff", "superficie": "#fbfaf7", "superficie2": "#f3f1ec", "superficie3": "#d9d5cc",
+         "borda": "#e6e2da", "texto": "#0d0d0d", "texto2": "#4d4a45", "fraco": "#8a857c",
+         "destaque": "#7c3aed", "destaque_forte": "#6d28d9"}
+    cv = _Canvas()
+    ns["_linha_menu"](cv, 200, 38, "Início", "x", 1, 1, 0, p, caderno=True)
+    cores = [k.get("fill") for k in cv.poligonos]
+    assert p["destaque"] in cores and p["texto"] in cores  # sombra na cor do piso e contorno de tinta
+    ns["_linha_menu"](cv, 200, 38, "Início", "x", 1, 0, 0, p, caderno=True)
+    assert cv.poligonos == []  # parado e não escolhido: só o texto
+    ns["_linha_menu"](cv, 200, 38, "Início", "x", 1, 1, 0, p)  # fora do Caderno, nada de tinta
+    assert p["texto"] not in [k.get("fill") for k in cv.poligonos]
+    fonte = _fonte()
+    menu = fonte[fonte.index("class MenuLateral"):fonte.index("class PaginaPreferencias")]
+    assert menu.count("caderno") >= 4  # menu (topo e linhas) e painel da direita (card e avisos)
+
+
+def test_caderno_banner_da_programacao_e_notificacoes():
+    # 18/11: no Caderno o banner é uma folha com o cartaz colado; as notificações, em tinta
+    fonte = _fonte()
+    assert "def montar_banner_caderno(" in fonte
+    prog = fonte[fonte.index("class Programacao"):fonte.index("class TelaApps")]
+    assert "montar_banner_caderno(" in prog and prog.count("caderno") >= 3  # o banner, os textos e os botões
+    # o banner pronto fica guardado por tamanho e cor; o estilo também entra na chave
+    quadro = prog[prog.index("    def _quadro("):prog.index("    def _exibir(")]
+    assert "caderno" in quadro
+    notif = fonte[fonte.index("class Notificacoes"):fonte.index("def montar_banner(")]
+    assert notif.count("caderno") >= 2  # cabeçalho/pilha e o cartão
+
+
+def test_capa_que_o_pillow_nao_le_conta_como_sem_capa():
+    # 18/11: capa em SVG (o Pillow não lê) deixava o card sem a inicial grande
+    import io as _io
+
+    class _Imagem:
+        def __init__(self, dados):
+            if dados.lstrip().startswith(b"<svg"):
+                raise OSError("cannot identify image file")
+
+        def verify(self):
+            pass
+
+    class _Image:
+        @staticmethod
+        def open(f):
+            return _Imagem(f.read())
+
+    ns = {"Image": _Image, "BytesIO": _io.BytesIO}
+    corpo = [no for no in ast.parse(_fonte()).body if isinstance(no, ast.FunctionDef) and no.name == "capa_legivel"]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    assert ns["capa_legivel"](b"\x89PNG....") is True
+    assert ns["capa_legivel"](b"<svg xmlns='http://www.w3.org/2000/svg'/>") is False
+    assert ns["capa_legivel"](None) is False and ns["capa_legivel"](...) is False
+    fonte = _fonte()
+    cartao = fonte[fonte.index("    def _desenhar_cartao("):fonte.index("    def _sobre(")]
+    assert "capa_legivel(" in cartao
+
+
 def test_caderno_bichinhos_se_mexem_de_leve_o_tempo_todo():
     # 18/11: parados eles respiram/balançam; o clique soma o pulo por cima
     import math as _math
