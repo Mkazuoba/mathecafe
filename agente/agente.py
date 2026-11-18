@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.30.0"
+VERSAO = "1.31.0"
 
 import asyncio
 import json
@@ -428,6 +428,41 @@ def janela_em_foco():
     return _u32.GetForegroundWindow() if _u32 else None
 
 
+def cobre_a_tela(ret, largura, altura):
+    """A janela (esquerda, topo, direita, baixo) cobre a tela inteira? Tela
+    cheia (vídeo, jogo, F11) sim; maximizada não: ela para em cima do dock."""
+    esq, topo, dir_, baixo = ret
+    return dir_ > esq and esq <= 0 and topo <= 0 and dir_ >= largura and baixo >= altura
+
+
+def app_em_tela_cheia():
+    """A janela em foco é de outro programa e está em tela cheia? (A área de
+    trabalho e as janelas do próprio agente não contam.)"""
+    if _u32 is None:
+        return False
+    hwnd = _u32.GetForegroundWindow()
+    if not hwnd:
+        return False
+    pid = ctypes.c_ulong()
+    _u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if pid.value == os.getpid():
+        return False
+    classe = ctypes.create_unicode_buffer(256)
+    _u32.GetClassNameW(hwnd, classe, 256)
+    # área de trabalho, barras e as janelas do próprio Windows que cobrem a tela
+    # (Iniciar, pesquisa, central de notificações: Windows.UI.Core.CoreWindow)
+    if classe.value in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow"):
+        return False
+    try:
+        if _camuflada(hwnd):
+            return False
+    except Exception:
+        pass
+    r = _wt.RECT()
+    _u32.GetWindowRect(hwnd, ctypes.byref(r))
+    return cobre_a_tela((r.left, r.top, r.right, r.bottom), _u32.GetSystemMetrics(0), _u32.GetSystemMetrics(1))
+
+
 # ── Tema (o cliente escolhe na tela do agente) ───────────────────────────────
 # Mesmas chaves nas duas; dentro de cada uma, sem cores repetidas (a troca
 # substitui cada cor da paleta antiga pela da nova, widget por widget).
@@ -742,6 +777,7 @@ class BarraSessao:
         self.app = app
         p = app.paleta
         self.altura = self.ALTURA
+        self.tela_cheia = False  # um app em tela cheia na frente: o dock fica escondido
         self.top = tk.Toplevel(app.root)
         self.top.withdraw()
         self.top.overrideredirect(True)
@@ -865,6 +901,17 @@ class BarraSessao:
         if self.app._sessao_pausada:
             self.top.withdraw()
             self.balao.withdraw()
+            return
+        tela_cheia = app_em_tela_cheia()
+        if tela_cheia != self.tela_cheia:
+            self.tela_cheia = tela_cheia
+            self.app._log("Dock: " + ("app em tela cheia, dock escondido" if tela_cheia else "dock de volta"))
+        if tela_cheia:  # vídeo, jogo ou F11: o dock sai da frente, como a barra do Windows
+            if self.top.state() != "withdrawn":
+                self.top.withdraw()
+                self.balao.withdraw()
+            if barra_do_windows_visivel():
+                barra_do_windows(False)
             return
         if self.top.state() == "withdrawn":
             self.top.deiconify()

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-18 — Dock sai da frente em tela cheia (agente 1.31.0)
+
+- O dock não fica mais por cima de vídeo, jogo ou página em tela cheia (F11, botão de tela cheia do YouTube etc.): quando o programa em foco cobre a tela inteira, o dock some, como a barra do Windows faz, e volta ao sair da tela cheia (em até 1 segundo). Janela só maximizada não conta (ela já para em cima do dock).
+- A área de trabalho, as janelas do próprio agente e as do Windows que cobrem a tela (Iniciar, pesquisa, central de notificações) não escondem o dock.
+- As notificações continuam aparecendo por cima (avisos de tempo acabando e de fechamento).
+- Vai no **agente 1.31.0** (liberado: atualize as estações pelo painel).
+
 ## 2026-11-18 — Área do cliente no estilo Caderno (agente 1.30.0)
 
 - Com o estilo **Caderno (teste)**, o dock da sessão também vira papel e tinta. Em cima da barra fica um traço de tinta feito à mão, e o botão **Início** vira o selo redondo com "M", igual ao do login.

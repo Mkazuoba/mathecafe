@@ -1406,6 +1406,28 @@ def test_caderno_bichinho_clicado_se_mexe_e_volta_ao_lugar():
     assert ns["_bicho_no_ponto"](bichos, 95, 5) is None
 
 
+def test_dock_some_com_app_em_tela_cheia():
+    # 18/11: o dock ficava por cima de vídeo e de conteúdo em tela cheia
+    ns = {}
+    corpo = [no for no in ast.parse(_fonte()).body if isinstance(no, ast.FunctionDef) and no.name == "cobre_a_tela"]
+    exec(compile(ast.Module(body=corpo, type_ignores=[]), AGENTE, "exec"), ns)
+    cobre = ns["cobre_a_tela"]
+    W, H = 1366, 768
+    assert cobre((0, 0, W, H), W, H)  # vídeo em tela cheia
+    assert cobre((-2, -2, W + 2, H + 2), W, H)  # com borda sobrando
+    assert not cobre((-8, -8, W + 8, H - 40), W, H)  # maximizada: para em cima do dock
+    assert not cobre((100, 100, 900, 600), W, H)  # janela comum
+    assert not cobre((0, 0, 0, 0), W, H)
+    fonte = _fonte()
+    manter = fonte[fonte.index("    def manter(self):"):]
+    manter = manter[:manter.index("\n    def ", 10)]
+    assert "tela_cheia" in manter  # o dock confere antes de voltar para a frente
+    # janelas do próprio Windows que cobrem a tela (Iniciar, pesquisa, central) não contam
+    funcao = fonte[fonte.index("def app_em_tela_cheia("):]
+    funcao = funcao[:funcao.index("\ndef ", 5)]
+    assert "Windows.UI.Core.CoreWindow" in funcao and "_camuflada(" in funcao
+
+
 def test_caderno_linha_tremida_do_dock():
     # 18/11: no Caderno o topo do dock é um traço de tinta tremido, sempre igual
     import math as _math
