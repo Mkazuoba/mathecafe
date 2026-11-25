@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-25 — Instalador do servidor com tela (10.14)
+
+- `server\gerar_instalador_servidor.bat` gera o `MatheCafe-Servidor-Instalador.exe` (pede administrador), no mesmo visual e com as mesmas peças do instalador das estações: pasta e porta, backup do banco para trazer os dados de outro servidor (o banco que já estava na pasta é guardado com outro nome), cópia extra do backup, administrador, e então Python, bibliotecas, `.env`, tarefa `MatheCafe-Servidor` e firewall, conferindo que o servidor subiu. No fim mostra o endereço para as estações.
+- Reinstalar troca só o programa (banco, `.env`, chave, backups e logs ficam); desinstalar mantém os dados, a não ser que marque.
+- `python -m app.cli --login X --nome Y` cria (ou troca a senha de) um admin sem perguntar; a senha vem de `MATHECAFE_SENHA_ADMIN`, nunca da linha de comando.
+
 ## 2026-11-25 — Avisos com data e hora (9.19)
 
 - Programação e avisos → Avisos: cada aviso pode ter **Mostrar a partir de** e **Até** (dia e hora). Fora do período ele não vai aos PCs; o servidor confere a cada minuto e, quando um aviso entra ou sai do ar, as estações recarregam os avisos sozinhas.

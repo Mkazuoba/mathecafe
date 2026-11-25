@@ -192,14 +192,14 @@ class Execucao:
         self.destino = os.path.join(tempfile.gettempdir(), "MatheCafe-simulado") if simular else DESTINO
 
     # ── ferramentas ──
-    def rodar(self, comando, env=None, timeout=900):
+    def rodar(self, comando, env=None, timeout=900, cwd=None):
         """Um comando do Windows, sem janela. Devolve (código, saída)."""
         if self.simular:
             time.sleep(0.35)
             return 0, ""
         try:
             r = subprocess.run(comando, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               creationflags=SEM_JANELA, env=env, timeout=timeout)
+                               creationflags=SEM_JANELA, env=env, timeout=timeout, cwd=cwd)
             return r.returncode, (r.stdout or "") + (r.stderr or "")
         except (OSError, subprocess.TimeoutExpired) as e:
             return 1, str(e)
@@ -596,6 +596,7 @@ class Campo:
 
 class Instalador:
     LARGURA, ALTURA = 860, 580
+    SUBTITULO = "Instalador do agente"  # o do servidor (server/instalador_servidor.py) troca
     ETAPAS_INSTALAR = ["Início", "Servidor", "Estação", "Instalação", "Pronto"]
     ETAPAS_DESINSTALAR = ["Início", "Confirmar", "Desinstalação", "Pronto"]
 
@@ -638,7 +639,7 @@ class Instalador:
         retangulo(c, 24, 26, 58, 60, 10, fill=AZUL, outline="")
         c.create_text(41, 43, text="M", fill=TEXTO_CLARO, font=(FONTE, 13, "bold"))
         c.create_text(70, 35, anchor="w", text="MatheCafé", fill=TEXTO, font=(FONTE, 11, "bold"))
-        c.create_text(70, 52, anchor="w", text="Instalador do agente", fill=TEXTO2, font=(FONTE, 8))
+        c.create_text(70, 52, anchor="w", text=self.SUBTITULO, fill=TEXTO2, font=(FONTE, 8))
         c.create_text(24, 104, anchor="w", text="DESINSTALAR" if self.modo == "desinstalar" else "INSTALAR",
                       fill=FRACO, font=(FONTE, 7, "bold"))
         etapas = self.ETAPAS_DESINSTALAR if self.modo == "desinstalar" else self.ETAPAS_INSTALAR

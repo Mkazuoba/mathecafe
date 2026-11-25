@@ -3135,3 +3135,18 @@ def test_aviso_com_periodo_some_sozinho(c, admin):
     assert "mudou_o_que_aparece" in inspect.getsource(principal._batimento)
     for a in (no_ar, futuro, passado, sempre):
         c.delete(f"/api/avisos/{a['id']}", headers=admin)
+
+
+def test_cli_cria_admin_sem_perguntar(c, monkeypatch, capsys):
+    # O instalador do servidor cria o admin sem terminal: login e nome nos
+    # argumentos, senha numa variavel de ambiente (nunca na linha de comando)
+    from app import cli
+    monkeypatch.setenv("MATHECAFE_SENHA_ADMIN", "curta")
+    assert cli.main(["--login", "admin.instalador", "--nome", "Coordenacao"]) == 1
+    monkeypatch.setenv("MATHECAFE_SENHA_ADMIN", "senha-do-instalador")
+    assert cli.main(["--login", "admin.instalador", "--nome", "Coordenacao"]) == 0
+    _login(c, "admin.instalador", "senha-do-instalador")
+    # de novo (reinstalar): troca a senha em vez de falhar
+    monkeypatch.setenv("MATHECAFE_SENHA_ADMIN", "senha-nova-do-inst")
+    assert cli.main(["--login", "admin.instalador", "--nome", "Coordenacao"]) == 0
+    _login(c, "admin.instalador", "senha-nova-do-inst")

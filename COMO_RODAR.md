@@ -41,6 +41,17 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### Servidor de produção (máquina da biblioteca)
 
+**Pelo instalador (recomendado numa máquina nova):** gere o `MatheCafe-Servidor-Instalador.exe` neste computador com `server\gerar_instalador_servidor.bat` (sai em `server\dist`; gere de novo depois de cada liberação) e leve só ele. Na máquina do servidor, abra como administrador e siga as telas:
+
+1. **Pasta e porta** (padrão `C:\MatheCafe\Servidor` e 8000).
+2. **Dados**, opcional: escolha um backup do banco (um `.db` de `serverackups` do servidor antigo) para começar com todos os clientes, estações e históricos, e a pasta da cópia extra do backup.
+3. **Administrador**: obrigatório só sem backup e sem banco na pasta; com backup, preencha só para criar outro ou trocar a senha de um login.
+4. Ele baixa o Python e as bibliotecas (precisa de internet), cria a tarefa `MatheCafe-Servidor`, libera a porta no firewall, confere que o servidor subiu e mostra o **endereço para as estações**.
+
+Reinstalar (o mesmo `.exe`, ou a cópia que fica na pasta) atualiza o programa e mantém banco, `.env`, chave, backups e logs. Desinstalar tira a tarefa, o firewall e o programa; o banco e os backups só saem se marcar. Estações já instaladas: na manutenção, **Configurar conexão** com o endereço novo.
+
+**À mão (como este computador foi instalado):**
+
 Para o servidor subir sozinho quando a máquina liga, sem terminal aberto: abra o PowerShell **como Administrador** na pasta `server` e rode
 
 ```bash
