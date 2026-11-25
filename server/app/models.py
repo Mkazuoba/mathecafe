@@ -218,6 +218,9 @@ class AvisoBiblioteca(Base):
     # 9.13: alerta (âmbar), evento (violeta) ou info (azul); horário livre ("16:00")
     tipo = Column(String(12), default="info")
     horario = Column(String(20), nullable=True)
+    # 9.19: periodo em que aparece (hora de Brasilia, sem fuso); vazio = sem limite
+    mostrar_de = Column(DateTime, nullable=True)
+    mostrar_ate = Column(DateTime, nullable=True)
 
 
 class AcaoOperador(Base):

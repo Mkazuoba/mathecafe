@@ -3085,3 +3085,53 @@ def test_grupo_de_operadores_limitado_a_pisos(c, admin, cenario):
             assert res[inf_estacao] == "ok" and res[cenario["estacao"]] != "ok"
             assert c.post(f"/api/sessoes/encerrar/{sessao_inf}", headers=op).status_code == 200
             assert c.post(f"/api/sessoes/encerrar/{sessao_adulto}", headers=admin).status_code == 200
+
+
+def test_aviso_com_periodo_some_sozinho(c, admin):
+    # 9.19: cada aviso pode ter inicio e fim (data e hora de Brasilia); fora do
+    # periodo nao vai ao PC, e o batimento avisa os agentes quando entra ou sai
+    from app.routers import avisos as rota
+    from app.config import get_settings  # noqa: F401  (so para garantir o app carregado)
+    from app.routers.config import _agora_br
+    agora = _agora_br().replace(second=0, microsecond=0)
+    fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M")
+    hora = timedelta(hours=1)
+
+    no_ar = c.post("/api/avisos/", headers=admin, json={
+        "titulo": "Oficina hoje", "mostrar_de": fmt(agora - hora), "mostrar_ate": fmt(agora + hora)}).json()
+    assert no_ar["situacao"] == "no_ar" and no_ar["mostrar_ate"] == fmt(agora + hora)
+    futuro = c.post("/api/avisos/", headers=admin, json={"titulo": "Feriado", "mostrar_de": fmt(agora + hora)}).json()
+    assert futuro["situacao"] == "agendado"
+    passado = c.post("/api/avisos/", headers=admin, json={"titulo": "Ontem", "mostrar_ate": fmt(agora - hora)}).json()
+    assert passado["situacao"] == "encerrado"
+    sempre = c.post("/api/avisos/", headers=admin, json={"titulo": "Wi-Fi"}).json()
+    assert sempre["situacao"] == "no_ar" and sempre["mostrar_de"] is None and sempre["mostrar_ate"] is None
+    # fim antes do inicio: recusado
+    assert c.post("/api/avisos/", headers=admin, json={
+        "titulo": "x", "mostrar_de": fmt(agora + hora), "mostrar_ate": fmt(agora)}).status_code == 400
+
+    ids = {a["id"] for a in c.get("/api/avisos/agente").json()}
+    assert no_ar["id"] in ids and sempre["id"] in ids
+    assert futuro["id"] not in ids and passado["id"] not in ids
+    # desligado vence o periodo
+    c.put(f"/api/avisos/{no_ar['id']}", headers=admin, json={"ativo": False})
+    assert no_ar["id"] not in {a["id"] for a in c.get("/api/avisos/agente").json()}
+    assert next(a for a in c.get("/api/avisos/", headers=admin).json() if a["id"] == no_ar["id"])["situacao"] == "desligado"
+    # tirar a data de fim ("") volta a mostrar sempre
+    r = c.put(f"/api/avisos/{passado['id']}", headers=admin, json={"mostrar_ate": ""})
+    assert r.json()["mostrar_ate"] is None and r.json()["situacao"] == "no_ar"
+
+    # o batimento percebe quando o que aparece muda (com o relogio andando)
+    db = SessionLocal()
+    try:
+        rota.mudou_o_que_aparece(db, agora)  # primeira vez: so guarda
+        assert not rota.mudou_o_que_aparece(db, agora)
+        assert rota.mudou_o_que_aparece(db, agora + 2 * hora)  # o "Feriado" entrou
+        assert not rota.mudou_o_que_aparece(db, agora + 2 * hora)
+    finally:
+        db.close()
+    import inspect
+    from app import main as principal
+    assert "mudou_o_que_aparece" in inspect.getsource(principal._batimento)
+    for a in (no_ar, futuro, passado, sempre):
+        c.delete(f"/api/avisos/{a['id']}", headers=admin)

@@ -154,6 +154,16 @@ async def _batimento():
             print(f"Horario de funcionamento: erro ({e})")
         finally:
             db.close()
+        # Avisos com periodo (9.19): um entrou ou saiu do ar, os PCs recarregam
+        db = SessionLocal()
+        try:
+            from app.routers import avisos as rota_avisos
+            if rota_avisos.mudou_o_que_aparece(db, config._agora_br()):
+                await manager.broadcast_estacoes("avisos_atualizados", {})
+        except Exception as e:
+            print(f"Avisos: erro ao conferir o periodo ({e})")
+        finally:
+            db.close()
         # PC sem conexao que nao voltou ate o fim do tempo do cliente
         db = SessionLocal()
         try:

@@ -17,6 +17,37 @@ interface Aviso {
   tipo: TipoAviso
   /** livre, ex.: "16:00" (à direita do título no PC) */
   horario: string | null
+  /** período em que aparece no PC (hora de Brasília, "AAAA-MM-DDTHH:MM"); null = sem limite */
+  mostrar_de: string | null
+  mostrar_ate: string | null
+  situacao: "no_ar" | "agendado" | "encerrado" | "desligado"
+}
+
+/** "2026-11-25T18:00" -> "25/11 18:00" */
+function dataCurta(d: string | null) {
+  if (!d) return ""
+  const [dia, hora] = d.split("T")
+  const [, mes, dd] = dia.split("-")
+  return `${dd}/${mes} ${hora}`
+}
+
+function SeloSituacao({ a }: { a: Aviso }) {
+  if (a.situacao === "desligado") return <span className="text-xs text-texto-fraco">Desligado</span>
+  if (a.situacao === "agendado")
+    return (
+      <span className="rounded bg-destaque-fundo px-1.5 py-0.5 text-xs text-destaque">Agendado: entra {dataCurta(a.mostrar_de)}</span>
+    )
+  if (a.situacao === "encerrado")
+    return (
+      <span className="rounded bg-superficie-3 px-1.5 py-0.5 text-xs text-texto-suave">
+        Encerrado: saiu {dataCurta(a.mostrar_ate)}
+      </span>
+    )
+  return (
+    <span className="rounded bg-livre-fundo px-1.5 py-0.5 text-xs text-livre">
+      No ar{a.mostrar_ate ? ` até ${dataCurta(a.mostrar_ate)}` : ""}
+    </span>
+  )
 }
 
 type TipoAviso = "alerta" | "evento" | "info"
@@ -37,6 +68,8 @@ export function SecaoAvisos() {
   const [texto, setTexto] = useState("")
   const [tipo, setTipo] = useState<TipoAviso>("info")
   const [horario, setHorario] = useState("")
+  const [de, setDe] = useState("")
+  const [ate, setAte] = useState("")
 
   const carregar = useCallback(async () => {
     try {
@@ -64,14 +97,23 @@ export function SecaoAvisos() {
     ev.preventDefault()
     if (!titulo.trim() && !texto.trim()) return avisar("Escreva o título ou o texto do aviso", "erro")
     await executar(async () => {
-      await Api.post("/api/avisos/", { titulo: titulo.trim(), texto: texto.trim(), tipo, horario: horario.trim() })
+      await Api.post("/api/avisos/", {
+        titulo: titulo.trim(),
+        texto: texto.trim(),
+        tipo,
+        horario: horario.trim(),
+        mostrar_de: de,
+        mostrar_ate: ate,
+      })
       setTitulo("")
       setTexto("")
       setHorario("")
+      setDe("")
+      setAte("")
     }, "Aviso publicado")
   }
 
-  function salvar(a: Aviso, dados: Partial<Pick<Aviso, "titulo" | "texto" | "ativo" | "tipo" | "horario">>) {
+  function salvar(a: Aviso, dados: Partial<Pick<Aviso, "titulo" | "texto" | "ativo" | "tipo" | "horario" | "mostrar_de" | "mostrar_ate">>) {
     executar(() => Api.put(`/api/avisos/${a.id}`, dados))
   }
 
@@ -97,7 +139,8 @@ export function SecaoAvisos() {
       <h2 className="mb-2 text-lg font-semibold">Avisos da biblioteca</h2>
       <p className="mb-5 text-sm text-texto-suave">
         Comunicados, regras do espaço e eventos do dia. Aparecem à direita da tela de apps do computador do cliente,
-        nesta ordem. Iguais em todas as estações; os desligados não aparecem.
+        nesta ordem. Iguais em todas as estações; os desligados não aparecem. Com início e fim, o aviso entra e sai
+        sozinho da tela no dia e hora marcados.
       </p>
 
       <form onSubmit={criar} className="mb-6 flex flex-col gap-3 rounded-lg border border-borda bg-superficie-2 p-4">
@@ -121,6 +164,14 @@ export function SecaoAvisos() {
             <Input id="aviso-horario" maxLength={20} value={horario} onChange={(e) => setHorario(e.target.value)} placeholder="Ex.: 16:00" />
           </Campo>
         </div>
+        <div className="flex flex-wrap gap-3">
+          <Campo rotulo="Mostrar a partir de (opcional)" id="aviso-de">
+            <Input id="aviso-de" type="datetime-local" value={de} onChange={(e) => setDe(e.target.value)} />
+          </Campo>
+          <Campo rotulo="Até (opcional)" id="aviso-ate">
+            <Input id="aviso-ate" type="datetime-local" value={ate} onChange={(e) => setAte(e.target.value)} />
+          </Campo>
+        </div>
         <Button type="submit" className="gap-1.5 self-start">
           <IconPlus size={16} /> Publicar aviso
         </Button>
@@ -135,7 +186,7 @@ export function SecaoAvisos() {
           {itens.map((a, i) => (
             <li
               key={a.id}
-              className={cn("flex items-start gap-3 rounded-lg border border-borda bg-superficie-2 p-2.5", !a.ativo && "opacity-55")}
+              className={cn("flex items-start gap-3 rounded-lg border border-borda bg-superficie-2 p-2.5", (a.situacao === "desligado" || a.situacao === "encerrado") && "opacity-55")}
             >
               <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <input
@@ -181,6 +232,27 @@ export function SecaoAvisos() {
                     onBlur={(e) => e.target.value.trim() !== (a.horario ?? "") && salvar(a, { horario: e.target.value })}
                     className={cn(CAMPO, "w-40")}
                   />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-texto-suave">
+                  <span>De</span>
+                  <input
+                    type="datetime-local"
+                    key={`d${a.mostrar_de ?? ""}`}
+                    defaultValue={a.mostrar_de ?? ""}
+                    aria-label="Mostrar a partir de"
+                    onBlur={(e) => e.target.value !== (a.mostrar_de ?? "") && salvar(a, { mostrar_de: e.target.value })}
+                    className={cn(CAMPO, "w-48")}
+                  />
+                  <span>até</span>
+                  <input
+                    type="datetime-local"
+                    key={`a${a.mostrar_ate ?? ""}`}
+                    defaultValue={a.mostrar_ate ?? ""}
+                    aria-label="Mostrar até"
+                    onBlur={(e) => e.target.value !== (a.mostrar_ate ?? "") && salvar(a, { mostrar_ate: e.target.value })}
+                    className={cn(CAMPO, "w-48")}
+                  />
+                  <SeloSituacao a={a} />
                 </div>
               </div>
               <Interruptor id={`aviso-ativo-${a.id}`} rotulo="Mostrar este aviso" ligado={a.ativo} aoMudar={(v) => salvar(a, { ativo: v })} />

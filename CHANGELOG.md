@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-25 — Avisos com data e hora (9.19)
+
+- Programação e avisos → Avisos: cada aviso pode ter **Mostrar a partir de** e **Até** (dia e hora). Fora do período ele não vai aos PCs; o servidor confere a cada minuto e, quando um aviso entra ou sai do ar, as estações recarregam os avisos sozinhas.
+- Selo em cada aviso: **No ar** (com o fim, se houver), **Agendado: entra dd/mm HH:MM**, **Encerrado** ou **Desligado**. Apagar a data volta a mostrar sempre. Fim antes do início é recusado.
+
 ## 2026-11-25 — Grupos de operadores com permissões e pisos (9.18)
 
 - Configurações → Operadores → **Grupos de operadores**: o admin cria grupos e marca o que os operadores deles também podem usar, áreas antes só do admin: **Programação e avisos** e **Relatórios de uso e registro de ações**. No cadastro do operador, o campo **Grupo** (Nenhum = operador comum).
