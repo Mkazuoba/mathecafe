@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { IconDeviceDesktop, IconSearch, IconUser } from "@tabler/icons-react"
-import { Api } from "@/lib/api"
 import { useBuscaClientes } from "@/lib/buscaClientes"
 import { useDados } from "@/lib/dados"
-import { ITENS } from "@/components/Layout"
+import { ITENS, itemVisivel } from "@/components/Layout"
 import { SeloStatus } from "@/components/ui/status"
 import { cn } from "@/lib/utils"
 
@@ -42,7 +41,7 @@ function Caixa({ aoFechar }: { aoFechar: () => void }) {
       aoFechar()
       navegar(para)
     }
-    const paginas = ITENS.filter((i) => (Api.ehAdmin() || !i.soAdmin) && i.rotulo.toLowerCase().includes(q)).map(
+    const paginas = ITENS.filter((i) => itemVisivel(i) && i.rotulo.toLowerCase().includes(q)).map(
       ({ para, rotulo, Icone }): Resultado => ({
         chave: `p${para}`,
         grupo: "Páginas",

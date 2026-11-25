@@ -19,7 +19,7 @@ IMPORTANTE:
 """
 # Versao do agente — incrementar a cada publicacao de update.
 # Unica declaracao: o servidor le a primeira linha VERSAO deste arquivo.
-VERSAO = "1.32.0"
+VERSAO = "1.33.0"
 
 import asyncio
 import json
@@ -172,6 +172,66 @@ JANELAS_DE_PROCESSOS_SEGUROS = {
     "explorer.exe": ("CabinetWClass", "Explorador de Arquivos"),
     "applicationframehost.exe": ("ApplicationFrameWindow", "app do Windows"),
 }
+
+
+# ── Modo manutencao (6.13) ──────────────────────────────────────────────────
+# Sem mouse nem teclado por este tempo, a manutencao volta sozinha ao login
+# (operador que esqueceu a estacao aberta, sem bloqueio nenhum)
+MANUTENCAO_OCIOSA_S = 15 * 60
+
+# Ferramentas da faixa da manutencao. O Gerenciador de Tarefas fica de fora:
+# as politicas do "cliente" o desligam (DisableTaskMgr); o agente tem a sua
+# janela de processos. Tudo isso e encerrado/fechado ao voltar ao login.
+ATALHOS_MANUTENCAO = [
+    ("Explorador", ["explorer.exe"]),
+    ("Painel de Controle", ["control.exe"]),
+    ("Prompt", ["cmd.exe"]),
+]
+
+
+def segundos_ocioso():
+    """Ha quantos segundos ninguem mexe no mouse nem no teclado (0 se falhar)."""
+    class LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+    try:
+        info = LASTINPUTINFO()
+        info.cbSize = ctypes.sizeof(info)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+            return 0
+        agora = ctypes.windll.kernel32.GetTickCount() & 0xFFFFFFFF
+        return ((agora - info.dwTime) & 0xFFFFFFFF) / 1000
+    except Exception:
+        return 0
+
+
+def segundos_para_sair_da_manutencao(ocioso, limite=None):
+    limite = MANUTENCAO_OCIOSA_S if limite is None else limite
+    return max(0, int(limite - ocioso))
+
+
+def aviso_saida_manutencao(restante):
+    """Texto na faixa no ultimo minuto antes de voltar sozinha ao login."""
+    return f"Sem uso: volta ao login em {restante}s" if restante <= 60 else ""
+
+
+def linhas_diagnostico(info):
+    """(rotulo, valor) da janela de diagnostico da manutencao."""
+    ping = info.get("ping_ms")
+    if ping == "medindo":
+        ping_txt = "medindo..."
+    elif ping is None:
+        ping_txt = "sem resposta"
+    else:
+        ping_txt = f"{round(ping)} ms"
+    return [
+        ("Servidor", info.get("servidor") or "-"),
+        ("Conexao", "Conectado" if info.get("conectado") else "Sem conexao"),
+        ("Ping", ping_txt),
+        ("Versao do agente", info.get("versao") or "-"),
+        ("Estacao", info.get("estacao") or "-"),
+        ("Piso", info.get("piso") or "-"),
+        ("ID da instalacao", info.get("id") or "-"),
+    ]
 
 
 # ── Meus arquivos (9.5): os downloads da sessão ─────────────────────────────
@@ -4006,6 +4066,8 @@ class AgenteApp:
         self._pendentes = []
         # log de quando estava sem servidor: vai com a hora original ao reconectar
         self._logs_offline = deque(maxlen=100)
+        self._ultimos_logs = deque(maxlen=40)  # tambem aqui, para o diagnostico (6.13)
+        self.piso_nome = None  # nome do piso (o servidor manda ao conectar)
 
         # Estado da sessão
         self.sessao_ativa = False
@@ -4123,6 +4185,7 @@ class AgenteApp:
 
     def _aplicar_cor_piso(self, piso):
         """O servidor manda o piso da estacao; a cor dele vira o destaque da tela."""
+        self.piso_nome = (piso or {}).get("nome") or self.piso_nome
         cor = (piso or {}).get("cor")
         if not cor_valida(cor) or cor.lower() == (self.cor_piso or "").lower():
             return
@@ -4342,19 +4405,38 @@ class AgenteApp:
 
         # ── Barra de manutenção (oculta inicialmente) ──
         self.frame_manutencao = tk.Frame(self.root, bg="#f59e0b")
-        tk.Label(self.frame_manutencao, text="Modo Manutencao ativo",
+        linha1 = tk.Frame(self.frame_manutencao, bg="#f59e0b")
+        linha1.pack(fill="x")
+        linha2 = tk.Frame(self.frame_manutencao, bg="#f59e0b")
+        linha2.pack(fill="x", pady=(0, 6))
+
+        def botao(pai, texto, comando, cor="#92400e"):
+            return tk.Button(pai, text=texto, bg=cor, fg="white", relief="flat",
+                             font=small_font, padx=8, command=comando)
+
+        tk.Label(linha1, text="Modo Manutencao ativo",
                  bg="#f59e0b", fg="black", font=normal_font).pack(side="left", padx=14, pady=8)
-        tk.Button(self.frame_manutencao, text="Encerrar manutencao",
-                  bg="#92400e", fg="white", relief="flat", font=small_font,
-                  command=self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
-        tk.Button(self.frame_manutencao, text="Configurar conexao",
-                  bg="#92400e", fg="white", relief="flat", font=small_font,
-                  command=self._abrir_config_conexao).pack(side="right", pady=8)
+        # aviso do ultimo minuto antes de voltar sozinha ao login (6.13)
+        self.lbl_manutencao_ociosa = tk.Label(linha1, text="", bg="#f59e0b", fg="#7f1d1d",
+                                              font=small_font)
+        self.lbl_manutencao_ociosa.pack(side="left")
+        botao(linha1, "Encerrar manutencao", self._sair_modo_manutencao).pack(side="right", padx=14, pady=8)
+        botao(linha1, "Configurar conexao", self._abrir_config_conexao).pack(side="right", pady=8)
         # Atualizacao do agente: so por aqui (6.13)
-        self.btn_atualizar = tk.Button(self.frame_manutencao, text="Verificar atualizacao",
-                                       bg="#92400e", fg="white", relief="flat", font=small_font,
-                                       command=self._clicar_atualizar)
+        self.btn_atualizar = botao(linha1, "Verificar atualizacao", self._clicar_atualizar)
         self.btn_atualizar.pack(side="right", padx=(0, 6), pady=8)
+        botao(linha1, "Diagnostico", self._abrir_diagnostico).pack(side="right", padx=(0, 6), pady=8)
+
+        tk.Label(linha2, text="Ferramentas:", bg="#f59e0b", fg="black",
+                 font=small_font).pack(side="left", padx=(14, 6))
+        for rotulo, comando in ATALHOS_MANUTENCAO:
+            botao(linha2, rotulo, lambda c=comando, r=rotulo: self._abrir_atalho(r, c)).pack(
+                side="left", padx=(0, 6))
+        botao(linha2, "Processos", self._abrir_processos).pack(side="left", padx=(0, 6))
+        botao(linha2, "Desligar o PC", lambda: self._desligar_pela_manutencao(desligar=True),
+              cor="#7f1d1d").pack(side="right", padx=14)
+        botao(linha2, "Reiniciar o PC", lambda: self._desligar_pela_manutencao(desligar=False),
+              cor="#7f1d1d").pack(side="right")
 
     def _log(self, msg, _remoto=True):
         """O log de comunicação vai ao servidor (painel > estação > Log); não aparece no PC.
@@ -4363,6 +4445,7 @@ class AgenteApp:
         if not _remoto:
             return
         linha = {"msg": msg, "ts": datetime.now().strftime("%H:%M:%S")}
+        self._ultimos_logs.append(linha)  # para o diagnostico da manutencao
         if not (self.loop and self.ws):
             self._logs_offline.append(linha)
             return
@@ -5293,16 +5376,23 @@ class AgenteApp:
             self.root.after(1000, self._countdown_reinicio, segundos - 1, desligar)
         else:
             self.lbl_login_erro.config(text=f"{verbo} agora...", fg=ROSA_TEXTO)
-            self._log(f"{verbo} o PC...")
-            try:
-                resultado = subprocess.run(
-                    r"C:\Windows\System32\shutdown.exe " + ("/s" if desligar else "/r") + " /f /t 0",
-                    shell=True, capture_output=True, text=True
-                )
-                if resultado.returncode != 0:
-                    self._log(f"shutdown falhou (cod {resultado.returncode}): {resultado.stderr.strip()}")
-            except Exception as e:
-                self._log(f"Erro ao reiniciar: {e}")
+            self._executar_shutdown(desligar)
+
+    def _executar_shutdown(self, desligar):
+        """Reinicia (ou desliga) o PC agora. Pelo painel e pela manutencao."""
+        self._log(f"{'Desligando' if desligar else 'Reiniciando'} o PC...")
+        try:
+            resultado = subprocess.run(
+                r"C:\Windows\System32\shutdown.exe " + ("/s" if desligar else "/r") + " /f /t 0",
+                shell=True, capture_output=True, text=True
+            )
+            if resultado.returncode != 0:
+                self._log(f"shutdown falhou (cod {resultado.returncode}): {resultado.stderr.strip()}")
+                return False
+            return True
+        except Exception as e:
+            self._log(f"Erro ao reiniciar: {e}")
+            return False
 
     def _encerrar_apps_do_cliente(self):
         """Encerra os processos que o cliente abriu durante a sessao."""
@@ -5710,6 +5800,151 @@ class AgenteApp:
         os.replace(caminho_novo, os.path.abspath(__file__))
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    # ── Ferramentas da manutencao (6.13) ────────────────────────────────────
+    def _desligar_pela_manutencao(self, desligar):
+        if not self.modo_manutencao_ativo or self.sessao_ativa:
+            return
+        import tkinter.messagebox as _mb
+        acao = "Desligar" if desligar else "Reiniciar"
+        if not _mb.askyesno(f"{acao} o PC", f"{acao} este computador agora?\n\n"
+                            "Programas abertos na manutencao sao fechados sem salvar.",
+                            parent=self.root):
+            return
+        if not self._executar_shutdown(desligar):
+            _mb.showerror(f"{acao} o PC", "O Windows nao aceitou o pedido. Veja o log no Diagnostico.",
+                          parent=self.root)
+
+    def _vigiar_ociosidade(self):
+        """Na manutencao, volta sozinha ao login depois de MANUTENCAO_OCIOSA_S sem uso."""
+        self._vigia_ociosa = None
+        if not self.modo_manutencao_ativo:
+            self.lbl_manutencao_ociosa.config(text="")
+            return
+        restante = segundos_para_sair_da_manutencao(segundos_ocioso())
+        if restante <= 0:
+            self._log("Manutencao sem uso: voltando sozinha ao login")
+            self._sair_modo_manutencao()
+            return
+        self.lbl_manutencao_ociosa.config(text=aviso_saida_manutencao(restante))
+        self._vigia_ociosa = self.root.after(1000 if restante <= 61 else 15000, self._vigiar_ociosidade)
+
+    def _abrir_atalho(self, rotulo, comando):
+        if not self.modo_manutencao_ativo:
+            return
+        try:
+            subprocess.Popen(comando)
+            self._log(f"Manutencao: abriu {rotulo}")
+        except Exception as e:
+            self._log(f"Manutencao: nao abriu {rotulo}: {e}")
+
+    def _janela_da_manutencao(self, titulo, largura, altura):
+        """Uma janela de cada (clicar de novo traz a aberta para frente)."""
+        abertas = self.__dict__.setdefault("_janelas_manutencao", {})
+        antiga = abertas.get(titulo)
+        if antiga is not None and antiga.winfo_exists():
+            antiga.destroy()
+        win = tk.Toplevel(self.root)
+        abertas[titulo] = win
+        win.title(titulo)
+        win.configure(bg=self.paleta["fundo"])
+        x = (win.winfo_screenwidth() - largura) // 2
+        y = (win.winfo_screenheight() - altura) // 2
+        win.geometry(f"{largura}x{altura}+{x}+{y}")
+        win.transient(self.root)
+        return win
+
+    def _abrir_diagnostico(self):
+        if not self.modo_manutencao_ativo:
+            return
+        p = self.paleta
+        win = self._janela_da_manutencao("Diagnostico da estacao", 620, 560)
+        info = {"servidor": self.servidor, "conectado": self.conectado, "ping_ms": "medindo",
+                "versao": VERSAO, "estacao": self.estacao, "piso": self.piso_nome,
+                "id": self.identificador}
+        tk.Button(win, text="Fechar", command=win.destroy, relief="flat", bg="#92400e", fg="white",
+                  font=(FONTE, 10), padx=12).pack(side="bottom", pady=12)
+        tabela = tk.Frame(win, bg=p["fundo"])
+        tabela.pack(fill="x", padx=18, pady=(16, 8))
+        valores = {}
+        for i, (rotulo, valor) in enumerate(linhas_diagnostico(info)):
+            tk.Label(tabela, text=rotulo, bg=p["fundo"], fg=p["texto2"], font=(FONTE, 10),
+                     anchor="w").grid(row=i, column=0, sticky="w", pady=2)
+            valores[rotulo] = tk.Label(tabela, text=valor, bg=p["fundo"], fg=p["texto"],
+                                       font=(FONTE, 10, "bold"), anchor="w")
+            valores[rotulo].grid(row=i, column=1, sticky="w", padx=(16, 0), pady=2)
+        tk.Label(win, text="Ultimas linhas do log", bg=p["fundo"], fg=p["texto2"],
+                 font=(FONTE, 10), anchor="w").pack(fill="x", padx=18, pady=(8, 2))
+        caixa = tk.Text(win, height=14, bg=p["superficie"], fg=p["texto"], relief="flat",
+                        font=("Consolas", 9), wrap="word")
+        caixa.pack(fill="both", expand=True, padx=18)
+        caixa.insert("end", "\n".join(f"{l['ts']}  {l['msg']}" for l in self._ultimos_logs)
+                     or "(nada ainda)")
+        caixa.see("end")
+        caixa.config(state="disabled")
+
+        def medir():
+            inicio = time.perf_counter()
+            ok = versao_no_servidor(self._servidor_http()) is not None
+            ms = (time.perf_counter() - inicio) * 1000 if ok else None
+
+            def mostrar():
+                if win.winfo_exists():
+                    valores["Ping"].config(text=dict(linhas_diagnostico({"ping_ms": ms}))["Ping"])
+            self.root.after(0, mostrar)
+        threading.Thread(target=medir, daemon=True).start()
+
+    def _matar_processo(self, pid):
+        psutil.Process(pid).kill()
+        self._log(f"Manutencao: encerrou o processo {pid}")
+
+    def _abrir_processos(self):
+        """No lugar do Gerenciador de Tarefas (desligado por politica no "cliente")."""
+        if not self.modo_manutencao_ativo:
+            return
+        p = self.paleta
+        win = self._janela_da_manutencao("Processos", 560, 560)
+        botoes = tk.Frame(win, bg=p["fundo"])
+        botoes.pack(side="bottom", pady=12)
+        lista = tk.Listbox(win, bg=p["superficie"], fg=p["texto"], relief="flat",
+                           font=("Consolas", 10), activestyle="none")
+        lista.pack(fill="both", expand=True, padx=18, pady=(16, 0))
+        pids = []
+
+        def carregar():
+            procs = []
+            for proc in psutil.process_iter(["pid", "name", "memory_info"]):
+                try:
+                    mem = proc.info["memory_info"].rss if proc.info["memory_info"] else 0
+                    procs.append((mem, proc.info["pid"], proc.info["name"] or "?"))
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            procs.sort(reverse=True)
+            lista.delete(0, "end")
+            pids.clear()
+            for mem, pid, nome in procs:
+                lista.insert("end", f"{nome[:34]:<34} {mem / 1048576:>8.0f} MB  {pid:>6}")
+                pids.append(pid)
+
+        def encerrar():
+            sel = lista.curselection()
+            if not sel:
+                return
+            pid = pids[sel[0]]
+            if pid == os.getpid():
+                return
+            try:
+                self._matar_processo(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                import tkinter.messagebox as _mb
+                _mb.showerror("Processos", f"Nao foi possivel encerrar: {e}", parent=win)
+            carregar()
+
+        for texto, cmd in (("Encerrar selecionado", encerrar), ("Atualizar", carregar),
+                           ("Fechar", win.destroy)):
+            tk.Button(botoes, text=texto, command=cmd, relief="flat", bg="#92400e", fg="white",
+                      font=(FONTE, 10), padx=12).pack(side="left", padx=4)
+        carregar()
+
     def _modo_manutencao(self):
         self.barra.esconder()
         if self.sessao_ativa:
@@ -5733,9 +5968,16 @@ class AgenteApp:
         # confere se ha versao nova, para o botao ja mostrar
         self._mostrar_botao_atualizar(texto="Verificando atualizacao...")
         checar_atualizacao(self, self._servidor_http())
+        if getattr(self, "_vigia_ociosa", None):
+            self.root.after_cancel(self._vigia_ociosa)
+        self._vigiar_ociosidade()
 
     def _sair_modo_manutencao(self):
         self.modo_manutencao_ativo = False
+        self.lbl_manutencao_ociosa.config(text="")
+        for win in self.__dict__.get("_janelas_manutencao", {}).values():
+            if win.winfo_exists():
+                win.destroy()
         self._liberar_janela(False)
         self.frame_manutencao.pack_forget()
         self._enviar({"evento": "status_estacao", "status": "livre"})

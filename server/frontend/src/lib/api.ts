@@ -15,16 +15,43 @@ export const Api = {
     return this.perfil() === "admin"
   },
 
-  entrar(token: string, perfil: string, nome: string) {
+  /** Área que o grupo do operador libera (o admin pode tudo). O servidor confere de novo. */
+  pode(chave: string): boolean {
+    if (this.ehAdmin()) return true
+    try {
+      return (JSON.parse(localStorage.getItem("permissoes") ?? "[]") as string[]).includes(chave)
+    } catch {
+      return false
+    }
+  },
+
+  guardarPermissoes(permissoes: string[], pisos: number[] | null = null) {
+    localStorage.setItem("permissoes", JSON.stringify(permissoes ?? []))
+    localStorage.setItem("pisosPermitidos", JSON.stringify(pisos ?? null))
+  },
+
+  /** Pisos que o grupo do operador vê (null = todos). O servidor filtra de novo. */
+  pisosPermitidos(): number[] | null {
+    try {
+      return JSON.parse(localStorage.getItem("pisosPermitidos") ?? "null") as number[] | null
+    } catch {
+      return null
+    }
+  },
+
+  entrar(token: string, perfil: string, nome: string, permissoes: string[] = [], pisos: number[] | null = null) {
     localStorage.setItem("token", token)
     localStorage.setItem("perfil", perfil)
     localStorage.setItem("nome", nome)
+    this.guardarPermissoes(permissoes, pisos)
   },
 
   sair() {
     localStorage.removeItem("token")
     localStorage.removeItem("perfil")
     localStorage.removeItem("nome")
+    localStorage.removeItem("permissoes")
+    localStorage.removeItem("pisosPermitidos")
     window.location.href = "/login"
   },
 

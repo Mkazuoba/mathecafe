@@ -73,11 +73,11 @@ function baixarCsv(nomeArquivo: string, cabecalho: string[], linhas: (string | n
 
 export default function Historicos() {
   const [params, setParams] = useSearchParams()
-  const admin = Api.ehAdmin()
+  const relatorios = Api.pode("relatorios")
   const pedida = params.get("aba")
-  // o registro dos operadores é só do admin
+  // uso e registro dos operadores: admin ou grupo com "Relatórios e registro"
   const aba: Aba =
-    pedida === "estacao" ? "estacao" : (pedida === "acoes" || pedida === "uso") && admin ? pedida : "cliente"
+    pedida === "estacao" ? "estacao" : (pedida === "acoes" || pedida === "uso") && relatorios ? pedida : "cliente"
   const clienteId = params.get("cliente")
   const estacaoNome = params.get("estacao") ?? ""
   const de = params.get("de") ?? ""
@@ -129,7 +129,7 @@ export default function Historicos() {
             [
               ["cliente", "Por cliente"],
               ["estacao", "Por estação"],
-              ...(admin
+              ...(relatorios
                 ? ([
                     ["uso", "Uso"],
                     ["acoes", "Ações dos operadores"],

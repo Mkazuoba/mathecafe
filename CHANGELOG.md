@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-11-25 — Grupos de operadores com permissões e pisos (9.18)
+
+- Configurações → Operadores → **Grupos de operadores**: o admin cria grupos e marca o que os operadores deles também podem usar, áreas antes só do admin: **Programação e avisos** e **Relatórios de uso e registro de ações**. No cadastro do operador, o campo **Grupo** (Nenhum = operador comum).
+- O servidor confere a permissão a cada pedido: mudar o grupo, tirar o operador dele ou desativá-lo vale na hora. O menu do painel mostra só o que o grupo libera e se atualiza ao recarregar.
+- Excluir um grupo devolve os operadores dele a operadores comuns. Criar, editar e excluir grupos entra no registro de ações.
+- **Pisos que o grupo vê**: marcando só o Infantil, os operadores do grupo veem apenas as estações, mapas, sessões e fila do Infantil (o seletor de piso só oferece ele) e o servidor recusa comandos nas estações e sessões dos outros pisos, inclusive nas ações em massa; os avisos ao vivo do painel dos outros pisos não chegam a eles. Nenhum piso marcado = todos.
+
+## 2026-11-25 — Ferramentas do modo manutenção (6.13, agente 1.33.0)
+
+- A faixa da manutenção ganhou uma segunda linha: **Explorador**, **Painel de Controle**, **Prompt** e **Processos**, e à direita **Reiniciar o PC** e **Desligar o PC** (sempre com confirmação). O Gerenciador de Tarefas fica desligado por política no usuário `cliente`; a janela **Processos** do agente o substitui (lista por memória, encerrar o selecionado).
+- **Diagnóstico**: servidor, conexão, ping, versão do agente, estação, piso, ID da instalação e as últimas 40 linhas do log, sem abrir o painel.
+- **Sai sozinha**: 15 minutos sem mouse e teclado, a manutenção volta ao login; no último minuto a faixa avisa ("Sem uso: volta ao login em 45s"). Ao sair, as janelas de diagnóstico e processos fecham, e o prompt e o Explorador abertos são fechados pela tela de login, como sempre.
+- Simulador: Reiniciar/Desligar e Encerrar processo só avisam; `--manutencao-ociosa N` encurta o tempo para testar.
+
+## 2026-11-25 — Cópia extra do backup fora do servidor (10.1)
+
+- Configurações → Servidor → Backup do banco → **Cópia extra fora do servidor**: cada backup (o automático da madrugada e o "Fazer backup agora") vai também para uma segunda pasta — outro disco, pasta de rede (`\\servidor\pasta`) ou pasta sincronizada com a nuvem —, guardando os mesmos dias.
+- **Testar e salvar** confere que o servidor consegue gravar na pasta antes de ligar (o servidor roda como serviço: letra de unidade mapeada não serve) e já copia o backup mais novo. **Copiar agora** e **Desligar** ao lado.
+- Se a cópia falhar (rede fora), o backup local continua; o painel mostra o erro em vermelho e o servidor tenta de novo a cada 30 minutos até conseguir.
+
 ## 2026-11-18 — Traços mais finos, dock mais legível e notificações que fecham ao clicar fora (agente 1.32.0)
 
 - Estilo Caderno: os traços de tinta ficaram mais finos (1 px nas telas, 1,5 px nos cards e no banner), a começar pelo traço entre o dock e o resto da tela.

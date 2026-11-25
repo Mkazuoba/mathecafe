@@ -11,6 +11,7 @@ O que o agente faz numa estacao e aqui fica DESLIGADO (para nao mexer no seu PC)
 - fechar programas fora da lista     -> desligado
 - esvaziar Downloads / vigia do Explorador -> desligado
 - desligar ou reiniciar o PC         -> so mostra na tela
+- encerrar processos (manutencao)    -> so registra no log
 - atualizar o agente pelo painel     -> ignorado (nao sobrescreve o agente.py)
 
 Uso (pasta agente/):  simular.bat   ou   python simular.py [--servidor ws://127.0.0.1:8011]
@@ -32,6 +33,8 @@ args.add_argument("--piso", default=None, help="id do piso (opcional)")
 args.add_argument("--tamanho", default="1366x768", help="tamanho da janela (padrao 1366x768)")
 args.add_argument("--navegador", action="store_true",
                   help="em vez da janela, mostra a tela numa pagina (http://127.0.0.1:PORTA), com mouse e teclado")
+args.add_argument("--manutencao-ociosa", type=int, default=None,
+                  help="segundos sem uso ate a manutencao voltar sozinha ao login (padrao do agente: 900)")
 args.add_argument("--porta", type=int, default=5190, help="porta da pagina do --navegador (padrao 5190)")
 opcoes = args.parse_args()
 # o agente reabre a si mesmo (estilo da tela, Configurar conexao): volta com
@@ -51,6 +54,9 @@ spec = importlib.util.spec_from_file_location("agente", os.path.join(AQUI, "agen
 ag = importlib.util.module_from_spec(spec)
 sys.modules["agente"] = ag
 spec.loader.exec_module(ag)
+
+if opcoes.manutencao_ociosa:
+    ag.MANUTENCAO_OCIOSA_S = opcoes.manutencao_ociosa
 
 # configuracao separada
 ag.CFG_FILE = os.path.join(AQUI, "agente_simulacao.cfg")
@@ -92,6 +98,22 @@ def _sem_desligar(self, segundos, desligar=False):
 
 
 App._countdown_reinicio = _sem_desligar
+
+
+def _sem_shutdown(self, desligar):
+    import tkinter.messagebox as mb
+    verbo = "desligaria" if desligar else "reiniciaria"
+    self._log(f"Simulador: o PC {verbo} (ignorado)")
+    mb.showinfo("Simulador", f"Aqui o PC {verbo}.", parent=self.root)
+    return True
+
+
+def _sem_matar(self, pid):
+    self._log(f"Simulador: encerraria o processo {pid} (ignorado)")
+
+
+App._executar_shutdown = _sem_shutdown         # Reiniciar/Desligar da manutencao
+App._matar_processo = _sem_matar               # janela Processos da manutencao
 
 
 def _sem_atualizar(self, *_a, **_k):

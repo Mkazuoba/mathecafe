@@ -116,7 +116,23 @@ export interface Operador {
   nome: string
   ativo: boolean
   perfil: string
+  grupo_id?: number | null
   criado_em: string | null
+}
+
+/** Grupo de operadores: libera áreas do admin (Configurações → Operadores). */
+export interface GrupoOperadores {
+  id: number
+  nome: string
+  permissoes: string[]
+  /** pisos que o grupo vê; vazio = todos */
+  pisos: number[]
+  operadores: number
+}
+
+export interface PermissaoGrupo {
+  chave: string
+  rotulo: string
 }
 
 export interface AppPermitido {

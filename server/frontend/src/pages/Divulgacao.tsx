@@ -17,7 +17,7 @@ type Aba = (typeof ABAS)[number]["id"]
  */
 export default function Divulgacao() {
   const [params, setParams] = useSearchParams()
-  if (!Api.ehAdmin()) return <Navigate to="/" replace />
+  if (!Api.pode("divulgacao")) return <Navigate to="/" replace />
   const aba = (ABAS.find((a) => a.id === params.get("aba"))?.id ?? "programacao") as Aba
 
   return (

@@ -151,6 +151,19 @@ interface InfoBackup {
   /** o banco de antes de cada restauração (para desfazer) e os enviados */
   outros?: Backup[]
   sessoes_abertas?: number
+  copia_extra?: InfoCopiaExtra
+}
+
+interface InfoCopiaExtra {
+  pasta: string
+  pendente: boolean
+  situacao: { ok: boolean; quando: string; arquivo?: string; erro?: string } | null
+}
+
+/** "2026-11-25T00:01:00" -> "25/11/2026 00:01" */
+function dataHora(iso: string) {
+  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : iso
 }
 
 /** "cybercafe-2026-11-11-0001.db" -> "11/11/2026 00:01" (o momento do backup) */
@@ -390,7 +403,7 @@ function SecaoBackup() {
           <p className="mb-4 text-sm text-texto-suave">
             Feito sozinho todo dia logo depois da meia-noite (ou quando o servidor sobe, se o do dia ainda não foi
             feito). Guarda os últimos {info.dias} dias em <span className="font-mono break-all">{info.pasta}</span>.
-            Baixe uma cópia de vez em quando para outro lugar: se o disco do servidor falhar, a pasta vai junto.
+            Ligue a cópia extra abaixo: se o disco do servidor falhar, a pasta vai junto.
           </p>
           <div className="mb-4 flex flex-wrap gap-2">
             <Button type="button" variant="outline" disabled={fazendo} onClick={fazerAgora}>
@@ -416,6 +429,7 @@ function SecaoBackup() {
               />
             </label>
           </div>
+          {info.copia_extra && <CopiaExtra info={info.copia_extra} aoMudar={carregar} />}
           {restaurando && (
             <p className="mb-4 rounded-lg border border-manutencao-borda bg-manutencao-fundo px-3 py-2 text-sm text-manutencao">
               Restaurando... o servidor está reiniciando; o painel recarrega sozinho quando ele voltar.
@@ -481,6 +495,101 @@ function SecaoBackup() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+
+/**
+ * Cópia extra (10.1): cada backup vai também para outra pasta (outro disco, pasta de
+ * rede ou sincronizada com a nuvem). O servidor confere que grava nela antes de salvar.
+ */
+function CopiaExtra({ info, aoMudar }: { info: InfoCopiaExtra; aoMudar: () => void }) {
+  const avisar = useAvisos()
+  const [pasta, setPasta] = useState(info.pasta)
+  const [ocupado, setOcupado] = useState(false)
+  useEffect(() => setPasta(info.pasta), [info.pasta])
+  const s = info.situacao
+  const falhou = !!info.pasta && (info.pendente || (s && !s.ok))
+
+  async function salvar(nova: string) {
+    setOcupado(true)
+    try {
+      await Api.put("/api/config/backup/copia_extra", { pasta: nova })
+      avisar(nova ? "Cópia extra ligada" : "Cópia extra desligada")
+      aoMudar()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  async function copiarAgora() {
+    setOcupado(true)
+    try {
+      const r = await Api.post<InfoCopiaExtra>("/api/config/backup/copia_extra/copiar")
+      if (r.situacao?.ok) avisar("Cópia feita")
+      else avisar(r.situacao?.erro || "A cópia falhou", "erro")
+      aoMudar()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-lg border border-borda bg-superficie-2 px-4 py-3.5 text-sm">
+      <div className="mb-1 font-semibold">Cópia extra fora do servidor</div>
+      <p className="mb-3 text-xs text-texto-fraco">
+        Cada backup vai também para esta pasta, guardando os mesmos dias. Use outro disco ({"D:\\Backup"}), uma pasta
+        de rede pelo caminho completo ({"\\\\servidor\\pasta"}, não uma letra de unidade mapeada: o servidor roda
+        como serviço e não vê as letras do usuário) ou uma pasta sincronizada com a nuvem.
+      </p>
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          salvar(pasta.trim())
+        }}
+      >
+        <Input
+          aria-label="Pasta da cópia extra"
+          value={pasta}
+          onChange={(e) => setPasta(e.target.value)}
+          placeholder={"\\\\servidor\\backup-mathecafe"}
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-0 flex-1 font-mono"
+        />
+        <Button type="submit" disabled={ocupado || pasta.trim() === info.pasta || !pasta.trim()}>
+          {ocupado ? "..." : "Testar e salvar"}
+        </Button>
+        {info.pasta && (
+          <>
+            <Button type="button" variant="outline" disabled={ocupado} onClick={copiarAgora}>
+              Copiar agora
+            </Button>
+            <Button type="button" variant="ghost" disabled={ocupado} onClick={() => salvar("")}>
+              Desligar
+            </Button>
+          </>
+        )}
+      </form>
+      {!info.pasta ? (
+        <p className="mt-2 text-xs text-texto-fraco">Desligada: os backups ficam só no disco do servidor.</p>
+      ) : falhou ? (
+        <p role="alert" className="mt-2 text-sm text-perigo">
+          {s && !s.ok
+            ? `A última cópia falhou (${dataHora(s.quando)}): ${s.erro}. O servidor tenta de novo a cada 30 minutos.`
+            : "O backup de hoje ainda não foi copiado."}
+        </p>
+      ) : s ? (
+        <p role="status" className="mt-2 text-xs text-livre">
+          Última cópia: {s.arquivo} em {dataHora(s.quando)}.
+        </p>
+      ) : null}
     </div>
   )
 }

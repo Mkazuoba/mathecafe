@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AvisoBiblioteca
 from app.security import requer_perfil
+from app.permissoes import requer_permissao
 from app.websocket_manager import manager
 
 router = APIRouter(prefix="/avisos", tags=["avisos"])
@@ -67,7 +68,7 @@ def para_o_agente(db: Session = Depends(get_db)):
 
 
 @router.post("/")
-async def criar(body: AvisoNovo, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def criar(body: AvisoNovo, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     ultima = db.query(func.max(AvisoBiblioteca.ordem)).scalar()
     a = AvisoBiblioteca(titulo=body.titulo.strip(), texto=body.texto.strip(), ordem=(ultima or 0) + 1,
                         tipo=body.tipo, horario=(body.horario or "").strip() or None)
@@ -80,7 +81,7 @@ async def criar(body: AvisoNovo, db: Session = Depends(get_db), _=Depends(requer
 
 @router.put("/{aviso_id}")
 async def alterar(aviso_id: int, body: AvisoAlterado, db: Session = Depends(get_db),
-                  _=Depends(requer_perfil("admin"))):
+                  _=Depends(requer_permissao("divulgacao"))):
     a = db.get(AvisoBiblioteca, aviso_id)
     if not a:
         raise HTTPException(404, "Aviso não encontrado")
@@ -102,7 +103,7 @@ async def alterar(aviso_id: int, body: AvisoAlterado, db: Session = Depends(get_
 
 
 @router.delete("/{aviso_id}")
-async def excluir(aviso_id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def excluir(aviso_id: int, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     a = db.get(AvisoBiblioteca, aviso_id)
     if not a:
         raise HTTPException(404, "Aviso não encontrado")

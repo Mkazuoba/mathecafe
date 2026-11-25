@@ -9,6 +9,8 @@ from app.registro import registrar
 from app.importados import so_visiveis
 from app.websocket_manager import manager
 from app.tempo_diario import fechar_tempo_da_sessao
+from app.permissoes import conferir_estacao, pisos_do_usuario, ve_piso
+from app.pisos import piso_da_estacao
 
 router = APIRouter(prefix="/sessoes", tags=["sessoes"])
 
@@ -32,15 +34,16 @@ def serial_sessao(s: Sessao):
     }
 
 @router.get("/ativas")
-def sessoes_ativas(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
-    return [serial_sessao(s) for s in
-            db.query(Sessao).filter(Sessao.encerrada_em == None).all()]
+def sessoes_ativas(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
+    pisos = pisos_do_usuario(db, quem.get("sub"))  # grupo com pisos: so as dele
+    return [serial_sessao(s) for s in db.query(Sessao).filter(Sessao.encerrada_em == None).all()
+            if ve_piso(pisos, piso_da_estacao(s.estacao))]
 
 @router.get("/historico")
 def historico(cliente_id: Optional[int] = None, estacao_nome: Optional[str] = None,
               estacao_id: Optional[int] = None,
               limit: int = 100, db: Session = Depends(get_db),
-              _=Depends(requer_perfil("admin", "operador"))):
+              quem=Depends(requer_perfil("admin", "operador"))):
     q = so_visiveis(db.query(Sessao).filter(Sessao.encerrada_em != None), db)
     if cliente_id:
         q = q.filter(Sessao.cliente_id == cliente_id)
@@ -60,6 +63,7 @@ async def encerrar_operador(sessao_id: int, db: Session = Depends(get_db),
         Sessao.id == sessao_id, Sessao.encerrada_em == None).first()
     if not sessao:
         raise HTTPException(404, "Sessão ativa não encontrada")
+    conferir_estacao(db, quem, sessao.estacao)
     cliente, estacao = sessao.cliente, sessao.estacao.nome
     restante = await encerrar_pelo_operador(db, sessao)
     registrar(db, quem, "encerrar_sessao", cliente=cliente, estacao=estacao)
@@ -106,6 +110,7 @@ async def pausar_sessao(sessao_id: int, db: Session = Depends(get_db),
     s = db.query(Sessao).filter(Sessao.id == sessao_id, Sessao.encerrada_em == None).first()
     if not s:
         raise HTTPException(404, "Sessao ativa nao encontrada")
+    conferir_estacao(db, quem, s.estacao)
     if s.pausada:
         raise HTTPException(400, "Sessao ja pausada")
     s.pausada = True
@@ -124,6 +129,7 @@ async def retomar_sessao(sessao_id: int, db: Session = Depends(get_db),
     s = db.query(Sessao).filter(Sessao.id == sessao_id, Sessao.encerrada_em == None).first()
     if not s:
         raise HTTPException(404, "Sessao ativa nao encontrada")
+    conferir_estacao(db, quem, s.estacao)
     if not s.pausada:
         raise HTTPException(400, "Sessao nao esta pausada")
     agora = datetime.utcnow()
@@ -150,6 +156,7 @@ async def renovar_sessao(sessao_id: int, minutos: int, db: Session = Depends(get
     s = db.query(Sessao).filter(Sessao.id == sessao_id, Sessao.encerrada_em == None).first()
     if not s:
         raise HTTPException(404, "Sessao ativa nao encontrada")
+    conferir_estacao(db, quem, s.estacao)
     segundos_extra = minutos * 60
     s.tempo_total_segundos = (s.tempo_total_segundos or 0) + segundos_extra
     estacao_nome = s.estacao.nome

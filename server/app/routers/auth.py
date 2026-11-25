@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models import Usuario
 from app.security import verificar_senha, criar_token, hash_senha, get_usuario_atual
+from app.permissoes import do_usuario, pisos_do_usuario
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -35,8 +36,23 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         "access_token": token,
         "token_type": "bearer",
         "perfil": usuario.perfil,
-        "nome": usuario.nome
+        "nome": usuario.nome,
+        "permissoes": do_usuario(db, usuario.id),
+        "pisos": _pisos(db, usuario.id),
     }
+
+
+@router.get("/eu")
+def eu(db: Session = Depends(get_db), usuario=Depends(get_usuario_atual)):
+    """Quem esta logado e o que o grupo dele libera (o painel mostra os menus)."""
+    return {"perfil": usuario.get("perfil"), "nome": usuario.get("nome"),
+            "permissoes": do_usuario(db, usuario.get("sub")),
+            "pisos": _pisos(db, usuario.get("sub"))}
+
+
+def _pisos(db, sub):
+    pisos = pisos_do_usuario(db, sub)
+    return sorted(pisos) if pisos is not None else None
 
 
 class TrocarSenhaRequest(BaseModel):

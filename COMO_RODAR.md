@@ -62,6 +62,8 @@ Ele cria a tarefa `MatheCafe-Servidor` (na inicialização do Windows, como SYST
 
 O servidor faz sozinho um backup do `cybercafe.db` por dia, logo depois da meia-noite (ou quando sobe, se o do dia ainda não foi feito), em `server\backups`, guardando 14 dias. No painel: Configurações → Servidor → **Backup do banco** (fazer agora, baixar). No `.env`: `BACKUP_PASTA` (outro disco ou pasta de rede, ex.: `D:/BackupMatheCafe`) e `BACKUP_DIAS`.
 
+**Cópia fora do servidor** (recomendado): no mesmo lugar, **Cópia extra fora do servidor** → informe a pasta → **Testar e salvar**. Cada backup passa a ir também para lá. Use o caminho completo de rede (`\\outro-pc\backup-mathecafe`), não uma letra mapeada (Z:): o servidor roda como serviço (SYSTEM) e não vê as unidades do usuário. Numa pasta compartilhada de outro PC, dê permissão de gravação à conta do computador do servidor (no domínio, `NOME-DO-SERVIDOR$`) ou use um disco/pendrive ligado no próprio servidor. Se a cópia falhar, o painel mostra o erro e o servidor tenta de novo a cada 30 minutos (fica gravado em `BACKUP_COPIA` no `.env`).
+
 Guarde junto, uma vez, o `server\.secret_key` (ou a `SECRET_KEY` do `.env`): sem ele o banco restaurado funciona, mas todos precisam entrar no painel de novo.
 
 **Restaurar** (pelo painel): Configurações → Servidor → Backup do banco → **Restaurar** no backup escolhido, ou **Restaurar de um arquivo...** para um backup guardado fora do servidor (pendrive, outro PC). O servidor confere o arquivo (banco do MatheCafé, sem corrupção), reinicia e, ao subir, guarda o banco atual como `antes-da-restauracao-AAAA-MM-DD-HHMMSS.db` na pasta dos backups e põe o backup no lugar; o painel recarrega sozinho. Para **desfazer**, restaure esse "Banco de antes da restauração" (lista *Para desfazer uma restauração*). Com computadores em uso, o painel avisa: as sessões voltam ao estado do backup. A restauração entra no registro de ações. Sem a tarefa (servidor aberto à mão), ela vale no próximo início.
@@ -94,6 +96,8 @@ npm run build        # compila para server/app/static
 4. **Clientes**: cadastre os clientes.
 5. **Programação e avisos** (menu lateral, abaixo do Mapa; opcional): suba os cartazes da programação da biblioteca; eles aparecem ao lado dos apps durante a sessão.
 6. **Painel**: clique em **Liberar** (ou arraste o cliente para uma estação). Ele entra na fila e pode fazer login no PC.
+
+**Grupos de operadores**: em Configurações → Operadores → **Grupos de operadores**, crie um grupo (ex.: Coordenação), marque o que ele também pode usar (**Programação e avisos**, **Relatórios de uso e registro de ações**) e, ao editar cada operador, escolha o grupo. Operador sem grupo continua como antes. A mudança vale na hora; o operador já logado vê o menu novo ao recarregar o painel. Em **Pisos que o grupo vê**, marque os pisos do grupo (ex.: só o Infantil): os operadores dele só veem e mexem nas estações, sessões e fila desses pisos. Nenhum marcado = todos os pisos.
 
 ## 4. Agente (em cada estação)
 
@@ -128,6 +132,7 @@ Reinicie: o PC entra sozinho como `cliente` e o agente abre. Para **desinstalar 
 - Antes, confira a rede: no navegador da estação, `http://IP_DO_SERVIDOR:8000` precisa abrir o painel. Se não abrir, libere o Python no Firewall do Windows **da máquina do servidor** (redes privadas).
 - Servidor no Render: use `wss://` em vez de `ws://`.
 - **Modo manutenção**: `Ctrl+Shift+M` na estação, depois login e senha de um operador ou admin (conferidos pelo servidor). Sem conexão, só entra quem já entrou na manutenção daquela estação com o servidor no ar. É a única saída do agente: Esc e fechar a janela só funcionam nela.
+- **Ferramentas da manutenção**: a faixa tem **Diagnóstico** (servidor, ping, versão, estação, piso, ID e o log recente), **Explorador**, **Painel de Controle**, **Prompt**, **Processos** (no lugar do Gerenciador de Tarefas, bloqueado para o `cliente`) e **Reiniciar/Desligar o PC**. Esquecida aberta, a manutenção volta sozinha ao login depois de 15 minutos sem uso (avisa no último minuto).
 - **Trocar o servidor ou o nome da estação**: na manutenção, **Configurar conexão** → Testar → Salvar e reiniciar. Não precisa reinstalar.
 - **Bloqueios fora da manutenção**: na tela de login, Win, Ctrl+Esc, Alt+Tab, Alt+Esc e Alt+F4 não fazem nada. Na sessão Win e Ctrl+Esc continuam bloqueados; a barra do Windows dá lugar à do MatheCafé (Início, apps abertos, tema, tempo, Encerrar), e o cliente também alterna e fecha os apps com Alt+Tab e Alt+F4 (o agente em si é tela cheia: não fecha, não minimiza, não diminui). Se a barra do Windows não voltar depois de um problema, sair do usuário e entrar de novo a traz de volta. Ctrl+Shift+Esc fica sempre bloqueado e o `taskmgr.exe` é fechado.
 - **Estação travada sem servidor** (não dá para entrar em manutenção): Ctrl+Alt+Del → Sair e entre com a conta de admin segurando **Shift** para o autologin não entrar de novo.

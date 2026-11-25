@@ -87,7 +87,10 @@ export function ProvedorDados({ children }: { children: React.ReactNode }) {
     setSessoes(await Api.get<Sessao[]>("/api/sessoes/ativas"))
   }, [])
   const recarregarPisos = useCallback(async () => {
-    setPisos(await Api.get<Piso[]>("/api/pisos/"))
+    // grupo de operadores com pisos: o seletor só oferece os dele
+    const permitidos = Api.pisosPermitidos()
+    const todos = await Api.get<Piso[]>("/api/pisos/")
+    setPisos(permitidos ? todos.filter((p) => permitidos.includes(p.id)) : todos)
   }, [])
   const recarregarGrupos = useCallback(async () => {
     setGrupos(await Api.get<Grupo[]>("/api/estacoes/grupos"))

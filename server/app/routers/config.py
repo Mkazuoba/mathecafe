@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from fastapi.responses import FileResponse
 from app import backup, horario
 from app.config import _ENV_FILE, descrever_banco, get_settings, gravar_no_env, normalizar_url_banco, pasta_de_backup
@@ -142,10 +143,97 @@ PASTA_BACKUP = pasta_de_backup(get_settings().BACKUP_PASTA)
 DIAS_BACKUP = max(1, get_settings().BACKUP_DIAS)
 
 
+# Copia extra (10.1): cada backup vai tambem para esta pasta (None = desligada)
+COPIA_EXTRA = Path(get_settings().BACKUP_COPIA.strip()) if get_settings().BACKUP_COPIA.strip() else None
+INTERVALO_TENTATIVA_EXTRA = timedelta(minutes=30)
+
+
+def _agora_br() -> datetime:
+    return datetime.now(FUSO).replace(tzinfo=None)
+
+
 def backup_agora():
-    """Faz o backup do banco agora (horario de Brasilia no nome)."""
-    agora = datetime.now(FUSO).replace(tzinfo=None)
-    return backup.fazer_backup(ARQUIVO_SQLITE, PASTA_BACKUP, agora, DIAS_BACKUP)
+    """Faz o backup do banco agora (horario de Brasilia no nome) e copia para
+    a pasta extra, se houver. Falha na copia nao desfaz o backup local."""
+    agora = _agora_br()
+    destino = backup.fazer_backup(ARQUIVO_SQLITE, PASTA_BACKUP, agora, DIAS_BACKUP)
+    if COPIA_EXTRA is not None:
+        copiar_extra(destino)
+    return destino
+
+
+def copiar_extra(arquivo: Optional[Path] = None) -> dict:
+    """Copia o backup (o mais novo, se nao disser qual) para a pasta extra e
+    grava a situacao para o painel."""
+    agora = _agora_br()
+    if arquivo is None:
+        lista = backup.listar_backups(PASTA_BACKUP)
+        if not lista:
+            situacao = {"ok": False, "quando": agora.isoformat(timespec="seconds"), "erro": "Nenhum backup para copiar"}
+            backup.gravar_situacao_extra(PASTA_BACKUP, situacao)
+            return situacao
+        arquivo = PASTA_BACKUP / lista[0]["nome"]
+    try:
+        copia = backup.copiar_para_extra(arquivo, COPIA_EXTRA, agora.date(), DIAS_BACKUP)
+        situacao = {"ok": True, "quando": agora.isoformat(timespec="seconds"), "arquivo": copia.name,
+                    "pasta": str(COPIA_EXTRA)}
+        print(f"Backup do banco: copia extra em {copia}")
+    except OSError as e:
+        situacao = {"ok": False, "quando": agora.isoformat(timespec="seconds"), "arquivo": arquivo.name,
+                    "pasta": str(COPIA_EXTRA), "erro": e.strerror or str(e)}
+        print(f"Backup do banco: copia extra falhou ({e})")
+    backup.gravar_situacao_extra(PASTA_BACKUP, situacao)
+    return situacao
+
+
+def copia_extra_a_tentar(agora: datetime) -> bool:
+    """O batimento deve tentar a copia extra de novo? So com a copia de hoje
+    faltando e, depois de uma falha, a cada INTERVALO_TENTATIVA_EXTRA."""
+    if COPIA_EXTRA is None or not backup.copia_extra_pendente(PASTA_BACKUP, COPIA_EXTRA, agora.date()):
+        return False
+    situacao = backup.ler_situacao_extra(PASTA_BACKUP) or {}
+    try:
+        ultima = datetime.fromisoformat(situacao["quando"])
+    except (KeyError, TypeError, ValueError):
+        return True
+    return situacao.get("ok") is True or agora - ultima >= INTERVALO_TENTATIVA_EXTRA
+
+
+def _info_copia_extra() -> dict:
+    if COPIA_EXTRA is None:
+        return {"pasta": "", "situacao": None, "pendente": False}
+    return {"pasta": str(COPIA_EXTRA), "situacao": backup.ler_situacao_extra(PASTA_BACKUP),
+            "pendente": backup.copia_extra_pendente(PASTA_BACKUP, COPIA_EXTRA, hoje_br())}
+
+
+class CopiaExtra(BaseModel):
+    pasta: str = ""
+
+
+@router.put("/backup/copia_extra")
+def definir_copia_extra(data: CopiaExtra, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin"))):
+    """Liga (ou troca) a pasta da copia extra, depois de conferir que o servidor
+    grava nela; vazia desliga. Fica no .env (BACKUP_COPIA)."""
+    global COPIA_EXTRA
+    pasta = data.pasta.strip().strip('"')
+    if pasta:
+        erro = backup.testar_pasta(Path(pasta))
+        if erro:
+            raise HTTPException(400, erro)
+    gravar_no_env(ARQUIVO_ENV, "BACKUP_COPIA", pasta)
+    COPIA_EXTRA = Path(pasta) if pasta else None
+    registrar(db, quem, "backup_copia_extra", detalhe=pasta or "desligada")
+    if COPIA_EXTRA is not None and backup.listar_backups(PASTA_BACKUP):
+        copiar_extra()  # ja leva o backup mais novo
+    return _info_copia_extra()
+
+
+@router.post("/backup/copia_extra/copiar")
+def copiar_extra_agora(_=Depends(requer_perfil("admin"))):
+    if COPIA_EXTRA is None:
+        raise HTTPException(400, "Cópia extra desligada")
+    copiar_extra()
+    return _info_copia_extra()
 
 
 def backup_diario_pendente() -> bool:
@@ -158,7 +246,8 @@ def ver_backups(db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))
             "backups": backup.listar_backups(PASTA_BACKUP),
             # o banco de antes de cada restauracao (para desfazer) e os enviados
             "outros": backup.listar_outros(PASTA_BACKUP),
-            "sessoes_abertas": _sessoes_abertas(db)}
+            "sessoes_abertas": _sessoes_abertas(db),
+            "copia_extra": _info_copia_extra()}
 
 
 def _sessoes_abertas(db: Session) -> int:

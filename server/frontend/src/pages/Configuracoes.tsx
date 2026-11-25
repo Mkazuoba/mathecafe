@@ -5,7 +5,7 @@ import { Api } from "@/lib/api"
 import { useAvisos } from "@/lib/avisos"
 import { useDados } from "@/lib/dados"
 import { formatarTempo, lerTempo } from "@/lib/tempo"
-import type { ConfigSistema, Grupo, Operador } from "@/lib/tipos"
+import type { ConfigSistema, Grupo, GrupoOperadores, Operador, PermissaoGrupo, Piso } from "@/lib/tipos"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Campo, Input, Interruptor, MensagemErro } from "@/components/ui/campos"
@@ -88,10 +88,37 @@ function SecaoOperadores() {
   const avisar = useAvisos()
   const [operadores, setOperadores] = useState<Operador[] | null>(null)
   const [editando, setEditando] = useState<Operador | "novo" | null>(null)
+  const [grupos, setGrupos] = useState<GrupoOperadores[]>([])
+  const [permissoes, setPermissoes] = useState<PermissaoGrupo[]>([])
+  const [grupoEditando, setGrupoEditando] = useState<GrupoOperadores | "novo" | null>(null)
 
   const carregar = useCallback(async () => {
-    setOperadores(await Api.get<Operador[]>("/api/operadores/"))
+    const [ops, gs, ps] = await Promise.all([
+      Api.get<Operador[]>("/api/operadores/"),
+      Api.get<GrupoOperadores[]>("/api/operadores/grupos"),
+      Api.get<PermissaoGrupo[]>("/api/operadores/permissoes"),
+    ])
+    setOperadores(ops)
+    setGrupos(gs)
+    setPermissoes(ps)
   }, [])
+  const rotuloPermissao = (chave: string) => permissoes.find((p) => p.chave === chave)?.rotulo ?? chave
+  const { pisos } = useDados()
+  const nomesPisos = (ids: number[]) =>
+    ids.length ? pisos.filter((p) => ids.includes(p.id)).map((p) => p.nome).join(", ") : "Todos os pisos"
+
+  async function excluirGrupo(g: GrupoOperadores) {
+    const quem = g.operadores === 1 ? "O operador dele volta" : `Os ${g.operadores} operadores dele voltam`
+    const aviso = g.operadores ? `Excluir o grupo ${g.nome}? ${quem} a operador comum.` : `Excluir o grupo ${g.nome}?`
+    if (!window.confirm(aviso)) return
+    try {
+      await Api.del(`/api/operadores/grupos/${g.id}`)
+      avisar("Grupo excluído")
+      await carregar()
+    } catch (e) {
+      avisar((e as Error).message, "erro")
+    }
+  }
   useEffect(() => {
     carregar().catch((e) => avisar((e as Error).message, "erro"))
   }, [carregar, avisar])
@@ -122,6 +149,11 @@ function SecaoOperadores() {
               <div className="flex items-center gap-2 text-sm font-medium">
                 {o.nome} <SeloAtivo ativo={o.ativo} />
                 <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${o.perfil === "admin" ? "bg-manutencao-fundo text-manutencao" : "bg-superficie-3 text-texto-suave"}`}>{o.perfil}</span>
+                {o.perfil === "operador" && o.grupo_id ? (
+                  <span className="rounded bg-destaque/15 px-1.5 py-0.5 text-xs text-destaque">
+                    {grupos.find((g) => g.id === o.grupo_id)?.nome}
+                  </span>
+                ) : null}
               </div>
               <div className="font-mono text-xs text-texto-fraco">{o.login}</div>
             </div>
@@ -136,17 +168,170 @@ function SecaoOperadores() {
       ) : (
         <Vazio>Nenhum operador cadastrado</Vazio>
       )}
-      <ModalOperador operador={editando} aoFechar={() => setEditando(null)} aoSalvar={carregar} />
+      <ModalOperador operador={editando} grupos={grupos} aoFechar={() => setEditando(null)} aoSalvar={carregar} />
+
+      <Titulo>Grupos de operadores</Titulo>
+      <p className="mb-3 max-w-xl text-sm text-texto-suave">
+        O operador comum libera clientes, encerra sessões e entra em manutenção. Um grupo libera também áreas que
+        eram só do administrador. A mudança vale na hora, sem sair do painel.
+      </p>
+      <Button size="sm" variant="outline" className="mb-3" onClick={() => setGrupoEditando("novo")}>
+        + Novo grupo
+      </Button>
+      {grupos.length ? (
+        grupos.map((g) => (
+          <Linha key={g.id}>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">
+                {g.nome}{" "}
+                <span className="text-xs font-normal text-texto-fraco">
+                  · {g.operadores} operador{g.operadores === 1 ? "" : "es"}
+                </span>
+              </div>
+              <div className="text-xs text-texto-suave">
+                {g.permissoes.length ? g.permissoes.map(rotuloPermissao).join(" · ") : "Nenhuma área extra"}
+              </div>
+              <div className="text-xs text-texto-fraco">Pisos: {nomesPisos(g.pisos)}</div>
+            </div>
+            <Button variant="outline" size="xs" onClick={() => setGrupoEditando(g)}>
+              Editar
+            </Button>
+            <Button variant="perigo" size="xs" onClick={() => excluirGrupo(g)}>
+              Excluir
+            </Button>
+          </Linha>
+        ))
+      ) : (
+        <Vazio>Nenhum grupo: todos os operadores têm as mesmas permissões</Vazio>
+      )}
+      <ModalGrupo
+        grupo={grupoEditando}
+        permissoes={permissoes}
+        pisos={pisos}
+        aoFechar={() => setGrupoEditando(null)}
+        aoSalvar={carregar}
+      />
     </>
+  )
+}
+
+function ModalGrupo({
+  grupo,
+  permissoes,
+  pisos,
+  aoFechar,
+  aoSalvar,
+}: {
+  grupo: GrupoOperadores | "novo" | null
+  permissoes: PermissaoGrupo[]
+  pisos: Piso[]
+  aoFechar: () => void
+  aoSalvar: () => Promise<void>
+}) {
+  const avisar = useAvisos()
+  const existente = grupo && grupo !== "novo" ? grupo : null
+  const [nome, setNome] = useState("")
+  const [marcadas, setMarcadas] = useState<string[]>([])
+  const [pisosMarcados, setPisosMarcados] = useState<number[]>([])
+  const [erro, setErro] = useState("")
+  const [aberto, setAberto] = useState<typeof grupo>(null)
+
+  if (grupo !== aberto) {
+    setAberto(grupo)
+    setNome(existente?.nome ?? "")
+    setMarcadas(existente?.permissoes ?? [])
+    setPisosMarcados(existente?.pisos ?? [])
+    setErro("")
+  }
+
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!nome.trim()) return setErro("Dê um nome ao grupo")
+    try {
+      const corpo = { nome: nome.trim(), permissoes: marcadas, pisos: pisosMarcados }
+      if (existente) await Api.put(`/api/operadores/grupos/${existente.id}`, corpo)
+      else await Api.post("/api/operadores/grupos", corpo)
+      avisar(existente ? "Grupo atualizado" : "Grupo criado")
+      aoFechar()
+      await aoSalvar()
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
+
+  return (
+    <Modal titulo={existente ? "Editar grupo" : "Novo grupo"} aberto={!!grupo} aoFechar={aoFechar}>
+      <form onSubmit={salvar} className="flex flex-col gap-4">
+        <Campo rotulo="Nome do grupo" id="grupo-nome">
+          <Input
+            id="grupo-nome"
+            autoComplete="off"
+            maxLength={40}
+            placeholder="Ex.: Coordenação"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </Campo>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm text-texto-suave">Os operadores deste grupo também podem usar</legend>
+          {permissoes.map((p) => (
+            <label key={p.chave} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4"
+                checked={marcadas.includes(p.chave)}
+                onChange={(e) =>
+                  setMarcadas((m) => (e.target.checked ? [...m, p.chave] : m.filter((x) => x !== p.chave)))
+                }
+              />
+              {p.rotulo}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm text-texto-suave">Pisos que o grupo vê</legend>
+          {pisos.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4"
+                checked={pisosMarcados.includes(p.id)}
+                onChange={(e) =>
+                  setPisosMarcados((m) => (e.target.checked ? [...m, p.id] : m.filter((x) => x !== p.id)))
+                }
+              />
+              <span className="size-2.5 rounded-full" style={{ backgroundColor: p.cor }} />
+              {p.nome}
+            </label>
+          ))}
+          <p className="text-xs text-texto-fraco">
+            {pisosMarcados.length
+              ? "Os operadores do grupo só veem e mexem nas estações, sessões e fila destes pisos."
+              : "Nenhum marcado: o grupo vê todos os pisos."}
+          </p>
+        </fieldset>
+        <MensagemErro>{erro}</MensagemErro>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={aoFechar}>
+            Cancelar
+          </Button>
+          <Button type="submit" className="flex-1">
+            Salvar
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
 function ModalOperador({
   operador,
+  grupos,
   aoFechar,
   aoSalvar,
 }: {
   operador: Operador | "novo" | null
+  grupos: GrupoOperadores[]
   aoFechar: () => void
   aoSalvar: () => Promise<void>
 }) {
@@ -158,6 +343,7 @@ function ModalOperador({
   const [senha, setSenha] = useState("")
   const [ativo, setAtivo] = useState(true)
   const [perfil, setPerfil] = useState("operador")
+  const [grupoId, setGrupoId] = useState(0)
   const [erro, setErro] = useState("")
   const [aberto, setAberto] = useState<typeof operador>(null)
 
@@ -168,6 +354,7 @@ function ModalOperador({
     setSenha("")
     setAtivo(existente?.ativo ?? true)
     setPerfil(existente?.perfil ?? "operador")
+    setGrupoId(existente?.grupo_id ?? 0)
     setErro("")
   }
 
@@ -177,10 +364,10 @@ function ModalOperador({
     if (novo && !senha) return setErro("Senha obrigatória para novo operador")
     try {
       if (existente) {
-        await Api.put(`/api/operadores/${existente.id}`, { nome: nome.trim(), ativo, perfil, ...(senha ? { senha } : {}) })
+        await Api.put(`/api/operadores/${existente.id}`, { nome: nome.trim(), ativo, perfil, grupo_id: grupoId, ...(senha ? { senha } : {}) })
         avisar("Operador atualizado")
       } else {
-        await Api.post("/api/operadores/", { login: login.trim(), nome: nome.trim(), senha, perfil })
+        await Api.post("/api/operadores/", { login: login.trim(), nome: nome.trim(), senha, perfil, grupo_id: grupoId })
         avisar("Operador criado")
       }
       aoFechar()
@@ -220,6 +407,23 @@ function ModalOperador({
             <option value="admin">Administrador</option>
           </select>
         </Campo>
+        {perfil === "operador" && (
+          <Campo rotulo="Grupo" id="op-grupo">
+            <select
+              id="op-grupo"
+              value={grupoId}
+              onChange={(e) => setGrupoId(Number(e.target.value))}
+              className="w-full rounded-md border border-borda bg-fundo px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primario"
+            >
+              <option value={0}>Nenhum (operador comum)</option>
+              {grupos.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.nome}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        )}
         {!novo && (
           <div className="flex items-center justify-between">
             <label htmlFor="op-ativo" className="text-sm text-texto-suave">

@@ -25,11 +25,22 @@ class Usuario(Base):
     piso_id = Column(Integer, ForeignKey("pisos.id"), nullable=True, index=True)
     piso_alterado_por = Column(String(100), nullable=True)
     piso_alterado_em = Column(DateTime, nullable=True)
+    # Grupo de operadores (app/permissoes.py): libera areas do admin. Vazio = operador comum.
+    grupo_operadores_id = Column(Integer, ForeignKey("grupos_operadores.id"), nullable=True)
 
     piso = relationship("Piso")
     sessoes = relationship("Sessao", back_populates="cliente", foreign_keys="Sessao.cliente_id")
     autorizacao = relationship("Autorizacao", back_populates="cliente", uselist=False,
                                foreign_keys="Autorizacao.cliente_id")
+
+
+class GrupoOperadores(Base):
+    """Grupo de operadores com as areas do admin que ele libera (app/permissoes.py)."""
+    __tablename__ = "grupos_operadores"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(40), nullable=False, unique=True)
+    permissoes = Column(String(200), default="")  # chaves separadas por virgula
+    pisos = Column(String(200), default="")  # ids dos pisos que o grupo ve; vazio = todos
 
 
 class Piso(Base):

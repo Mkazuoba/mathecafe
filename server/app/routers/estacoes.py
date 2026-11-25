@@ -17,6 +17,7 @@ from app.models import Piso
 from app.estacoes_novas import info_para_o_agente, nome_livre
 from app.nomes_estacao import achar_estacao, exigir_nome_livre, piso_id_de, piso_id_do_grupo
 from app.pisos import cor_para_o_agente, piso_da_estacao, piso_do_cliente, recusa_de_piso, resumo
+from app.permissoes import conferir_cliente, conferir_estacao, pisos_do_usuario, ve_piso
 
 router = APIRouter(prefix="/estacoes", tags=["estacoes"])
 
@@ -87,8 +88,16 @@ def serial_grupo(g: GrupoEstacao):
     }
 
 @router.get("/grupos")
-def listar_grupos(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
-    return [serial_grupo(g) for g in db.query(GrupoEstacao).filter(GrupoEstacao.ativo == True).all()]
+def listar_grupos(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
+    pisos = pisos_do_usuario(db, quem.get("sub"))
+    grupos = db.query(GrupoEstacao).filter(GrupoEstacao.ativo == True).all()
+    return [serial_grupo(g) for g in grupos if pisos is None or g.piso_id in pisos]
+
+
+def _visiveis(db: Session, quem: dict, estacoes):
+    """So as estacoes dos pisos do grupo do operador (todas se nao tiver)."""
+    pisos = pisos_do_usuario(db, quem.get("sub"))
+    return [e for e in estacoes if ve_piso(pisos, piso_da_estacao(e))]
 
 @router.post("/grupos")
 def criar_grupo(nome: str, piso_id: int, tempo_padrao_segundos: int = 7200, cor: str = "#6366f1",
@@ -252,11 +261,11 @@ class LoteBody(BaseModel):
 # ── Estações ──────────────────────────────────────────────────────────────────
 @router.get("/")
 def listar(grupo_id: Optional[int] = None, db: Session = Depends(get_db),
-           _=Depends(requer_perfil("admin", "operador"))):
+           quem=Depends(requer_perfil("admin", "operador"))):
     q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada != False)
     if grupo_id:
         q = q.filter(Estacao.grupo_id == grupo_id)
-    return [serial_estacao(e) for e in q.order_by(Estacao.nome).all()]
+    return [serial_estacao(e) for e in _visiveis(db, quem, q.order_by(Estacao.nome).all())]
 
 @router.post("/")
 def criar(nome: str, grupo_id: Optional[int] = None,
@@ -309,9 +318,9 @@ class AprovarBody(BaseModel):
 
 
 @router.get("/pendentes")
-def listar_pendentes(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def listar_pendentes(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
     q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada == False)
-    return [serial_estacao(e) for e in q.order_by(Estacao.id).all()]
+    return [serial_estacao(e) for e in _visiveis(db, quem, q.order_by(Estacao.id).all())]
 
 
 async def _renomear(db: Session, e: Estacao, nome: str, piso_id: Optional[int] = None):
@@ -328,10 +337,10 @@ async def _renomear(db: Session, e: Estacao, nome: str, piso_id: Optional[int] =
 
 
 @router.get("/pedidos_nome")
-def listar_pedidos_de_nome(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def listar_pedidos_de_nome(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
     """Estacoes cujo nome foi trocado no proprio PC e espera aprovacao."""
     q = db.query(Estacao).filter(Estacao.ativa == True, Estacao.aprovada != False, Estacao.nome_pedido != None)
-    return [serial_estacao(e) for e in q.order_by(Estacao.nome).all()]
+    return [serial_estacao(e) for e in _visiveis(db, quem, q.order_by(Estacao.nome).all())]
 
 
 def _com_pedido(db: Session, id: int) -> Estacao:
@@ -461,7 +470,7 @@ async def atualizar(id: int, data: EstacaoUpdate, db: Session = Depends(get_db),
     return serial_estacao(e)
 
 @router.get("/estilos")
-def listar_estilos(_=Depends(requer_perfil("admin", "operador"))):
+def listar_estilos(quem=Depends(requer_perfil("admin", "operador"))):
     """Os estilos da tela do cliente que o agente conhece (o padrao primeiro)."""
     return [{"id": k, "nome": v, "desde": DESDE.get(k, "1.28.0")} for k, v in ESTILOS.items()]
 
@@ -498,7 +507,7 @@ def atualizar_posicao(id: int, data: PosicaoUpdate, db: Session = Depends(get_db
 async def ligar_pc(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
                    quem=Depends(requer_perfil("admin", "operador"))):
     """Envia magic packet Wake-on-LAN para a estacao."""
-    e = achar_estacao(db, nome, id)
+    e = _achar(db, nome, id, quem)
     _ligar(e)
     registrar(db, quem, "ligar_pc", estacao=e.nome)
     return {"ok": True}
@@ -519,9 +528,9 @@ def _ligar(e: Estacao):
 
 @router.post("/{nome}/capturar_tela")
 async def capturar_tela(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
-                        _=Depends(requer_perfil("admin", "operador"))):
+                        quem=Depends(requer_perfil("admin", "operador"))):
     """Pede ao agente uma captura de tela silenciosa."""
-    e = _estacao_online(db, nome, id)
+    e = _estacao_online(db, nome, id, quem)
     await manager.enviar_estacao(e.id, "capturar_tela", {})
     return {"ok": True}
 
@@ -560,10 +569,12 @@ async def excluir(id: int, db: Session = Depends(get_db), quem=Depends(requer_pe
     return {"ok": True, "desativada": True} if desativada else {"ok": True}
 
 @router.get("/{id}/logs")
-def logs(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def logs(id: int, db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
     """O log de comunicacao do agente (saiu da tela do PC): as ultimas linhas, da mais antiga a mais nova."""
-    if not db.query(Estacao).filter(Estacao.id == id).first():
+    e = db.query(Estacao).filter(Estacao.id == id).first()
+    if not e:
         raise HTTPException(404, "Estação não encontrada")
+    conferir_estacao(db, quem, e)
     return logs_estacoes.linhas(id)
 
 @router.delete("/{id}/logs")
@@ -572,6 +583,7 @@ async def limpar_logs(id: int, db: Session = Depends(get_db), quem=Depends(reque
     e = db.query(Estacao).filter(Estacao.id == id).first()
     if not e:
         raise HTTPException(404, "Estação não encontrada")
+    conferir_estacao(db, quem, e)
     apagadas = len(logs_estacoes.linhas(id))
     logs_estacoes.apagar(id)
     registrar(db, quem, "limpar_log_estacao", estacao=e.nome, detalhe=f"{apagadas} linhas")
@@ -581,10 +593,11 @@ async def limpar_logs(id: int, db: Session = Depends(get_db), quem=Depends(reque
 
 # ── Fila de espera ────────────────────────────────────────────────────────────
 @router.get("/fila")
-def ver_fila(db: Session = Depends(get_db), _=Depends(requer_perfil("admin", "operador"))):
+def ver_fila(db: Session = Depends(get_db), quem=Depends(requer_perfil("admin", "operador"))):
     fila = db.query(Autorizacao).filter(Autorizacao.usado == False)\
              .order_by(Autorizacao.autorizado_em).all()
-    return [serial_autorizacao(a) for a in fila]
+    pisos = pisos_do_usuario(db, quem.get("sub"))  # grupo com pisos: so os clientes deles
+    return [serial_autorizacao(a) for a in fila if ve_piso(pisos, piso_do_cliente(a.cliente))]
 
 @router.post("/fila/{cliente_id}")
 async def autorizar_cliente(cliente_id: int, db: Session = Depends(get_db),
@@ -593,6 +606,7 @@ async def autorizar_cliente(cliente_id: int, db: Session = Depends(get_db),
         Usuario.id == cliente_id, Usuario.perfil == "cliente", Usuario.ativo == True).first()
     if not cliente:
         raise HTTPException(404, "Cliente não encontrado")
+    conferir_cliente(db, operador, cliente)
 
     auth = db.query(Autorizacao).filter(Autorizacao.cliente_id == cliente_id).first()
 
@@ -630,7 +644,7 @@ async def remover_fila(cliente_id: int, db: Session = Depends(get_db),
         Autorizacao.cliente_id == cliente_id, Autorizacao.usado == False).first()
     if not auth:
         raise HTTPException(404, "Cliente não está na fila")
-    cliente = auth.cliente
+    cliente = conferir_cliente(db, quem, auth.cliente)
     db.delete(auth); db.commit()
     registrar(db, quem, "tirar_da_fila", cliente=cliente)
     await manager.broadcast_paineis("fila_atualizada", {"acao": "removido", "cliente_id": cliente_id})
@@ -646,8 +660,13 @@ class LiberarDiretoBody(BaseModel):
 
 # ── Comandos para o PC (um a um ou em massa, em /acoes) ───────────────────────
 
-def _estacao_online(db: Session, nome: str, estacao_id: Optional[int] = None) -> Estacao:
-    e = achar_estacao(db, nome, estacao_id)
+def _achar(db: Session, nome: str, estacao_id: Optional[int], quem: dict) -> Estacao:
+    """A estacao, se for de um piso que o operador ve (grupo com pisos)."""
+    return conferir_estacao(db, quem, achar_estacao(db, nome, estacao_id))
+
+
+def _estacao_online(db: Session, nome: str, estacao_id: Optional[int] = None, quem: Optional[dict] = None) -> Estacao:
+    e = _achar(db, nome, estacao_id, quem) if quem else achar_estacao(db, nome, estacao_id)
     if not manager.estacao_conectada(e.id):
         raise HTTPException(400, "Estação offline")
     return e
@@ -688,19 +707,19 @@ async def _encerrar(db: Session, e: Estacao, quem: dict):
 @router.post("/{nome}/reiniciar")
 async def reiniciar_pc(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
                         quem=Depends(requer_perfil("admin", "operador"))):
-    await _desligar_ou_reiniciar(db, achar_estacao(db, nome, id), "reiniciar_pc", quem)
+    await _desligar_ou_reiniciar(db, _achar(db, nome, id, quem), "reiniciar_pc", quem)
     return {"ok": True}
 
 @router.post("/{nome}/desligar")
 async def desligar_pc(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
                       quem=Depends(requer_perfil("admin", "operador"))):
-    await _desligar_ou_reiniciar(db, achar_estacao(db, nome, id), "desligar_pc", quem)
+    await _desligar_ou_reiniciar(db, _achar(db, nome, id, quem), "desligar_pc", quem)
     return {"ok": True}
 
 @router.post("/{nome}/mensagem")
 async def enviar_mensagem(nome: str, body: MensagemBody, id: Optional[int] = None, db: Session = Depends(get_db),
                            quem=Depends(requer_perfil("admin", "operador"))):
-    await _mensagem(db, achar_estacao(db, nome, id), body.texto, quem)
+    await _mensagem(db, _achar(db, nome, id, quem), body.texto, quem)
     return {"ok": True}
 
 
@@ -728,7 +747,7 @@ async def _atualizar_agente(db: Session, e: Estacao, quem: dict):
 async def atualizar_agente(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
                            quem=Depends(requer_perfil("admin", "operador"))):
     """O agente baixa a versao do servidor e reinicia (volta na tela de login)."""
-    await _atualizar_agente(db, achar_estacao(db, nome, id), quem)
+    await _atualizar_agente(db, _achar(db, nome, id, quem), quem)
     return {"ok": True}
 
 
@@ -753,6 +772,7 @@ async def atualizar_telas(body: AtualizarTelas, db: Session = Depends(get_db),
     retirado some da tela e, se estiver aberto, o agente o fecha."""
     from app.pisos import apps_do_piso, whitelist_para_o_agente
     alvos = set(body.ids) if body.ids else None
+    pisos = pisos_do_usuario(db, quem.get("sub"))  # grupo com pisos: so as dele
     enviadas = 0
     for estacao_id in list(manager.estacoes_online()):
         if alvos is not None and estacao_id not in alvos:
@@ -761,6 +781,8 @@ async def atualizar_telas(body: AtualizarTelas, db: Session = Depends(get_db),
         if not e or not e.ativa:
             continue
         piso = piso_da_estacao(e)
+        if not ve_piso(pisos, piso):
+            continue
         await manager.enviar_estacao(e.id, "atualizar_tela", {
             "whitelist": whitelist_para_o_agente(apps_do_piso(db, piso)),
             "piso": cor_para_o_agente(e),
@@ -790,6 +812,7 @@ async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
         try:
             e = achar_estacao(db, nome or "", estacao_id)
             chave = nome or e.nome
+            conferir_estacao(db, quem, e)
             if body.acao == "mensagem":
                 await _mensagem(db, e, texto, quem)
             elif body.acao == "encerrar":
@@ -810,7 +833,7 @@ async def acoes_em_massa(body: AcaoEmMassa, db: Session = Depends(get_db),
 @router.post("/{nome}/manutencao")
 async def alternar_manutencao(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
                                quem=Depends(requer_perfil("admin", "operador"))):
-    e = _estacao_online(db, nome, id)
+    e = _estacao_online(db, nome, id, quem)
     if e.status == "manutencao":
         await manager.enviar_estacao(e.id, "desativar_manutencao", {})
         registrar(db, quem, "manutencao", estacao=e.nome, detalhe="saiu da manutenção")
@@ -822,11 +845,12 @@ async def alternar_manutencao(nome: str, id: Optional[int] = None, db: Session =
 @router.post("/{nome}/iniciar_direto")
 async def iniciar_direto(nome: str, body: LiberarDiretoBody, id: Optional[int] = None,
                           db: Session = Depends(get_db),
-                          operador=Depends(requer_perfil("admin", "operador"))):
+                          quem=Depends(requer_perfil("admin", "operador"))):
+    operador = quem
     from datetime import datetime as dt
     from app.models import Sessao as SessaoModel
 
-    e = _estacao_online(db, nome, id)
+    e = _estacao_online(db, nome, id, quem)
     nome = e.nome
     if e.status != "livre":
         raise HTTPException(400, "Estação não está livre")
@@ -909,16 +933,16 @@ async def iniciar_direto(nome: str, body: LiberarDiretoBody, id: Optional[int] =
 
 @router.post("/{nome}/iniciar_streaming")
 async def iniciar_streaming(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
-                            _=Depends(requer_perfil("admin", "operador"))):
-    e = _estacao_online(db, nome, id)
+                            quem=Depends(requer_perfil("admin", "operador"))):
+    e = _estacao_online(db, nome, id, quem)
     await manager.enviar_estacao(e.id, "iniciar_streaming", {})
     return {"ok": True}
 
 
 @router.post("/{nome}/parar_streaming")
 async def parar_streaming(nome: str, id: Optional[int] = None, db: Session = Depends(get_db),
-                          _=Depends(requer_perfil("admin", "operador"))):
-    e = achar_estacao(db, nome, id)
+                          quem=Depends(requer_perfil("admin", "operador"))):
+    e = _achar(db, nome, id, quem)
     if manager.estacao_conectada(e.id):
         await manager.enviar_estacao(e.id, "parar_streaming", {})
     return {"ok": True}

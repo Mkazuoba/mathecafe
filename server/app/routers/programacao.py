@@ -14,6 +14,7 @@ from app.database import get_db
 from app.imagens import ler_imagem
 from app.models import ConfiguracaoSistema, ItemProgramacao
 from app.security import requer_perfil
+from app.permissoes import requer_permissao
 from app.websocket_manager import manager
 
 router = APIRouter(prefix="/programacao", tags=["programacao"])
@@ -117,7 +118,7 @@ def imagem(id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/")
-async def criar(body: NovoItem, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def criar(body: NovoItem, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     tipo, dados = ler_imagem(body.imagem, IMAGEM_MAX_BYTES)
     ultimo = _ordenados(db).order_by(None).order_by(ItemProgramacao.ordem.desc()).first()
     item = ItemProgramacao(titulo=body.titulo.strip(), tipo=tipo, conteudo=dados, link=body.link or None,
@@ -131,7 +132,7 @@ async def criar(body: NovoItem, db: Session = Depends(get_db), _=Depends(requer_
 
 
 @router.put("/config")
-async def configurar(body: ConfigProgramacao, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def configurar(body: ConfigProgramacao, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     cfg = db.query(ConfiguracaoSistema).filter(ConfiguracaoSistema.chave == CHAVE_SEGUNDOS).first()
     if cfg:
         cfg.valor = str(body.segundos)
@@ -143,7 +144,7 @@ async def configurar(body: ConfigProgramacao, db: Session = Depends(get_db), _=D
 
 
 @router.put("/ordem")
-async def reordenar(body: Ordem, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def reordenar(body: Ordem, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     itens = {i.id: i for i in db.query(ItemProgramacao).filter(ItemProgramacao.id.in_(body.ids))}
     for posicao, id_ in enumerate(body.ids):
         if id_ in itens:
@@ -154,7 +155,7 @@ async def reordenar(body: Ordem, db: Session = Depends(get_db), _=Depends(requer
 
 
 @router.put("/{id}")
-async def editar(id: int, body: EditarItem, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def editar(id: int, body: EditarItem, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     item = db.get(ItemProgramacao, id)
     if not item:
         raise HTTPException(404, "Cartaz não encontrado")
@@ -174,7 +175,7 @@ async def editar(id: int, body: EditarItem, db: Session = Depends(get_db), _=Dep
 
 
 @router.delete("/{id}")
-async def apagar(id: int, db: Session = Depends(get_db), _=Depends(requer_perfil("admin"))):
+async def apagar(id: int, db: Session = Depends(get_db), _=Depends(requer_permissao("divulgacao"))):
     item = db.get(ItemProgramacao, id)
     if not item:
         raise HTTPException(404, "Cartaz não encontrado")

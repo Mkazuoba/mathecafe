@@ -11,6 +11,7 @@ from app.models import AcaoOperador, Sessao, Estacao, Usuario
 from app.registro import ROTULOS
 from app.importados import so_visiveis
 from app.security import requer_perfil
+from app.permissoes import requer_permissao
 from app.tempo_diario import FUSO
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
@@ -22,7 +23,7 @@ def exportar_csv(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=Depends(requer_perfil("admin")),
+    _=Depends(requer_permissao("relatorios")),
 ):
     q = so_visiveis(db.query(Sessao).filter(Sessao.encerrada_em != None), db)
 
@@ -222,7 +223,7 @@ def _serial_acao(a: AcaoOperador) -> dict:
 def acoes_dos_operadores(
     operador_id: Optional[int] = None, acao: Optional[str] = None, cliente: Optional[str] = None,
     estacao: Optional[str] = None, de: Optional[str] = None, ate: Optional[str] = None,
-    limite: int = 500, db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+    limite: int = 500, db: Session = Depends(get_db), _=Depends(requer_permissao("relatorios")),
 ):
     """O que cada operador fez, do mais recente para o mais antigo."""
     limite = max(1, min(limite, 5000))
@@ -230,7 +231,7 @@ def acoes_dos_operadores(
 
 
 @router.get("/acoes/tipos")
-def tipos_de_acao(_=Depends(requer_perfil("admin"))):
+def tipos_de_acao(_=Depends(requer_permissao("relatorios"))):
     return [{"acao": k, "rotulo": v} for k, v in ROTULOS.items()]
 
 
@@ -238,7 +239,7 @@ def tipos_de_acao(_=Depends(requer_perfil("admin"))):
 def acoes_csv(
     operador_id: Optional[int] = None, acao: Optional[str] = None, cliente: Optional[str] = None,
     estacao: Optional[str] = None, de: Optional[str] = None, ate: Optional[str] = None,
-    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+    db: Session = Depends(get_db), _=Depends(requer_permissao("relatorios")),
 ):
     acoes = _acoes_filtradas(db, operador_id, acao, cliente, estacao, de, ate, 100000)
     saida = io.StringIO()
@@ -364,7 +365,7 @@ def _calcular_uso(db: Session, inicio_local, fim_local, piso_id: Optional[int]):
 @router.get("/uso")
 def relatorio_de_uso(
     de: Optional[str] = None, ate: Optional[str] = None, piso_id: Optional[int] = None,
-    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+    db: Session = Depends(get_db), _=Depends(requer_permissao("relatorios")),
 ):
     """Uso no periodo (datas de Brasilia, padrao: ultimos 30 dias), so sessoes
     encerradas: resumo (com a ocupacao), por dia, por piso, pico (dia da semana
@@ -381,7 +382,7 @@ DIAS_SEMANA = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "dom
 @router.get("/uso.xlsx")
 def exportar_uso_do_mes(
     mes: str, piso_id: Optional[int] = None,
-    db: Session = Depends(get_db), _=Depends(requer_perfil("admin")),
+    db: Session = Depends(get_db), _=Depends(requer_permissao("relatorios")),
 ):
     """O uso de um mes (AAAA-MM) numa planilha: Resumo, Por dia, Por estacao e Sessoes."""
     import calendar

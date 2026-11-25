@@ -31,6 +31,13 @@ interface Filho {
   chave: string
   valor: string
   soAdmin?: boolean
+  /** só admin, ou operador cujo grupo libera esta área (lib/api.ts pode) */
+  permissao?: string
+}
+
+/** O item aparece para o admin, para todos (sem soAdmin) ou para quem o grupo libera. */
+export function itemVisivel(i: { soAdmin?: boolean; permissao?: string }) {
+  return !i.soAdmin || Api.ehAdmin() || (!!i.permissao && Api.pode(i.permissao))
 }
 
 export const ITENS: {
@@ -38,6 +45,7 @@ export const ITENS: {
   rotulo: string
   Icone: typeof IconMap
   soAdmin: boolean
+  permissao?: string
   filhos?: Filho[]
 }[] = [
   { para: "/", rotulo: "Painel", Icone: IconLayoutDashboard, soAdmin: false },
@@ -49,6 +57,7 @@ export const ITENS: {
     rotulo: "Programação e avisos",
     Icone: IconSpeakerphone,
     soAdmin: true,
+    permissao: "divulgacao",
     filhos: [
       { rotulo: "Programação", chave: "aba", valor: "programacao" },
       { rotulo: "Avisos", chave: "aba", valor: "avisos" },
@@ -63,8 +72,8 @@ export const ITENS: {
     filhos: [
       { rotulo: "Por cliente", chave: "aba", valor: "cliente" },
       { rotulo: "Por estação", chave: "aba", valor: "estacao" },
-      { rotulo: "Uso", chave: "aba", valor: "uso", soAdmin: true },
-      { rotulo: "Ações dos operadores", chave: "aba", valor: "acoes", soAdmin: true },
+      { rotulo: "Uso", chave: "aba", valor: "uso", soAdmin: true, permissao: "relatorios" },
+      { rotulo: "Ações dos operadores", chave: "aba", valor: "acoes", soAdmin: true, permissao: "relatorios" },
     ],
   },
   {
@@ -90,7 +99,7 @@ export const ITENS: {
  * Item com subitens (accordion): o pai abre a tela e mostra os filhos, recuados
  * e ligados por uma linha vertical; a seta gira 90° quando aberto.
  */
-function ItemComFilhos({ item, expandida, admin }: { item: (typeof ITENS)[number]; expandida: boolean; admin: boolean }) {
+function ItemComFilhos({ item, expandida }: { item: (typeof ITENS)[number]; expandida: boolean }) {
   const { pathname, search } = useLocation()
   const navegar = useNavigate()
   const naTela = pathname.startsWith(item.para)
@@ -99,7 +108,7 @@ function ItemComFilhos({ item, expandida, admin }: { item: (typeof ITENS)[number
     if (naTela) setAberto(true)
   }, [naTela])
 
-  const filhos = (item.filhos ?? []).filter((f) => admin || !f.soAdmin)
+  const filhos = (item.filhos ?? []).filter(itemVisivel)
   const params = new URLSearchParams(search)
   const ativo = (f: Filho) => naTela && (params.get(f.chave) ?? filhos[0]?.valor) === f.valor
   const { Icone } = item
@@ -220,14 +229,30 @@ export function SeletorPiso({ className }: { className?: string }) {
 export function Layout() {
   const [expandida, setExpandida] = useState(lerExpandida)
   const [buscando, setBuscando] = useState(false)
-  const { tempoReal } = useDados()
-  const admin = Api.ehAdmin()
+  const { tempoReal, recarregarPisos } = useDados()
+  // muda quando o grupo do operador mudou desde o login: a tela aberta é refeita
+  const [permissoesLidas, setPermissoesLidas] = useState(0)
   const { tema, alternar: alternarTema } = useTema()
   const { pathname } = useLocation()
   const atual = ITENS.find((i) => (i.para === "/" ? pathname === "/" : pathname.startsWith(i.para)))
   // o piso so muda o que aparece no Painel, em Clientes e no Mapa; Historicos
   // tem o filtro dele e Configuracoes vale para todos os pisos
   // o seletor de piso fica dentro de cada tela que usa (Painel e Mapa; Clientes tem as abas de piso)
+
+  // O grupo do operador pode ter mudado desde o login: relê o que ele libera
+  useEffect(() => {
+    Api.get<{ permissoes: string[]; pisos: number[] | null }>("/api/auth/eu")
+      .then((r) => {
+        const antes = [localStorage.getItem("permissoes"), localStorage.getItem("pisosPermitidos")].join("|")
+        Api.guardarPermissoes(r.permissoes, r.pisos)
+        const depois = [localStorage.getItem("permissoes"), localStorage.getItem("pisosPermitidos")].join("|")
+        if (depois !== antes) {
+          setPermissoesLidas((n) => n + 1)
+          recarregarPisos().catch(() => {})
+        }
+      })
+      .catch(() => {})
+  }, [recarregarPisos])
 
   // Ctrl+K (ou Cmd+K no Mac) abre a busca de qualquer tela
   useEffect(() => {
@@ -299,10 +324,10 @@ export function Layout() {
               )}
               <div className="flex flex-col gap-0.5">
                 {itens
-                  .filter((i) => admin || !i.soAdmin)
+                  .filter(itemVisivel)
                   .map((item) =>
                     item.filhos ? (
-                      <ItemComFilhos key={item.para} item={item} expandida={expandida} admin={admin} />
+                      <ItemComFilhos key={item.para} item={item} expandida={expandida} />
                     ) : (
                       <NavLink
                         key={item.para}
@@ -409,7 +434,7 @@ export function Layout() {
         </header>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* as telas sabem se o menu está aberto (Configurações esconde a lista própria) */}
-          <Outlet context={{ menuAberto: expandida } satisfies ContextoLayout} />
+          <Outlet key={permissoesLidas} context={{ menuAberto: expandida } satisfies ContextoLayout} />
         </main>
       </div>
       <BuscaGlobal aberta={buscando} aoFechar={() => setBuscando(false)} />

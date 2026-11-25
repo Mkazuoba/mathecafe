@@ -170,3 +170,63 @@ def aplicar_restauracao_pendente(banco: Path, pedido: Path, pasta: Path, agora: 
     shutil.copyfile(arquivo, temporario)
     os.replace(temporario, banco)
     return {"arquivo": arquivo.name, "copia_antes": antes.name if havia_banco else None, "quem": quem}
+
+
+# ── Copia extra fora do servidor (10.1) ──────────────────────────────────────
+# Cada backup vai tambem para uma segunda pasta (outro disco, pasta de rede ou
+# sincronizada com a nuvem), com os mesmos dias guardados. A situacao da ultima
+# tentativa fica em copia-extra.json na pasta local, para o painel mostrar.
+SITUACAO_EXTRA = "copia-extra.json"
+
+
+def copia_extra_pendente(pasta: Path, extra: Path, hoje: date) -> bool:
+    """Ha backup de hoje na pasta local que ainda nao esta na pasta extra?"""
+    de_hoje = [b["nome"] for b in listar_backups(pasta) if _dia(b["nome"]) == hoje]
+    return bool(de_hoje) and not (Path(extra) / de_hoje[0]).is_file()
+
+
+def copiar_para_extra(arquivo: Path, extra: Path, hoje: date, manter_dias: int) -> Path:
+    """Copia o backup para a pasta extra (via .tmp, conferindo o tamanho antes
+    de dar o nome final) e apaga la os mais velhos que manter_dias."""
+    extra = Path(extra)
+    extra.mkdir(parents=True, exist_ok=True)
+    destino = extra / arquivo.name
+    temporario = extra / (arquivo.name + ".tmp")
+    try:
+        shutil.copyfile(arquivo, temporario)
+        if temporario.stat().st_size != arquivo.stat().st_size:
+            raise OSError("a cópia chegou incompleta")
+        os.replace(temporario, destino)
+    finally:
+        temporario.unlink(missing_ok=True)
+    apagar_antigos(extra, hoje, manter_dias)
+    return destino
+
+
+def testar_pasta(pasta: Path):
+    """A pasta extra serve? Cria se faltar e grava um arquivo de teste.
+    None se deu certo; senao, o motivo."""
+    pasta = Path(pasta)
+    if not pasta.is_absolute():
+        return "Use o caminho completo (ex.: D:\\Backup ou \\\\servidor\\pasta)"
+    teste = pasta / ".teste-mathecafe"
+    try:
+        pasta.mkdir(parents=True, exist_ok=True)
+        teste.write_bytes(b"ok")
+        teste.unlink()
+    except OSError as e:
+        return f"Não foi possível gravar em {pasta}: {e.strerror or e}"
+    return None
+
+
+def ler_situacao_extra(pasta: Path):
+    try:
+        return json.loads((Path(pasta) / SITUACAO_EXTRA).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def gravar_situacao_extra(pasta: Path, situacao: dict):
+    pasta = Path(pasta)
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / SITUACAO_EXTRA).write_text(json.dumps(situacao, ensure_ascii=False), encoding="utf-8")

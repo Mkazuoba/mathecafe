@@ -2766,6 +2766,69 @@ def test_enviar_um_backup_de_fora(c, admin, tmp_path, monkeypatch):
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith("enviado-")] == [enviado]
 
 
+def test_copia_extra_do_backup_pelo_painel(c, admin, operador, tmp_path, monkeypatch):
+    """10.1: cada backup vai tambem para uma segunda pasta (outro disco, rede);
+    se a copia falhar, o painel mostra o erro e o servidor tenta de novo."""
+    from datetime import datetime as dt, timedelta as td
+    from app import backup as bk
+    from app.routers import config as rota
+    local, extra = tmp_path / "backups", tmp_path / "rede" / "mathecafe"
+    monkeypatch.setattr(rota, "PASTA_BACKUP", local)
+    monkeypatch.setattr(rota, "COPIA_EXTRA", None)
+    env = tmp_path / ".env"
+    env.write_text("SECRET_KEY=abc\n", encoding="utf-8")
+    monkeypatch.setattr(rota, "ARQUIVO_ENV", env)
+
+    info = c.get("/api/config/backup", headers=admin).json()
+    assert info["copia_extra"] == {"pasta": "", "situacao": None, "pendente": False}
+    assert c.put("/api/config/backup/copia_extra", headers=operador, json={"pasta": str(extra)}).status_code == 403
+    for ruim in ("relativa/pasta", str(env)):  # caminho incompleto; arquivo no lugar de pasta
+        r = c.put("/api/config/backup/copia_extra", headers=admin, json={"pasta": ruim})
+        assert r.status_code == 400, ruim
+
+    nome = c.post("/api/config/backup", headers=admin).json()["nome"]
+    r = c.put("/api/config/backup/copia_extra", headers=admin, json={"pasta": str(extra)})
+    assert r.status_code == 200, r.text
+    assert f"BACKUP_COPIA={extra}" in env.read_text(encoding="utf-8")
+    assert (extra / nome).exists()  # o backup de hoje ja foi copiado ao salvar
+    situ = c.get("/api/config/backup", headers=admin).json()["copia_extra"]
+    assert situ["pasta"] == str(extra) and situ["situacao"]["ok"] is True and situ["pendente"] is False
+
+    # a rede cai: o backup local sai, a copia nao; o painel mostra o erro
+    def falha(*a, **k):
+        raise OSError("caminho de rede nao encontrado")
+    monkeypatch.setattr(bk, "copiar_para_extra", falha)
+    for f in local.glob("*.db"):
+        f.unlink()
+    for f in extra.glob("*.db"):
+        f.unlink()
+    r = c.post("/api/config/backup", headers=admin)
+    assert r.status_code == 200
+    situ = c.get("/api/config/backup", headers=admin).json()["copia_extra"]
+    assert situ["situacao"]["ok"] is False and "rede" in situ["situacao"]["erro"] and situ["pendente"] is True
+    # o batimento tenta de novo, mas so a cada 30 min
+    agora = dt.fromisoformat(situ["situacao"]["quando"])
+    assert rota.copia_extra_a_tentar(agora + td(minutes=10)) is False
+    assert rota.copia_extra_a_tentar(agora + td(minutes=31)) is True
+
+    # a rede volta: Copiar agora
+    monkeypatch.undo()
+    monkeypatch.setattr(rota, "PASTA_BACKUP", local)
+    monkeypatch.setattr(rota, "COPIA_EXTRA", extra)
+    monkeypatch.setattr(rota, "ARQUIVO_ENV", env)
+    assert c.post("/api/config/backup/copia_extra/copiar", headers=operador).status_code == 403
+    r = c.post("/api/config/backup/copia_extra/copiar", headers=admin)
+    assert r.status_code == 200, r.text
+    situ = c.get("/api/config/backup", headers=admin).json()["copia_extra"]
+    assert situ["situacao"]["ok"] is True and situ["pendente"] is False
+    assert rota.copia_extra_a_tentar(dt.now()) is False
+
+    # desligar
+    assert c.put("/api/config/backup/copia_extra", headers=admin, json={"pasta": ""}).status_code == 200
+    assert "BACKUP_COPIA=\n" in env.read_text(encoding="utf-8")
+    assert c.get("/api/config/backup", headers=admin).json()["copia_extra"]["pasta"] == ""
+
+
 def test_instalador_descobre_o_piso_atual_do_pc(c, admin):
     """Reinstalar escolhendo outro piso: o instalador pergunta ao servidor qual
     estação aquele ID é hoje ("piso_id;nome"); com o piso diferente, gera um ID
@@ -2891,3 +2954,134 @@ def test_atualizar_tela_manda_a_lista_de_apps_atual(c, admin, operador, cenario)
     assert r.json()["enviadas"] == 0  # desconectada: nada a mandar
     acoes = [a["acao"] for a in c.get("/api/relatorios/acoes", headers=admin).json()]
     assert "atualizar_telas" in acoes
+
+
+def test_grupos_de_operadores_liberam_areas_do_admin(c, admin, operador):
+    # Grupos com caixinhas: "divulgacao" (Programacao e avisos) e "relatorios"
+    # (Relatorios de uso e registro de acoes), antes so do admin
+    assert c.get("/api/operadores/grupos", headers=operador).status_code == 403
+    perms = c.get("/api/operadores/permissoes", headers=admin).json()
+    assert {p["chave"] for p in perms} == {"divulgacao", "relatorios"}
+    assert c.post("/api/operadores/grupos", headers=admin,
+                  json={"nome": "Estagio", "permissoes": ["inventada"]}).status_code == 400
+    r = c.post("/api/operadores/grupos", headers=admin, json={"nome": "Coordenacao", "permissoes": ["divulgacao"]})
+    assert r.status_code == 200, r.text
+    grupo = r.json()
+    assert c.post("/api/operadores/grupos", headers=admin,
+                  json={"nome": "coordenacao", "permissoes": []}).status_code == 400  # nome repetido
+
+    # sem grupo, nada muda: so o admin
+    eu = c.get("/api/auth/eu", headers=operador).json()
+    assert eu["perfil"] == "operador" and eu["permissoes"] == []
+    aviso = {"titulo": "Wi-Fi", "texto": "senha no balcao"}
+    assert c.post("/api/avisos/", headers=operador, json=aviso).status_code == 403
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 403
+
+    # o operador entra no grupo: vale na hora, sem sair e entrar de novo
+    op_id = next(o["id"] for o in c.get("/api/operadores/", headers=admin).json() if o["login"] == "operador.teste")
+    r = c.put(f"/api/operadores/{op_id}", headers=admin, json={"grupo_id": grupo["id"]})
+    assert r.status_code == 200 and r.json()["grupo_id"] == grupo["id"]
+    assert c.get("/api/auth/eu", headers=operador).json()["permissoes"] == ["divulgacao"]
+    r = c.post("/api/avisos/", headers=operador, json=aviso)
+    assert r.status_code == 200, r.text
+    assert c.delete(f"/api/avisos/{r.json()['id']}", headers=operador).status_code == 200
+    assert c.put("/api/programacao/config", headers=operador, json={}).status_code != 403
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 403
+    # quem mexeu fica no registro
+    acoes = c.get("/api/relatorios/acoes", headers=admin).json()
+    assert any(a["acao"] == "editar_grupo_operadores" or a["acao"] == "editar_operador" for a in acoes)
+
+    # caixinha de relatorios marcada
+    r = c.put(f"/api/operadores/grupos/{grupo['id']}", headers=admin,
+              json={"nome": "Coordenacao", "permissoes": ["divulgacao", "relatorios"]})
+    assert r.status_code == 200
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 200
+    assert c.get("/api/relatorios/acoes/tipos", headers=operador).status_code == 200
+    assert c.get("/api/relatorios/uso", headers=operador).status_code == 200
+    # o filtro de operador do registro precisa da lista (so nomes)
+    assert c.get("/api/operadores/nomes", headers=operador).status_code == 200
+    # mas nunca a gestao de operadores e configuracoes
+    assert c.get("/api/operadores/", headers=operador).status_code == 403
+    assert c.post("/api/operadores/grupos", headers=operador, json={"nome": "X", "permissoes": []}).status_code == 403
+
+    # lista dos grupos mostra quantos operadores tem
+    grupos = c.get("/api/operadores/grupos", headers=admin).json()
+    assert [g["operadores"] for g in grupos if g["id"] == grupo["id"]] == [1]
+
+    # operador desativado perde tudo mesmo com o token ainda valido
+    c.put(f"/api/operadores/{op_id}", headers=admin, json={"ativo": False})
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 403
+    c.put(f"/api/operadores/{op_id}", headers=admin, json={"ativo": True})
+
+    # excluir o grupo tira os operadores dele (voltam a operador comum)
+    assert c.delete(f"/api/operadores/grupos/{grupo['id']}", headers=admin).status_code == 200
+    assert c.get("/api/auth/eu", headers=operador).json()["permissoes"] == []
+    assert c.get("/api/relatorios/acoes", headers=operador).status_code == 403
+    # admin sempre pode tudo
+    assert set(c.get("/api/auth/eu", headers=admin).json()["permissoes"]) == {"divulgacao", "relatorios"}
+
+
+def test_grupo_de_operadores_limitado_a_pisos(c, admin, cenario):
+    # O grupo do Infantil so ve e mexe nas estacoes, sessoes e fila do Infantil
+    # (cenario: estacao e cliente do piso padrao, o Adulto)
+    infantil = _id_piso(c, admin, "Infantil")
+    assert c.post("/api/operadores/grupos", headers=admin,
+                  json={"nome": "Sem piso", "permissoes": [], "pisos": [99999]}).status_code == 400
+    r = c.post("/api/operadores/grupos", headers=admin,
+               json={"nome": "Equipe Infantil", "permissoes": [], "pisos": [infantil]})
+    assert r.status_code == 200, r.text
+    assert r.json()["pisos"] == [infantil]
+    r = c.post("/api/operadores/", headers=admin, json={"login": "op.infantil", "nome": "Op Infantil",
+                                                         "senha": "senha-infantil", "grupo_id": r.json()["id"]})
+    assert r.status_code == 200, r.text
+    op = _login(c, "op.infantil", "senha-infantil")
+    assert c.get("/api/auth/eu", headers=op).json()["pisos"] == [infantil]
+    assert c.get("/api/auth/eu", headers=admin).json()["pisos"] is None  # todos
+
+    inf_estacao = _estacao_infantil(c, admin)
+    inf_cliente, inf_cid = _cliente_infantil(c, admin)
+    token_op = op["Authorization"].split()[1]
+    with c.websocket_connect(f"/ws/painel?token={token_op}") as painel, \
+         c.websocket_connect(f"/ws/estacao/{cenario['estacao']}") as pc_adulto:
+        _estado(pc_adulto)
+        with c.websocket_connect(f"/ws/estacao/{inf_estacao}") as pc_inf:
+            _estado(pc_inf)
+            # o painel do operador do Infantil nao recebe os eventos do Adulto
+            msg = _receber_no_painel(painel, "estacao_online")
+            assert msg["dados"]["nome"] == inf_estacao
+
+            nomes = {e["nome"] for e in c.get("/api/estacoes/", headers=op).json()}
+            assert inf_estacao in nomes and cenario["estacao"] not in nomes
+            assert all(g["piso_id"] == infantil for g in c.get("/api/estacoes/grupos", headers=op).json())
+            assert cenario["estacao"] in {e["nome"] for e in c.get("/api/estacoes/", headers=admin).json()}
+
+            # fila: so libera cliente do proprio piso, e so ve esses
+            assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=op).status_code == 403
+            assert c.post(f"/api/estacoes/fila/{inf_cid}", headers=op).status_code == 200
+            assert c.post(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=admin).status_code == 200
+            fila = {a["cliente_id"] for a in c.get("/api/estacoes/fila", headers=op).json()}
+            assert inf_cid in fila and cenario["cliente_id"] not in fila
+            assert c.delete(f"/api/estacoes/fila/{cenario['cliente_id']}", headers=op).status_code == 403
+
+            sessao_inf = _logar_no_pc(pc_inf, inf_cliente)["sessao_id"]
+            sessao_adulto = _logar_no_pc(pc_adulto, cenario["cliente"])["sessao_id"]
+            ativas = {s["id"] for s in c.get("/api/sessoes/ativas", headers=op).json()}
+            assert sessao_inf in ativas and sessao_adulto not in ativas
+            for acao in ("pausar", "encerrar"):
+                assert c.post(f"/api/sessoes/{acao}/{sessao_adulto}", headers=op).status_code == 403
+
+            # comandos nas estacoes do outro piso: recusados
+            id_adulto = _id_da_estacao(cenario["estacao"])
+            assert c.post(f"/api/estacoes/{cenario['estacao']}/mensagem?id={id_adulto}", headers=op,
+                          json={"texto": "oi"}).status_code == 403
+            assert c.post(f"/api/estacoes/{cenario['estacao']}/manutencao?id={id_adulto}",
+                          headers=op).status_code == 403
+            assert c.get(f"/api/estacoes/{id_adulto}/logs", headers=op).status_code == 403
+            assert c.post(f"/api/estacoes/{inf_estacao}/mensagem?id={_id_da_estacao(inf_estacao)}",
+                          headers=op, json={"texto": "oi"}).status_code == 200
+            r = c.post("/api/estacoes/acoes", headers=op,
+                       json={"acao": "mensagem", "texto": "oi", "ids": [id_adulto, _id_da_estacao(inf_estacao)]})
+            res = r.json()["resultados"]
+            assert res[inf_estacao] == "ok" and res[cenario["estacao"]] != "ok"
+            assert c.post(f"/api/sessoes/encerrar/{sessao_inf}", headers=op).status_code == 200
+            assert c.post(f"/api/sessoes/encerrar/{sessao_adulto}", headers=admin).status_code == 200

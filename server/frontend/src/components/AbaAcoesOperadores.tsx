@@ -52,7 +52,7 @@ export function AbaAcoesOperadores({
   const [estacao, setEstacao] = useState(filtros.estacao)
 
   useEffect(() => {
-    Api.get<Operador[]>("/api/operadores/")
+    Api.get<Operador[]>("/api/operadores/nomes")
       .then(setOperadores)
       .catch(() => {})
     Api.get<{ acao: string; rotulo: string }[]>("/api/relatorios/acoes/tipos")

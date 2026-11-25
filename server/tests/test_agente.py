@@ -1603,3 +1603,89 @@ def test_caderno_bichinhos_se_mexem_de_leve_o_tempo_todo():
     assert parado("yeti", 1.3) != parado("cat", 1.3)
     soma = ns["_somar_movimentos"]((1, 2, 3, 1.1, 0.9), (1, -2, 1, 1.0, 1.1))
     assert soma[:3] == (2, 0, 4) and abs(soma[3] - 1.1) < 1e-9 and abs(soma[4] - 0.99) < 1e-9
+
+
+def test_manutencao_sai_sozinha_quando_ninguem_mexe():
+    # 6.13: operador esquece a estacao em manutencao (sem bloqueio nenhum);
+    # depois de MANUTENCAO_OCIOSA_S sem mouse/teclado volta sozinha ao login
+    ns = _funcoes_do_agente("segundos_para_sair_da_manutencao", "aviso_saida_manutencao",
+                            "MANUTENCAO_OCIOSA_S")
+    limite = ns["MANUTENCAO_OCIOSA_S"]
+    assert limite == 15 * 60
+    restante = ns["segundos_para_sair_da_manutencao"]
+    assert restante(0) == limite and restante(limite - 30) == 30
+    assert restante(limite) == 0 and restante(limite + 500) == 0
+    aviso = ns["aviso_saida_manutencao"]
+    assert aviso(61) == ""  # so avisa no ultimo minuto
+    assert aviso(45) == "Sem uso: volta ao login em 45s"
+    src = _fonte()
+    modo = src[src.index("    def _modo_manutencao(self):"):src.index("    def _sair_modo_manutencao(")]
+    assert "self._vigiar_ociosidade()" in modo
+    vigia = src[src.index("    def _vigiar_ociosidade("):]
+    vigia = vigia[:vigia.index("\n    def ", 10)]
+    assert "self.modo_manutencao_ativo" in vigia and "self._sair_modo_manutencao()" in vigia
+    assert "segundos_ocioso()" in vigia and "self.root.after(" in vigia
+    assert "GetLastInputInfo" in src[src.index("def segundos_ocioso("):]
+
+
+def test_reiniciar_e_desligar_pela_manutencao():
+    src = _fonte()
+    faixa = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(self")]
+    assert "self._desligar_pela_manutencao(desligar=False)" in faixa
+    assert "self._desligar_pela_manutencao(desligar=True)" in faixa
+    metodo = src[src.index("    def _desligar_pela_manutencao("):]
+    metodo = metodo[:metodo.index("\n    def ", 10)]
+    # so na manutencao, sempre com confirmacao, e pelo mesmo shutdown do painel
+    assert "if not self.modo_manutencao_ativo" in metodo and "askyesno" in metodo
+    assert "self._executar_shutdown(desligar)" in metodo
+    contagem = src[src.index("def _countdown_reinicio"):src.index("def _encerrar_apps_do_cliente")]
+    assert "self._executar_shutdown(desligar)" in contagem
+    shutdown = src[src.index("    def _executar_shutdown("):]
+    shutdown = shutdown[:shutdown.index("\n    def ", 10)]
+    assert '"/s" if desligar else "/r"' in shutdown
+
+
+def test_diagnostico_da_manutencao():
+    ns = _funcoes_do_agente("linhas_diagnostico")
+    linhas = dict(ns["linhas_diagnostico"]({
+        "servidor": "ws://10.0.0.5:8000", "conectado": True, "ping_ms": 12.4,
+        "versao": "1.33.0", "estacao": "AD-01", "piso": "Adulto", "id": "abc123"}))
+    assert linhas["Servidor"] == "ws://10.0.0.5:8000"
+    assert linhas["Conexao"] == "Conectado" and linhas["Ping"] == "12 ms"
+    assert linhas["Versao do agente"] == "1.33.0" and linhas["Estacao"] == "AD-01"
+    assert linhas["Piso"] == "Adulto" and linhas["ID da instalacao"] == "abc123"
+    sem = dict(ns["linhas_diagnostico"]({"servidor": "ws://x", "conectado": False,
+                                         "ping_ms": None, "piso": None}))
+    assert sem["Conexao"] == "Sem conexao" and sem["Ping"] == "sem resposta"
+    assert sem["Piso"] == "-"
+    medindo = dict(ns["linhas_diagnostico"]({"ping_ms": "medindo"}))
+    assert medindo["Ping"] == "medindo..."
+    src = _fonte()
+    # o log tambem fica guardado no PC (as ultimas linhas) para o diagnostico
+    log = src[src.index("    def _log(self, msg"):src.index("    def _log(self, msg") + 900]
+    assert "self._ultimos_logs.append" in log
+    faixa = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(self")]
+    assert "self._abrir_diagnostico" in faixa
+    diag = src[src.index("    def _abrir_diagnostico("):]
+    diag = diag[:diag.index("\n    def ", 10)]
+    assert "self.modo_manutencao_ativo" in diag and "self._ultimos_logs" in diag
+
+
+def test_atalhos_de_ferramentas_na_manutencao():
+    ns = _funcoes_do_agente("ATALHOS_MANUTENCAO")
+    comandos = dict(ns["ATALHOS_MANUTENCAO"])
+    assert comandos["Explorador"][0] == "explorer.exe"
+    assert comandos["Painel de Controle"][0] == "control.exe"
+    assert comandos["Prompt"][0] == "cmd.exe"
+    src = _fonte()
+    faixa = src[src.index("self.frame_manutencao = tk.Frame"):src.index("def _log(self")]
+    assert "ATALHOS_MANUTENCAO" in faixa and "self._abrir_processos" in faixa
+    abrir = src[src.index("    def _abrir_atalho("):]
+    abrir = abrir[:abrir.index("\n    def ", 10)]
+    assert "if not self.modo_manutencao_ativo" in abrir
+    # Gerenciador de Tarefas e bloqueado por politica no "cliente": janela propria
+    proc = src[src.index("    def _abrir_processos("):]
+    proc = proc[:proc.index("\n    def ", 10)]
+    assert "self.modo_manutencao_ativo" in proc and "psutil.process_iter" in proc
+    # ao voltar ao login o prompt aberto pela manutencao e encerrado
+    assert "cmd.exe" in src[src.index("PROCESSOS_SEMPRE_BLOQUEADOS = {"):src.index("PROCESSOS_BLOQUEADOS_NO_LOGIN")]

@@ -8,6 +8,8 @@ interface RespostaLogin {
   access_token: string
   perfil: string
   nome: string
+  permissoes?: string[]
+  pisos?: number[] | null
 }
 
 export default function Login() {
@@ -29,7 +31,7 @@ export default function Login() {
     setEnviando(true)
     try {
       const r = await Api.post<RespostaLogin>("/api/auth/login", { login: login.trim(), senha })
-      Api.entrar(r.access_token, r.perfil, r.nome)
+      Api.entrar(r.access_token, r.perfil, r.nome, r.permissoes ?? [], r.pisos ?? null)
       navigate("/", { replace: true })
     } catch (e) {
       setErro(e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Servidor indisponível")

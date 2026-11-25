@@ -141,6 +141,9 @@ async def _batimento():
             if config.backup_diario_pendente():
                 destino = await asyncio.to_thread(config.backup_agora)
                 print(f"Backup do banco: {destino}")
+            # Copia extra que falhou (rede fora): tenta de novo a cada 30 min
+            elif config.copia_extra_a_tentar(config._agora_br()):
+                await asyncio.to_thread(config.copiar_extra)
         except Exception as e:
             print(f"Backup do banco: erro ({e})")
         # Horario de funcionamento: avisa antes de fechar e encerra no horario
@@ -205,7 +208,7 @@ async def ws_painel(ws: WebSocket, token: str = ""):
     if usuario.get("perfil") not in ("admin", "operador"):
         await ws.close(code=4401, reason="Não autenticado")
         return
-    await manager.conectar_painel(ws)
+    await manager.conectar_painel(ws, usuario.get("sub"))
     try:
         while True:
             await ws.receive_text()

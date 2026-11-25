@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # outro disco ou pasta de rede (ex.: D:/BackupMatheCafe).
     BACKUP_PASTA: str = ""
     BACKUP_DIAS: int = 14
+    BACKUP_COPIA: str = ""  # segunda pasta para cada backup (10.1); vazio = desligada
 
     class Config:
         env_file = str(_ENV_FILE)

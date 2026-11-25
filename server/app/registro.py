@@ -48,6 +48,9 @@ ROTULOS = {
     "atualizar_telas": "Atualizou a tela dos clientes",
     "criar_operador": "Cadastrou operador",
     "editar_operador": "Editou operador",
+    "criar_grupo_operadores": "Criou grupo de operadores",
+    "editar_grupo_operadores": "Editou grupo de operadores",
+    "excluir_grupo_operadores": "Excluiu grupo de operadores",
     "excluir_operador": "Excluiu operador",
 }
 

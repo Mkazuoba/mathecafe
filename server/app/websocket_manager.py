@@ -5,20 +5,62 @@ import json
 class ConnectionManager:
     def __init__(self):
         self.paineis: list[WebSocket] = []
+        self.usuario_do_painel: Dict[WebSocket, str] = {}  # ws -> id do usuario (pisos do grupo)
         self.estacoes: Dict[int, WebSocket] = {}
 
     # ── Painéis ──────────────────────────────────────────────────────────────
-    async def conectar_painel(self, ws: WebSocket):
+    async def conectar_painel(self, ws: WebSocket, usuario_id=None):
         await ws.accept()
         self.paineis.append(ws)
+        if usuario_id:
+            self.usuario_do_painel[ws] = usuario_id
 
     def desconectar_painel(self, ws: WebSocket):
         self.paineis.remove(ws) if ws in self.paineis else None
+        self.usuario_do_painel.pop(ws, None)
+
+    def _filtro_de_pisos(self, dados: dict):
+        """Quais paineis recebem o evento: o operador de um grupo com pisos so
+        recebe os das estacoes (e clientes da fila) desses pisos. Devolve uma
+        funcao ws -> bool, ou None (todos recebem)."""
+        if not self.usuario_do_painel:
+            return None
+        from app.database import SessionLocal
+        from app.models import Estacao, Usuario
+        from app.permissoes import pisos_do_usuario
+        from app.pisos import piso_da_estacao, piso_do_cliente
+        db = SessionLocal()
+        try:
+            pisos = {ws: pisos_do_usuario(db, uid) for ws, uid in self.usuario_do_painel.items()}
+            if all(p is None for p in pisos.values()):
+                return None
+            piso = None
+            if dados.get("estacao_id"):
+                e = db.get(Estacao, dados["estacao_id"])
+                piso = piso_da_estacao(e) if e else None
+            elif isinstance(dados.get("cliente"), dict) and dados["cliente"].get("cliente_id"):
+                c = db.get(Usuario, dados["cliente"]["cliente_id"])
+                piso = piso_do_cliente(c) if c else None
+            elif dados.get("cliente_id"):
+                c = db.get(Usuario, dados["cliente_id"])
+                piso = piso_do_cliente(c) if c else None
+            if piso is None:
+                return None
+            piso_id = piso.id
+        finally:
+            db.close()
+        return lambda ws: pisos.get(ws) is None or piso_id in pisos[ws]
 
     async def broadcast_paineis(self, evento: str, dados: dict):
         msg = json.dumps({"evento": evento, "dados": dados})
+        try:
+            recebe = self._filtro_de_pisos(dados)
+        except Exception:
+            recebe = None  # na duvida, como antes
         mortos = []
-        for ws in self.paineis:
+        for ws in list(self.paineis):
+            if recebe is not None and not recebe(ws):
+                continue
             try:
                 await ws.send_text(msg)
             except Exception:

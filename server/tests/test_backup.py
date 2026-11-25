@@ -2,6 +2,7 @@
 guardando os ultimos dias."""
 import sqlite3
 from datetime import date, datetime
+from pathlib import Path
 
 from app.backup import backup_de_hoje_feito, fazer_backup, listar_backups
 
@@ -123,3 +124,61 @@ def test_restauracao_com_arquivo_ruim_nao_mexe_no_banco(tmp_path):
     con.close()
     # sem pedido: nada a fazer
     assert aplicar_restauracao_pendente(banco, pedido, tmp_path / "backups", datetime(2026, 11, 11)) is None
+
+
+# ── Copia extra fora do servidor (10.1) ──────────────────────────────────────
+
+def test_copia_extra_leva_o_backup_para_outra_pasta(tmp_path):
+    from app.backup import copia_extra_pendente, copiar_para_extra
+    origem = tmp_path / "cybercafe.db"
+    _banco(origem).close()
+    pasta, extra = tmp_path / "backups", tmp_path / "outro_disco" / "mathecafe"
+    hoje = date(2026, 11, 25)
+    assert not copia_extra_pendente(pasta, extra, hoje)  # sem backup de hoje, nada a copiar
+    arq = fazer_backup(origem, pasta, datetime(2026, 11, 25, 0, 1), manter_dias=3)
+    assert copia_extra_pendente(pasta, extra, hoje)
+    copia = copiar_para_extra(arq, extra, hoje, manter_dias=3)
+    assert copia == extra / arq.name and copia.read_bytes() == arq.read_bytes()
+    assert not copia_extra_pendente(pasta, extra, hoje)
+    assert not list(extra.glob("*.tmp"))
+    # guarda os mesmos dias que a pasta local; o que nao e backup fica
+    (extra / "leia-me.txt").write_text("x")
+    for dia in range(26, 30):
+        a = fazer_backup(origem, pasta, datetime(2026, 11, dia, 0, 1), manter_dias=3)
+        copiar_para_extra(a, extra, date(2026, 11, dia), manter_dias=3)
+    assert sorted(p.name for p in extra.iterdir()) == [
+        "cybercafe-2026-11-27-0001.db", "cybercafe-2026-11-28-0001.db",
+        "cybercafe-2026-11-29-0001.db", "leia-me.txt"]
+
+
+def test_copia_extra_confere_a_copia(tmp_path, monkeypatch):
+    """Copia que chega diferente (rede caiu no meio) nao fica com o nome final."""
+    import pytest
+    from app import backup as bk
+    origem = tmp_path / "cybercafe.db"
+    _banco(origem).close()
+    arq = fazer_backup(origem, tmp_path / "backups", datetime(2026, 11, 25, 0, 1), manter_dias=3)
+    extra = tmp_path / "extra"
+    monkeypatch.setattr(bk.shutil, "copyfile", lambda a, b: open(b, "wb").write(b"meio arquivo"))
+    with pytest.raises(OSError):
+        bk.copiar_para_extra(arq, extra, date(2026, 11, 25), manter_dias=3)
+    assert not list(extra.glob("*"))
+
+
+def test_testar_pasta_extra(tmp_path):
+    from app.backup import testar_pasta
+    assert testar_pasta(tmp_path / "nova" / "pasta") is None  # cria e grava
+    assert not list((tmp_path / "nova" / "pasta").iterdir())  # o arquivo de teste some
+    arquivo = tmp_path / "um_arquivo"
+    arquivo.write_text("x")
+    assert testar_pasta(arquivo)  # nao e uma pasta: devolve o erro
+    assert testar_pasta(Path("relativa"))  # so caminho completo
+
+
+def test_situacao_da_copia_extra_fica_gravada(tmp_path):
+    from app.backup import ler_situacao_extra, gravar_situacao_extra
+    assert ler_situacao_extra(tmp_path) is None
+    gravar_situacao_extra(tmp_path, {"ok": False, "quando": "2026-11-25T00:01:00", "erro": "rede"})
+    assert ler_situacao_extra(tmp_path)["erro"] == "rede"
+    (tmp_path / "copia-extra.json").write_text("{quebrado")
+    assert ler_situacao_extra(tmp_path) is None
