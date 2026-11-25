@@ -70,6 +70,14 @@ const COR_QUADRADO: Record<StatusEstacao, string> = {
   desligada: "border-borda bg-superficie-2 text-texto-fraco",
   manutencao: "border-manutencao bg-manutencao-fundo text-manutencao",
 }
+// o pé do monitor (a tela usa COR_QUADRADO)
+const COR_PE: Record<StatusEstacao, string> = {
+  livre: "bg-livre",
+  ocupada: "bg-ocupada",
+  desligada: "bg-borda-forte",
+  manutencao: "bg-manutencao",
+}
+const TELA = 42 // altura da tela do monitor dentro do QUADRADO; o resto é o pé
 const COR_LEGENDA: Record<StatusEstacao, string> = {
   livre: "border-livre bg-livre-fundo",
   ocupada: "border-ocupada bg-ocupada",
@@ -573,6 +581,7 @@ export default function Mapa() {
                   aoEditar={() => z.grupo && setEditandoZona(z.grupo)}
                   aoDuplicar={() => duplicar([z])}
                   aoNovaEstacao={() => setNovaEstacaoEm(z.grupo ? z.id : null)}
+                  aoExcluir={() => excluirZonas([z])}
                 >
                   {z.estacoes.map(({ estacao: e, x, y }) => {
                     const arrastando = provisorio?.estacao?.id === e.id
@@ -657,6 +666,7 @@ function ZonaDoMapa({
   aoEditar,
   aoDuplicar,
   aoNovaEstacao,
+  aoExcluir,
   children,
 }: {
   zona: ZonaNoMapa
@@ -671,6 +681,7 @@ function ZonaDoMapa({
   aoEditar: () => void
   aoDuplicar: () => void
   aoNovaEstacao: () => void
+  aoExcluir: () => void
   children: React.ReactNode
 }) {
   const arrasto = useRef<{
@@ -811,6 +822,18 @@ function ZonaDoMapa({
             >
               <IconPlus size={14} />
             </button>
+            {z.grupo && (
+              <button
+                type="button"
+                onPointerDown={(ev) => ev.stopPropagation()}
+                onClick={aoExcluir}
+                aria-label={`Excluir a zona ${z.nome}`}
+                title="Excluir a ilha (as estações dela saem do mapa)"
+                className="shrink-0 rounded p-0.5 text-texto-suave hover:text-perigo"
+              >
+                <IconTrash size={14} />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -899,20 +922,33 @@ function QuadradoEstacao({
       }}
       style={{ left: x, top: y, width: QUADRADO, height: QUADRADO }}
       className={cn(
-        "absolute flex touch-none flex-col items-center justify-center rounded-lg border-2 font-semibold select-none",
-        COR_QUADRADO[e.status],
-        modoConfig ? "cursor-grab active:cursor-grabbing" : "cursor-pointer hover:brightness-110",
-        arrastando && "z-20 opacity-80 shadow-lg",
-        aberta && "ring-2 ring-texto ring-offset-2 ring-offset-fundo",
+        "group absolute flex touch-none flex-col items-center font-semibold select-none",
+        modoConfig ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        arrastando && "z-20 opacity-80",
       )}
     >
-      <span className="max-w-[52px] truncate text-[0.8rem] leading-tight">{e.nome}</span>
-      {restante != null && (
-        <span className="text-[0.6rem] leading-tight tabular-nums opacity-90">{formatarTempo(restante)}</span>
-      )}
-      {semConexao && (
-        <IconWifiOff size={12} className="absolute top-0.5 right-0.5 opacity-80" aria-label="sem conexão" />
-      )}
+      {/* a tela do monitor: a cor do estado, o nome e o tempo que falta */}
+      <div
+        style={{ height: TELA }}
+        className={cn(
+          "relative flex w-full flex-col items-center justify-center rounded-md border-2 transition-[filter]",
+          COR_QUADRADO[e.status],
+          !modoConfig && "group-hover:brightness-110",
+          arrastando && "shadow-lg",
+          aberta && "ring-2 ring-texto ring-offset-2 ring-offset-fundo",
+        )}
+      >
+        <span className="max-w-[48px] truncate text-[0.72rem] leading-tight">{e.nome}</span>
+        {restante != null && (
+          <span className="text-[0.58rem] leading-tight tabular-nums opacity-90">{formatarTempo(restante)}</span>
+        )}
+        {semConexao && (
+          <IconWifiOff size={11} className="absolute top-0.5 right-0.5 opacity-80" aria-label="sem conexão" />
+        )}
+      </div>
+      {/* o pé: pescoço e base */}
+      <span aria-hidden="true" className={cn("h-[6px] w-[8px]", COR_PE[e.status])} />
+      <span aria-hidden="true" className={cn("h-[4px] w-[28px] rounded-full", COR_PE[e.status])} />
       {/* em uso nao se exclui (o servidor tambem recusa) */}
       {modoConfig && restante == null && e.status !== "ocupada" && (
         <button

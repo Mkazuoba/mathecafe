@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-25 — Mapa: computadores como monitores e lixeira nas ilhas
+
+- Cada estação no Mapa virou um monitor: a tela tem a cor do estado (livre, ocupada, desligada, manutenção), com o nome e o tempo que falta dentro, e o pé embaixo. Clicar, arrastar no Modo configuração e o X de excluir continuam iguais.
+- Modo configuração: lixeira no cabeçalho de cada ilha, ao lado de editar, duplicar e nova estação. Pede confirmação dizendo quantas estações saem junto (quem tem histórico só sai do mapa). A seleção com Ctrl+clique e o Excluir da barra continuam.
+
 ## 2026-11-25 — Instalador do servidor com tela (10.14)
 
 - `server\gerar_instalador_servidor.bat` gera o `MatheCafe-Servidor-Instalador.exe` (pede administrador), no mesmo visual e com as mesmas peças do instalador das estações: pasta e porta, backup do banco para trazer os dados de outro servidor (o banco que já estava na pasta é guardado com outro nome), cópia extra do backup, administrador, e então Python, bibliotecas, `.env`, tarefa `MatheCafe-Servidor` e firewall, conferindo que o servidor subiu. No fim mostra o endereço para as estações.
